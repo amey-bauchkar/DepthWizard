@@ -1,0 +1,2042 @@
+{
+ "ran_at": "2026-09-21T12:20:53",
+ "system": {
+  "app": {
+   "name": "DepthWizard",
+   "version": "1.0.0-prototype",
+   "modes_supported": [
+    "A",
+    "B"
+   ],
+   "tiers_available": [
+    "R",
+    "T",
+    "A"
+   ],
+   "tiers_unavailable": {
+    "H": "no fine-tuned metric head in this build (no GPU / no training data)"
+   }
+  },
+  "runtime": {
+   "os": "Windows-11-10.0.26200-SP0",
+   "python": "3.12.14",
+   "torch": "2.14.0+cpu",
+   "cuda": false,
+   "numpy": "2.5.2",
+   "rasterio": "1.5.1",
+   "gdal": "3.12.4",
+   "pyproj": "3.8.0",
+   "proj": "9.8.1"
+  },
+  "model": {
+   "available": true,
+   "name": "da-v2-small-baseline",
+   "version": "1.0.0",
+   "device": "cpu",
+   "sha256": "715fade13be8f229f8a70cc02066f656f2423a59effd0579197bbf57860e1378",
+   "output_quantity": "relative_inverse_depth",
+   "licence": "Apache-2.0 (Small checkpoint); vendored code Apache-2.0, upstream commit a561b849ebae10a6f5ef49e26c83cbbcd36c71bf",
+   "load_ms": 1645.4963000005591
+  },
+  "geoid_grids": [
+   {
+    "name": "EGM96",
+    "filename": "us_nga_egm96_15.tif",
+    "found": true,
+    "path": "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\proj\\us_nga_egm96_15.tif"
+   },
+   {
+    "name": "EGM2008",
+    "filename": "us_nga_egm08_25.tif",
+    "found": true,
+    "path": "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\proj\\us_nga_egm08_25.tif"
+   }
+  ],
+  "dem_tiles": [
+   "Copernicus_DSM_COG_10_N46_00_E007_00_DEM.tif",
+   "Copernicus_DSM_COG_10_N47_00_E008_00_DEM.tif"
+  ]
+ },
+ "tiles": {
+  "urban_geotiff": {
+   "item": {
+    "id": "urban_geotiff",
+    "label": "Z\u00fcrich (urban) \u00b7 GeoTIFF 2 m \u00b7 Mode B",
+    "file": "swissimage_2019_2682-1247_2m.tif",
+    "mode": "B",
+    "reference_dsm": "swisssurface3d_urban_2682-1247_dsm_0.5m.tif",
+    "reference_dtm": "swissalti3d_urban_2682-1247_dtm_0.5m.tif",
+    "reference_vertical_crs": "EPSG:5728",
+    "source": "swisstopo SWISSIMAGE 10 cm (resampled 2 m) tile 2682-1247, 2019; references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"
+   },
+   "runs": {
+    "no_anchors": {
+     "status": "READY",
+     "stages_ms": {
+      "preprocessing_ms": 135.7,
+      "inference_ms": 754.8,
+      "model_forward_ms": 718.7,
+      "calibration_ms": 542.9,
+      "total_ms": 1434.1
+     },
+     "tier": "T",
+     "quality": "WARNING",
+     "quality_triggers": [
+      "mean ground support 0.50 < 0.5",
+      "no object scale available: DSM = terrain layer only; object heights remain relative"
+     ],
+     "flags": [
+      "NO_OBJECT_SCALE"
+     ],
+     "object_scale_source": null,
+     "object_scale_m_per_unit": null,
+     "vertical_reference": "EGM2008",
+     "calib_report": {
+      "terrain": {
+       "sigma_cells": 1.5,
+       "w_min": 0.1,
+       "dem_posting_m": 30.0,
+       "max_raise_m": 0.5,
+       "block_factor": 15,
+       "cells": [
+        34,
+        34
+       ],
+       "support_mean": 0.49541714725105723,
+       "support_min": 0.0,
+       "raw_fallback_fraction": 0.0,
+       "dem_void_fraction": 0.0,
+       "correction_mean_m": -0.6659271101148035,
+       "correction_min_m": -9.037245877360817,
+       "method": "order1_normalized_convolution_correction (plane fit, DEM upper-bound clamp)"
+      },
+      "scale_fit": {
+       "scale": null,
+       "method": "dem_residual_fit",
+       "n_cells": 976,
+       "r_value": 0.16425582114388015,
+       "residual_nmad_m": 0.9813686203838443,
+       "accepted": false,
+       "reason": "implied p99 object height 1.2 m outside [2.0, 60.0] m \u2014 fit rejected",
+       "params": {
+        "intercept_m": 0.3546283739098186,
+        "ci95": [
+         3.6746026188637413,
+         7.547725324900044
+        ],
+        "min_object_fraction": 0.3,
+        "implied_p99_object_height_m": 1.2351705269549182,
+        "gates": {
+         "min_r": 0.1,
+         "implied_p99_range_m": [
+          2.0,
+          60.0
+         ]
+        },
+        "note": "DEM sees objects only at block scale and partially; unvalidated scene-level calibration (Phase 3 E19/E21)"
+       }
+      },
+      "anchors": null,
+      "consistency": {
+       "ME": -0.4069856107234955,
+       "NMAD": 0.8648650646209717,
+       "n": 125000
+      },
+      "dem": {
+       "source": {
+        "name": "bundled",
+        "product": "Copernicus GLO-30",
+        "files": [
+         "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\dem\\Copernicus_DSM_COG_10_N47_00_E008_00_DEM.tif"
+        ],
+        "vertical_crs": "EGM2008",
+        "posting_m": 30.0,
+        "accuracy_note": "Copernicus GLO-30: DSM-like; forest MAE ~5 m, built-up ~1.6 m before de-biasing (Phase 3 E19); DEMIX best 1-arcsec global DEM"
+       },
+       "src_vertical_crs": "EGM2008",
+       "dst_vertical_crs": "EGM2008",
+       "datum_transformed": false,
+       "void_fraction": 0.0
+      }
+     },
+     "validation": {
+      "dsm": {
+       "compared_layer": "dsm",
+       "metrics_overall": {
+        "n": 242064,
+        "ME": -1.7726222279130275,
+        "RMSE": 9.193146898567322,
+        "MAE": 7.563787654604645,
+        "median": 0.5914459228515625,
+        "NMAD": 9.937397067260742,
+        "LE90": 14.093005371093753,
+        "LE95": 16.635467529296875,
+        "pearson_r": 0.37727939416953565,
+        "spearman_rho": 0.3910420777471521
+       },
+       "metrics_by_slope": {
+        "flat_lt5": {
+         "n": 61826,
+         "ME": 3.4145562681551604,
+         "RMSE": 7.607850910894428,
+         "MAE": 6.263418247300766,
+         "median": 4.9390869140625,
+         "NMAD": 4.043826791381836,
+         "LE90": 10.921218872070312,
+         "LE95": 13.682296752929688,
+         "pearson_r": 0.4432460563828662,
+         "spearman_rho": 0.6147536882973005
+        },
+        "moderate_5_15": {
+         "n": 20829,
+         "ME": -3.0963809407903717,
+         "RMSE": 10.610226725958817,
+         "MAE": 8.954068951224667,
+         "median": -0.785491943359375,
+         "NMAD": 12.34053656616211,
+         "LE90": 15.961541748046876,
+         "LE95": 18.75817260742187,
+         "pearson_r": 0.40458827231208816,
+         "spearman_rho": 0.41734844603032484
+        },
+        "steep_15_30": {
+         "n": 30596,
+         "ME": -5.476487627402211,
+         "RMSE": 11.045582013090456,
+         "MAE": 9.555089669533688,
+         "median": -7.78680419921875,
+         "NMAD": 10.774685101318358,
+         "LE90": 16.58837890625,
+         "LE95": 19.15691375732422,
+         "pearson_r": 0.3447606994745159,
+         "spearman_rho": 0.3391850160025712
+        },
+        "very_steep_gt30": {
+         "n": 128813,
+         "ME": -3.1684942416431516,
+         "RMSE": 9.157234732747384,
+         "MAE": 7.490135099349369,
+         "median": -3.160797119140625,
+         "NMAD": 10.16197241821289,
+         "LE90": 13.85423583984375,
+         "LE95": 16.302984619140624,
+         "pearson_r": 0.2696592594483174,
+         "spearman_rho": 0.25977655129993593
+        }
+       },
+       "metrics_by_object": {},
+       "height_bins": {
+        "ref_q1_403.1_410.0m": {
+         "n": 60517,
+         "ME": 5.756927600167651,
+         "RMSE": 6.716819174611064,
+         "MAE": 5.793144641727899,
+         "median": 5.69024658203125,
+         "NMAD": 3.987835656738281,
+         "LE90": 10.238677978515625,
+         "LE95": 11.3323486328125,
+         "pearson_r": 0.5064202560882171,
+         "spearman_rho": 0.524825974459402
+        },
+        "ref_q2_410.0_414.8m": {
+         "n": 60518,
+         "ME": 5.255002794619053,
+         "RMSE": 6.106836254794404,
+         "MAE": 5.477994000731671,
+         "median": 5.689117431640625,
+         "NMAD": 2.8763607330322265,
+         "LE90": 8.787655639648438,
+         "LE95": 9.763786315917969,
+         "pearson_r": 0.039373492337173424,
+         "spearman_rho": 0.07060779300860823
+        },
+        "ref_q3_414.8_426.9m": {
+         "n": 60517,
+         "ME": -4.484232031270978,
+         "RMSE": 6.32760016572851,
+         "MAE": 5.365753758289896,
+         "median": -4.931884765625,
+         "NMAD": 4.559329815673828,
+         "LE90": 9.914715576171877,
+         "LE95": 11.153082275390624,
+         "pearson_r": 0.1473035370774091,
+         "spearman_rho": 0.14063513754290977
+        },
+        "ref_q4_426.9_482.6m": {
+         "n": 60516,
+         "ME": -13.618162745296052,
+         "RMSE": 14.683559124438396,
+         "MAE": 13.618167158836997,
+         "median": -12.7515869140625,
+         "NMAD": 3.987179598999023,
+         "LE90": 19.199996948242188,
+         "LE95": 21.493202209472656,
+         "pearson_r": 0.04288802863406879,
+         "spearman_rho": 0.06248373817222502
+        }
+       },
+       "oracle_affine": {
+        "scale": 1.0017725702190567,
+        "shift": 1.03442321656829,
+        "metrics_after_alignment": {
+         "n": 242064,
+         "ME": -2.275248671396402e-11,
+         "RMSE": 9.020627364767517,
+         "MAE": 7.7096529156875535,
+         "median": 2.3584830312513816,
+         "NMAD": 9.94219852444063,
+         "LE90": 12.971664448248328,
+         "LE95": 15.100708502354655,
+         "pearson_r": 0.37727939416953565,
+         "spearman_rho": 0.3910420777471521
+        },
+        "label": "oracle_affine_alignment"
+       },
+       "alignment": {
+        "dx": -0.0015021489939014718,
+        "dy": -0.0034412453226896167,
+        "method": "grid_search_subpixel",
+        "iterations": 1,
+        "converged": true,
+        "rmse_before": 9.193146898567322,
+        "rmse_after": 9.193103366294126,
+        "applied": false
+       },
+       "mask": {
+        "valid_pixels": 242064,
+        "before_exclusion": 242064,
+        "anchor_excluded_pixels": 0,
+        "border_px": 4,
+        "leakage_check": "passed"
+       },
+       "reference": {
+        "path": "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\reference\\swisssurface3d_urban_2682-1247_dsm_0.5m.tif",
+        "ref_type": "dsm",
+        "vertical_crs": "EPSG:5728",
+        "source_note": "bundled: swisssurface3d_urban_2682-1247_dsm_0.5m.tif",
+        "acquisition_date": null,
+        "native_posting_m": [
+         0.5,
+         0.5
+        ],
+        "datum_handling": "reference converted EPSG:5728 -> EGM2008 (correction -0.50..-0.50 m)"
+       },
+       "verdict": {
+        "band": "C (5-10 m)",
+        "text": "RMSE 9.19 m, bias -1.77 m, NMAD 9.94 m over 242064 pixels vs. the uploaded reference.",
+        "note": "Bands are descriptive only; the comparison grid is the job grid (reference area-averaged if finer)."
+       },
+       "caveats": [
+        "Pearson r is scale/offset-blind: read it together with ME/RMSE/NMAD (Phase 8 L0-08)."
+       ]
+      },
+      "dtm": {
+       "compared_layer": "terrain",
+       "metrics_overall": {
+        "n": 242064,
+        "ME": 6.465061356807166,
+        "RMSE": 7.2015830617654695,
+        "MAE": 6.543600842865896,
+        "median": 6.6594085693359375,
+        "NMAD": 3.0042241241455074,
+        "LE90": 10.244284057617188,
+        "LE95": 11.218017578125,
+        "pearson_r": 0.5220020882134133,
+        "spearman_rho": 0.5102741739193384
+       },
+       "metrics_by_slope": {
+        "flat_lt5": {
+         "n": 202569,
+         "ME": 6.600127739496229,
+         "RMSE": 7.253080172940299,
+         "MAE": 6.631379254460343,
+         "median": 6.76776123046875,
+         "NMAD": 2.884889483642578,
+         "LE90": 10.22193603515625,
+         "LE95": 11.142480468749998,
+         "pearson_r": 0.5497953500080953,
+         "spearman_rho": 0.5063451450571295
+        },
+        "moderate_5_15": {
+         "n": 24818,
+         "ME": 6.519331752000265,
+         "RMSE": 7.402402298255286,
+         "MAE": 6.661359749021706,
+         "median": 6.6776580810546875,
+         "NMAD": 3.2401334381103513,
+         "LE90": 10.745269775390625,
+         "LE95": 12.231393432617187,
+         "pearson_r": 0.5076738454460377,
+         "spearman_rho": 0.4935742087848495
+        },
+        "steep_15_30": {
+         "n": 9440,
+         "ME": 4.590233308177884,
+         "RMSE": 6.110138554397441,
+         "MAE": 5.184065033217608,
+         "median": 4.66552734375,
+         "NMAD": 3.7505237365722652,
+         "LE90": 9.696310424804688,
+         "LE95": 11.023551940917967,
+         "pearson_r": 0.5375995136506219,
+         "spearman_rho": 0.5900213557062088
+        },
+        "very_steep_gt30": {
+         "n": 5237,
+         "ME": 4.3629479400069515,
+         "RMSE": 5.946535476652467,
+         "MAE": 5.04088792551422,
+         "median": 4.31903076171875,
+         "NMAD": 3.5516703735351562,
+         "LE90": 9.558032226562501,
+         "LE95": 10.890118408203124,
+         "pearson_r": 0.5132720751839717,
+         "spearman_rho": 0.48209363644341297
+        }
+       },
+       "metrics_by_object": {},
+       "height_bins": {
+        "ref_q1_403.1_408.8m": {
+         "n": 60516,
+         "ME": 5.900404868654474,
+         "RMSE": 6.840974183792968,
+         "MAE": 5.912702286721726,
+         "median": 5.721923828125,
+         "NMAD": 3.8465117706298826,
+         "LE90": 10.62432861328125,
+         "LE95": 11.796836853027344,
+         "pearson_r": 0.37683141421443445,
+         "spearman_rho": 0.2815574071385658
+        },
+        "ref_q2_408.8_409.8m": {
+         "n": 60516,
+         "ME": 7.278684838102281,
+         "RMSE": 7.911925877533015,
+         "MAE": 7.2914136071791065,
+         "median": 7.5071868896484375,
+         "NMAD": 3.0881542694091797,
+         "LE90": 10.917404174804688,
+         "LE95": 11.716850280761719,
+         "pearson_r": 0.27798771885224177,
+         "spearman_rho": 0.26492424300325274
+        },
+        "ref_q3_409.8_411.2m": {
+         "n": 60517,
+         "ME": 7.106891363235227,
+         "RMSE": 7.4835884451299215,
+         "MAE": 7.107880500488241,
+         "median": 7.279266357421875,
+         "NMAD": 1.9947322448730467,
+         "LE90": 9.65396728515625,
+         "LE95": 10.370452880859373,
+         "pearson_r": 0.014824583705520221,
+         "spearman_rho": 0.00336950200070152
+        },
+        "ref_q4_411.2_427.9m": {
+         "n": 60517,
+         "ME": 5.574283826969107,
+         "RMSE": 6.484566484350485,
+         "MAE": 5.862421669112121,
+         "median": 5.857818603515625,
+         "NMAD": 2.720286859130859,
+         "LE90": 9.505090332031251,
+         "LE95": 10.569970703125,
+         "pearson_r": 0.15690710789065382,
+         "spearman_rho": 0.16943983602681412
+        }
+       },
+       "oracle_affine": {
+        "scale": 0.3471995167873246,
+        "shift": 265.39817210906773,
+        "metrics_after_alignment": {
+         "n": 242064,
+         "ME": -8.08451758105803e-12,
+         "RMSE": 2.0811363987880123,
+         "MAE": 1.4637661458538187,
+         "median": 0.10752281198949731,
+         "NMAD": 1.6390362941046996,
+         "LE90": 3.012365988420483,
+         "LE95": 3.820212876139328,
+         "pearson_r": 0.5220020882134133,
+         "spearman_rho": 0.5102741739193384
+        },
+        "label": "oracle_affine_alignment"
+       },
+       "alignment": {
+        "dx": 0.002247513458407654,
+        "dy": -0.0032414458139025755,
+        "method": "grid_search_subpixel",
+        "iterations": 1,
+        "converged": true,
+        "rmse_before": 7.2015830617654695,
+        "rmse_after": 7.201317478078458,
+        "applied": false
+       },
+       "mask": {
+        "valid_pixels": 242064,
+        "before_exclusion": 242064,
+        "anchor_excluded_pixels": 0,
+        "border_px": 4,
+        "leakage_check": "passed"
+       },
+       "reference": {
+        "path": "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\reference\\swissalti3d_urban_2682-1247_dtm_0.5m.tif",
+        "ref_type": "dtm",
+        "vertical_crs": "EPSG:5728",
+        "source_note": "bundled: swissalti3d_urban_2682-1247_dtm_0.5m.tif",
+        "acquisition_date": null,
+        "native_posting_m": [
+         0.5,
+         0.5
+        ],
+        "datum_handling": "reference converted EPSG:5728 -> EGM2008 (correction -0.50..-0.50 m)"
+       },
+       "verdict": {
+        "band": "C (5-10 m)",
+        "text": "RMSE 7.20 m, bias +6.47 m, NMAD 3.00 m over 242064 pixels vs. the uploaded reference.",
+        "note": "Bands are descriptive only; the comparison grid is the job grid (reference area-averaged if finer)."
+       },
+       "caveats": [
+        "Pearson r is scale/offset-blind: read it together with ME/RMSE/NMAD (Phase 8 L0-08)."
+       ]
+      }
+     }
+    },
+    "simulated_anchors": {
+     "status": "READY",
+     "stages_ms": {
+      "preprocessing_ms": 53.9,
+      "inference_ms": 655.7,
+      "model_forward_ms": 639.8,
+      "calibration_ms": 1143.7,
+      "total_ms": 1853.7
+     },
+     "tier": "A",
+     "quality": "WARNING",
+     "quality_triggers": [
+      "mean ground support 0.50 < 0.5",
+      "anchors: n=8 offset -6.57 m, hold-out NMAD 5.29 m",
+      "anchor hold-out NMAD > 3 m",
+      "no object scale available: DSM = terrain layer only; object heights remain relative",
+      "anchor scale rejected: object layer does not track anchor heights (r=-0.07, scale=177.01, inliers 7/7, implied p99 height 39.5 m)"
+     ],
+     "flags": [
+      "NO_OBJECT_SCALE"
+     ],
+     "object_scale_source": null,
+     "object_scale_m_per_unit": null,
+     "vertical_reference": "EGM2008",
+     "calib_report": {
+      "terrain": {
+       "sigma_cells": 1.5,
+       "w_min": 0.1,
+       "dem_posting_m": 30.0,
+       "max_raise_m": 0.5,
+       "block_factor": 15,
+       "cells": [
+        34,
+        34
+       ],
+       "support_mean": 0.49541714725105723,
+       "support_min": 0.0,
+       "raw_fallback_fraction": 0.0,
+       "dem_void_fraction": 0.0,
+       "correction_mean_m": -0.6659271101148035,
+       "correction_min_m": -9.037245877360817,
+       "method": "order1_normalized_convolution_correction (plane fit, DEM upper-bound clamp)"
+      },
+      "scale_fit": {
+       "scale": null,
+       "method": "dem_residual_fit",
+       "n_cells": 976,
+       "r_value": 0.16425582114388015,
+       "residual_nmad_m": 0.9813686203838443,
+       "accepted": false,
+       "reason": "implied p99 object height 1.2 m outside [2.0, 60.0] m \u2014 fit rejected",
+       "params": {
+        "intercept_m": 0.3546283739098186,
+        "ci95": [
+         3.6746026188637413,
+         7.547725324900044
+        ],
+        "min_object_fraction": 0.3,
+        "implied_p99_object_height_m": 1.2351705269549182,
+        "gates": {
+         "min_r": 0.1,
+         "implied_p99_range_m": [
+          2.0,
+          60.0
+         ]
+        },
+        "note": "DEM sees objects only at block scale and partially; unvalidated scene-level calibration (Phase 3 E19/E21)"
+       }
+      },
+      "anchors": {
+       "n_total": 24,
+       "n_in_grid": 24,
+       "n_ground": 12,
+       "n_object": 12,
+       "accepted": true,
+       "offset_m": -6.567014921627447,
+       "scale_m_per_unit": null,
+       "datum": "anchor heights converted EPSG:5728 -> EGM2008 (unavailable until proj_trans is called | Inverse of Swiss Oblique Mercator 1995 + Inverse of ETRS89 to LN02 height using CH1903+ to ETRS89 (1) + Inverse of WGS 84 to WGS 84 (G873) + WGS 84 (G873) to EGM2008 height (from WGS 84 to EGM2008 height (1)) using CH1903+ to WGS 84 (1) + Swiss Oblique Mercator 1995 | pipeline)",
+       "input_vcrs": "EPSG:5728",
+       "fit_nmad_m": 2.9355055133027785,
+       "accept_tolerance_m": 5.0,
+       "blunders": [],
+       "n_used": 8,
+       "anchor_sigma_m": 0.3,
+       "reason": "accepted",
+       "holdout": {
+        "n": 4,
+        "ME": -0.26208890714215727,
+        "NMAD": 5.292206243803358,
+        "RMSE": 4.456733884472802
+       },
+       "holdout_nmad": 5.292206243803358,
+       "scale_fit": {
+        "scale": 177.01158401895026,
+        "n_inliers": 7,
+        "n_total": 7,
+        "residual_threshold": 1.5,
+        "method": "ransac_through_origin",
+        "inlier_fraction": 1.0,
+        "implied_p99_object_height_m": 39.48524527647066,
+        "r_object_layer_vs_anchor_height": -0.07248089976095033,
+        "accepted": false,
+        "reason": "rejected: object layer does not track anchor heights (r=-0.07, scale=177.01, inliers 7/7, implied p99 height 39.5 m)"
+       }
+      },
+      "consistency": {
+       "ME": -0.4069856107234955,
+       "NMAD": 0.8648650646209717,
+       "n": 125000
+      },
+      "dem": {
+       "source": {
+        "name": "bundled",
+        "product": "Copernicus GLO-30",
+        "files": [
+         "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\dem\\Copernicus_DSM_COG_10_N47_00_E008_00_DEM.tif"
+        ],
+        "vertical_crs": "EGM2008",
+        "posting_m": 30.0,
+        "accuracy_note": "Copernicus GLO-30: DSM-like; forest MAE ~5 m, built-up ~1.6 m before de-biasing (Phase 3 E19); DEMIX best 1-arcsec global DEM"
+       },
+       "src_vertical_crs": "EGM2008",
+       "dst_vertical_crs": "EGM2008",
+       "datum_transformed": false,
+       "void_fraction": 0.0
+      }
+     },
+     "validation": {
+      "dsm": {
+       "compared_layer": "dsm",
+       "metrics_overall": {
+        "n": 237906,
+        "ME": -8.33358395278324,
+        "RMSE": 12.263327329649911,
+        "MAE": 9.173395978899665,
+        "median": -5.9659423828125,
+        "NMAD": 9.901155532836913,
+        "LE90": 20.541900634765625,
+        "LE95": 23.163070678710938,
+        "pearson_r": 0.3790338448000356,
+        "spearman_rho": 0.3923575485866922
+       },
+       "metrics_by_slope": {
+        "flat_lt5": {
+         "n": 60707,
+         "ME": -3.1564941969277123,
+         "RMSE": 7.474491423240124,
+         "MAE": 4.565730359064274,
+         "median": -1.622955322265625,
+         "NMAD": 4.0140779663085935,
+         "LE90": 11.782647705078134,
+         "LE95": 18.931936645507793,
+         "pearson_r": 0.44684491742339694,
+         "spearman_rho": 0.6199958012127079
+        },
+        "moderate_5_15": {
+         "n": 20539,
+         "ME": -9.637544292165972,
+         "RMSE": 13.965591633111691,
+         "MAE": 10.562045372927152,
+         "median": -7.314788818359375,
+         "NMAD": 12.2792291015625,
+         "LE90": 22.5054931640625,
+         "LE95": 25.254510498046876,
+         "pearson_r": 0.40816033837762844,
+         "spearman_rho": 0.4203769108978802
+        },
+        "steep_15_30": {
+         "n": 30150,
+         "ME": -12.024480579686204,
+         "RMSE": 15.364066892235616,
+         "MAE": 12.645539117563226,
+         "median": -14.311782836914062,
+         "NMAD": 10.790520977783203,
+         "LE90": 23.125524902343752,
+         "LE95": 25.68651428222656,
+         "pearson_r": 0.34631175554832344,
+         "spearman_rho": 0.34000686693978477
+        },
+        "very_steep_gt30": {
+         "n": 126510,
+         "ME": -9.726541134800593,
+         "RMSE": 12.964623940916228,
+         "MAE": 10.331493925692092,
+         "median": -9.713958740234375,
+         "NMAD": 10.140639230346679,
+         "LE90": 20.364733886718753,
+         "LE95": 22.841131591796874,
+         "pearson_r": 0.2704612034894976,
+         "spearman_rho": 0.2597966576131328
+        }
+       },
+       "metrics_by_object": {},
+       "height_bins": {
+        "ref_q1_403.1_410.0m": {
+         "n": 59477,
+         "ME": -0.820376375671281,
+         "RMSE": 3.5284035096117985,
+         "MAE": 2.9281593706423545,
+         "median": -0.87493896484375,
+         "NMAD": 3.9528157470703125,
+         "LE90": 5.7304016113281255,
+         "LE95": 6.409466552734375,
+         "pearson_r": 0.5164885912776408,
+         "spearman_rho": 0.5366335512257834
+        },
+        "ref_q2_410.0_414.8m": {
+         "n": 59476,
+         "ME": -1.3254151241357137,
+         "RMSE": 3.385914125156739,
+         "MAE": 2.5466746679751537,
+         "median": -0.894317626953125,
+         "NMAD": 2.8767453186035157,
+         "LE90": 5.6579742431640625,
+         "LE95": 7.183753967285156,
+         "pearson_r": 0.03785771685787668,
+         "spearman_rho": 0.0690629037444523
+        },
+        "ref_q3_414.8_426.9m": {
+         "n": 59477,
+         "ME": -11.03350206560447,
+         "RMSE": 11.898458250679015,
+         "MAE": 11.063699924675452,
+         "median": -11.48236083984375,
+         "NMAD": 4.548697155761719,
+         "LE90": 16.40460205078125,
+         "LE95": 17.658795166015622,
+         "pearson_r": 0.14800007330096487,
+         "spearman_rho": 0.14138635235175712
+        },
+        "ref_q4_426.9_482.6m": {
+         "n": 59478,
+         "ME": -20.15497674617808,
+         "RMSE": 20.88218704962253,
+         "MAE": 20.15497674617808,
+         "median": -19.28955078125,
+         "NMAD": 3.993332968139648,
+         "LE90": 25.7221923828125,
+         "LE95": 28.05081787109375,
+         "pearson_r": 0.04740821925269194,
+         "spearman_rho": 0.06400025616404681
+        }
+       },
+       "oracle_affine": {
+        "scale": 1.0043304971371585,
+        "shift": 6.558554916292475,
+        "metrics_after_alignment": {
+         "n": 237906,
+         "ME": -2.1702634107797556e-11,
+         "RMSE": 8.996684013100586,
+         "MAE": 7.689960249719112,
+         "median": 2.354240979729667,
+         "NMAD": 9.91280964046295,
+         "LE90": 12.953398460203488,
+         "LE95": 15.07839378275878,
+         "pearson_r": 0.3790338448000356,
+         "spearman_rho": 0.3923575485866922
+        },
+        "label": "oracle_affine_alignment"
+       },
+       "alignment": {
+        "dx": -9.827250051926378e-05,
+        "dy": -0.0019730363668375673,
+        "method": "grid_search_subpixel",
+        "iterations": 1,
+        "converged": true,
+        "rmse_before": 12.263327329649911,
+        "rmse_after": 12.26333034119968,
+        "applied": false
+       },
+       "mask": {
+        "valid_pixels": 237906,
+        "before_exclusion": 242064,
+        "anchor_excluded_pixels": 4158,
+        "border_px": 4,
+        "leakage_check": "passed"
+       },
+       "reference": {
+        "path": "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\reference\\swisssurface3d_urban_2682-1247_dsm_0.5m.tif",
+        "ref_type": "dsm",
+        "vertical_crs": "EPSG:5728",
+        "source_note": "bundled: swisssurface3d_urban_2682-1247_dsm_0.5m.tif",
+        "acquisition_date": null,
+        "native_posting_m": [
+         0.5,
+         0.5
+        ],
+        "datum_handling": "reference converted EPSG:5728 -> EGM2008 (correction -0.50..-0.50 m)"
+       },
+       "verdict": {
+        "band": "D (>10 m)",
+        "text": "RMSE 12.26 m, bias -8.33 m, NMAD 9.90 m over 237906 pixels vs. the uploaded reference.",
+        "note": "Bands are descriptive only; the comparison grid is the job grid (reference area-averaged if finer)."
+       },
+       "caveats": [
+        "Pearson r is scale/offset-blind: read it together with ME/RMSE/NMAD (Phase 8 L0-08)."
+       ]
+      },
+      "dtm": {
+       "compared_layer": "terrain",
+       "metrics_overall": {
+        "n": 237906,
+        "ME": -0.11069412451438278,
+        "RMSE": 3.171488585435043,
+        "MAE": 2.4687958467905915,
+        "median": 0.0814666748046875,
+        "NMAD": 3.000717608642578,
+        "LE90": 5.0572662353515625,
+        "LE95": 6.0366058349609375,
+        "pearson_r": 0.5236444673433243,
+        "spearman_rho": 0.5134618170826711
+       },
+       "metrics_by_slope": {
+        "flat_lt5": {
+         "n": 198915,
+         "ME": 0.022914178037680588,
+         "RMSE": 3.0009526507691917,
+         "MAE": 2.3559860818242186,
+         "median": 0.18505859375,
+         "NMAD": 2.878781359863281,
+         "LE90": 4.824053955078125,
+         "LE95": 5.7057189941406214,
+         "pearson_r": 0.5526627970680673,
+         "spearman_rho": 0.5105315729483111
+        },
+        "moderate_5_15": {
+         "n": 24532,
+         "ME": -0.041825373332535054,
+         "RMSE": 3.511329167207281,
+         "MAE": 2.7307841016246,
+         "median": 0.1106414794921875,
+         "NMAD": 3.244952069091797,
+         "LE90": 5.743380737304688,
+         "LE95": 7.103547668457032,
+         "pearson_r": 0.5077597987964566,
+         "spearman_rho": 0.49557846094251806
+        },
+        "steep_15_30": {
+         "n": 9338,
+         "ME": -1.9746026655774374,
+         "RMSE": 4.501565861075295,
+         "MAE": 3.5416639617638865,
+         "median": -1.8910980224609375,
+         "NMAD": 3.7732369079589843,
+         "LE90": 7.472348022460942,
+         "LE95": 9.284783935546875,
+         "pearson_r": 0.5355053870994843,
+         "spearman_rho": 0.5880386821521271
+        },
+        "very_steep_gt30": {
+         "n": 5121,
+         "ME": -2.2315700764163493,
+         "RMSE": 4.632047515473803,
+         "MAE": 3.6392735021464926,
+         "median": -2.275115966796875,
+         "NMAD": 3.5662393798828123,
+         "LE90": 7.166717529296875,
+         "LE95": 9.833282470703125,
+         "pearson_r": 0.5143895495786011,
+         "spearman_rho": 0.48535392754034296
+        }
+       },
+       "metrics_by_object": {},
+       "height_bins": {
+        "ref_q1_403.1_408.8m": {
+         "n": 59480,
+         "ME": -0.7149682466344057,
+         "RMSE": 3.496791813887427,
+         "MAE": 2.9074114796292805,
+         "median": -0.89404296875,
+         "NMAD": 3.8051122650146483,
+         "LE90": 5.643405151367188,
+         "LE95": 6.255006408691406,
+         "pearson_r": 0.3801015299773142,
+         "spearman_rho": 0.29081241947356473
+        },
+        "ref_q2_408.8_409.8m": {
+         "n": 59477,
+         "ME": 0.7411126159660786,
+         "RMSE": 3.1856539379449127,
+         "MAE": 2.5790821391444183,
+         "median": 0.962738037109375,
+         "NMAD": 3.0708931640625,
+         "LE90": 4.970306396484375,
+         "LE95": 5.950543212890621,
+         "pearson_r": 0.27301070931599536,
+         "spearman_rho": 0.2608298620542944
+        },
+        "ref_q3_409.8_411.3m": {
+         "n": 59476,
+         "ME": 0.5391399797366072,
+         "RMSE": 2.4093963515128887,
+         "MAE": 1.8484579808887265,
+         "median": 0.7021942138671875,
+         "NMAD": 1.9986459686279296,
+         "LE90": 3.6824951171875,
+         "LE95": 4.51373291015625,
+         "pearson_r": 0.016113760056796635,
+         "spearman_rho": -0.0003664539605883304
+        },
+        "ref_q4_411.3_427.9m": {
+         "n": 59477,
+         "ME": -1.0079225171082742,
+         "RMSE": 3.471584124581954,
+         "MAE": 2.5402072013894617,
+         "median": -0.722259521484375,
+         "NMAD": 2.7004693908691406,
+         "LE90": 5.306854248046875,
+         "LE95": 7.333593749999999,
+         "pearson_r": 0.15627614196344305,
+         "spearman_rho": 0.16947522275024257
+        }
+       },
+       "oracle_affine": {
+        "scale": 0.3490546407518984,
+        "shift": 266.9269226599542,
+        "metrics_after_alignment": {
+         "n": 237906,
+         "ME": -7.512183252090636e-12,
+         "RMSE": 2.0836592743296314,
+         "MAE": 1.464923960961063,
+         "median": 0.11740289076695376,
+         "NMAD": 1.641077705220868,
+         "LE90": 3.0023221776214655,
+         "LE95": 3.822206021573635,
+         "pearson_r": 0.5236444673433243,
+         "spearman_rho": 0.5134618170826711
+        },
+        "label": "oracle_affine_alignment"
+       },
+       "alignment": {
+        "dx": 0.0011234531217808304,
+        "dy": -0.0014322665375950802,
+        "method": "grid_search_subpixel",
+        "iterations": 1,
+        "converged": true,
+        "rmse_before": 3.171488585435043,
+        "rmse_after": 3.171124897003905,
+        "applied": false
+       },
+       "mask": {
+        "valid_pixels": 237906,
+        "before_exclusion": 242064,
+        "anchor_excluded_pixels": 4158,
+        "border_px": 4,
+        "leakage_check": "passed"
+       },
+       "reference": {
+        "path": "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\reference\\swissalti3d_urban_2682-1247_dtm_0.5m.tif",
+        "ref_type": "dtm",
+        "vertical_crs": "EPSG:5728",
+        "source_note": "bundled: swissalti3d_urban_2682-1247_dtm_0.5m.tif",
+        "acquisition_date": null,
+        "native_posting_m": [
+         0.5,
+         0.5
+        ],
+        "datum_handling": "reference converted EPSG:5728 -> EGM2008 (correction -0.50..-0.50 m)"
+       },
+       "verdict": {
+        "band": "B (2-5 m)",
+        "text": "RMSE 3.17 m, bias -0.11 m, NMAD 3.00 m over 237906 pixels vs. the uploaded reference.",
+        "note": "Bands are descriptive only; the comparison grid is the job grid (reference area-averaged if finer)."
+       },
+       "caveats": [
+        "Pearson r is scale/offset-blind: read it together with ME/RMSE/NMAD (Phase 8 L0-08)."
+       ]
+      }
+     }
+    }
+   },
+   "raw_copernicus_vs_reference": {
+    "dsm": {
+     "n": 242064,
+     "ME": -1.091127161261378,
+     "RMSE": 8.999083324985191,
+     "MAE": 7.434205645696683,
+     "median": 0.8150177001953125,
+     "NMAD": 10.073834454345702,
+     "LE90": 13.47538452148438,
+     "LE95": 15.91473388671875,
+     "pearson_r": 0.40005145258873515,
+     "spearman_rho": 0.4135967644757383
+    },
+    "dtm": {
+     "n": 242064,
+     "ME": 7.146556425349901,
+     "RMSE": 7.972049562164302,
+     "MAE": 7.170355719468576,
+     "median": 7.30908203125,
+     "NMAD": 3.5069679565429683,
+     "LE90": 11.375518798828125,
+     "LE95": 12.568803405761717,
+     "pearson_r": 0.5455074566980694,
+     "spearman_rho": 0.5004732711556643
+    }
+   }
+  },
+  "rural_geotiff": {
+   "item": {
+    "id": "rural_geotiff",
+    "label": "Emmental (rural, hilly, forest) \u00b7 GeoTIFF 2 m \u00b7 Mode B",
+    "file": "swissimage_2021_2621-1202_2m.tif",
+    "mode": "B",
+    "reference_dsm": "swisssurface3d_rural_2621-1202_dsm_0.5m.tif",
+    "reference_dtm": "swissalti3d_rural_2621-1202_dtm_0.5m.tif",
+    "reference_vertical_crs": "EPSG:5728",
+    "source": "swisstopo SWISSIMAGE tile 2621-1202, 2021; references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"
+   },
+   "runs": {
+    "no_anchors": {
+     "status": "READY",
+     "stages_ms": {
+      "preprocessing_ms": 52.5,
+      "inference_ms": 676.7,
+      "model_forward_ms": 648.2,
+      "calibration_ms": 680.9,
+      "total_ms": 1410.5
+     },
+     "tier": "T",
+     "quality": "LIMITED",
+     "quality_triggers": [
+      "object scale from DEM residual fit (n=809, NMAD=1.81 m) \u2014 unvalidated"
+     ],
+     "flags": [
+      "OBJECT_SCALE_DEM_FIT"
+     ],
+     "object_scale_source": "dem_residual_fit (unvalidated)",
+     "object_scale_m_per_unit": 19.9373945054273,
+     "vertical_reference": "EGM2008",
+     "calib_report": {
+      "terrain": {
+       "sigma_cells": 1.5,
+       "w_min": 0.1,
+       "dem_posting_m": 30.0,
+       "max_raise_m": 0.5,
+       "block_factor": 15,
+       "cells": [
+        34,
+        34
+       ],
+       "support_mean": 0.5164590542099192,
+       "support_min": 0.0,
+       "raw_fallback_fraction": 0.0,
+       "dem_void_fraction": 0.0,
+       "correction_mean_m": -1.9188053223614372,
+       "correction_min_m": -24.94145537380291,
+       "method": "order1_normalized_convolution_correction (plane fit, DEM upper-bound clamp)"
+      },
+      "scale_fit": {
+       "scale": 19.9373945054273,
+       "method": "dem_residual_fit",
+       "n_cells": 809,
+       "r_value": 0.3995074939453727,
+       "residual_nmad_m": 1.8053635690227723,
+       "accepted": true,
+       "reason": "accepted",
+       "params": {
+        "intercept_m": 0.7212228957760922,
+        "ci95": [
+         10.437112984790327,
+         29.82340601374194
+        ],
+        "min_object_fraction": 0.3,
+        "implied_p99_object_height_m": 4.300011748041472,
+        "gates": {
+         "min_r": 0.1,
+         "implied_p99_range_m": [
+          2.0,
+          60.0
+         ]
+        },
+        "note": "DEM sees objects only at block scale and partially; unvalidated scene-level calibration (Phase 3 E19/E21)"
+       }
+      },
+      "anchors": null,
+      "consistency": {
+       "ME": -1.438126802444458,
+       "NMAD": 1.7933450937271118,
+       "n": 131673
+      },
+      "dem": {
+       "source": {
+        "name": "bundled",
+        "product": "Copernicus GLO-30",
+        "files": [
+         "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\dem\\Copernicus_DSM_COG_10_N46_00_E007_00_DEM.tif"
+        ],
+        "vertical_crs": "EGM2008",
+        "posting_m": 30.0,
+        "accuracy_note": "Copernicus GLO-30: DSM-like; forest MAE ~5 m, built-up ~1.6 m before de-biasing (Phase 3 E19); DEMIX best 1-arcsec global DEM"
+       },
+       "src_vertical_crs": "EGM2008",
+       "dst_vertical_crs": "EGM2008",
+       "datum_transformed": false,
+       "void_fraction": 0.0
+      }
+     },
+     "validation": {
+      "dsm": {
+       "compared_layer": "dsm",
+       "metrics_overall": {
+        "n": 242064,
+        "ME": -2.1020012436402244,
+        "RMSE": 8.83231307562568,
+        "MAE": 5.652730108560278,
+        "median": -1.418701171875,
+        "NMAD": 4.050002783203125,
+        "LE90": 15.407861328125001,
+        "LE95": 20.950238037109372,
+        "pearson_r": 0.9671456270010492,
+        "spearman_rho": 0.9634671517924994
+       },
+       "metrics_by_slope": {
+        "flat_lt5": {
+         "n": 18755,
+         "ME": -2.9151419126774525,
+         "RMSE": 4.119712023725556,
+         "MAE": 3.2114992772760598,
+         "median": -2.4483642578125,
+         "NMAD": 1.5708284545898437,
+         "LE90": 6.4008422851562505,
+         "LE95": 7.5838684082031245,
+         "pearson_r": 0.9779360311140174,
+         "spearman_rho": 0.9705715133104722
+        },
+        "moderate_5_15": {
+         "n": 52631,
+         "ME": -1.4483338475048422,
+         "RMSE": 4.459962299716244,
+         "MAE": 2.657614509333333,
+         "median": -1.15093994140625,
+         "NMAD": 2.3080563720703124,
+         "LE90": 5.78912353515625,
+         "LE95": 7.965576171875,
+         "pearson_r": 0.9867323198207563,
+         "spearman_rho": 0.9920019065446982
+        },
+        "steep_15_30": {
+         "n": 71215,
+         "ME": -0.9367236694944446,
+         "RMSE": 5.700152115223069,
+         "MAE": 3.2439133409284384,
+         "median": -0.37078857421875,
+         "NMAD": 2.6247739013671874,
+         "LE90": 7.491369628906247,
+         "LE95": 11.577020263671876,
+         "pearson_r": 0.9821642684709565,
+         "spearman_rho": 0.9836595768150411
+        },
+        "very_steep_gt30": {
+         "n": 99463,
+         "ME": -3.128895243630169,
+         "RMSE": 12.363791674144395,
+         "MAE": 9.422625441000989,
+         "median": -3.08642578125,
+         "NMAD": 9.745760339355469,
+         "LE90": 21.197875976562504,
+         "LE95": 25.711578369140618,
+         "pearson_r": 0.955124585244491,
+         "spearman_rho": 0.9211440518651367
+        }
+       },
+       "metrics_by_object": {
+        "ground_lt1m": {
+         "n": 220175,
+         "ME": -1.5445780907920368,
+         "RMSE": 7.8841663166142935,
+         "MAE": 5.003740863923495,
+         "median": -1.2755126953125,
+         "NMAD": 3.6227960815429685,
+         "LE90": 13.413671875,
+         "LE95": 18.81034545898434,
+         "pearson_r": 0.971115728787658,
+         "spearman_rho": 0.968519062098452
+        },
+        "objects_ge1m": {
+         "n": 21889,
+         "ME": -7.708956457599279,
+         "RMSE": 15.40898996004489,
+         "MAE": 12.18072165398966,
+         "median": -7.32415771484375,
+         "NMAD": 12.7483330078125,
+         "LE90": 26.7722412109375,
+         "LE95": 31.204602050781236,
+         "pearson_r": 0.954007633555016,
+         "spearman_rho": 0.9077179657498963
+        }
+       },
+       "height_bins": {
+        "ref_q1_670.3_776.1m": {
+         "n": 60516,
+         "ME": 3.3340481081046103,
+         "RMSE": 11.04040779757745,
+         "MAE": 7.676641003943237,
+         "median": 1.346221923828125,
+         "NMAD": 6.858337115478515,
+         "LE90": 19.805511474609375,
+         "LE95": 24.699691772460938,
+         "pearson_r": 0.8236005195954029,
+         "spearman_rho": 0.790787379073458
+        },
+        "ref_q2_776.1_793.9m": {
+         "n": 60516,
+         "ME": -2.3763004564956867,
+         "RMSE": 6.485769114573779,
+         "MAE": 4.3455351290506465,
+         "median": -1.76666259765625,
+         "NMAD": 3.6446495910644527,
+         "LE90": 11.03167724609375,
+         "LE95": 15.11724853515625,
+         "pearson_r": 0.5626819728252968,
+         "spearman_rho": 0.6242112728311661
+        },
+        "ref_q3_793.9_813.2m": {
+         "n": 60516,
+         "ME": -4.41310263351389,
+         "RMSE": 7.519178625299743,
+         "MAE": 5.080012274888434,
+         "median": -2.677886962890625,
+         "NMAD": 4.183974298095703,
+         "LE90": 13.077056884765625,
+         "LE95": 17.353988647460938,
+         "pearson_r": 0.6612057134010333,
+         "spearman_rho": 0.6906927287593954
+        },
+        "ref_q4_813.2_921.4m": {
+         "n": 60516,
+         "ME": -4.952649992655933,
+         "RMSE": 9.567923730880212,
+         "MAE": 5.508732026358796,
+         "median": -1.7379150390625,
+         "NMAD": 3.2847679870605466,
+         "LE90": 17.3223876953125,
+         "LE95": 25.176498413085938,
+         "pearson_r": 0.9336484741305959,
+         "spearman_rho": 0.9625837718347233
+        }
+       },
+       "oracle_affine": {
+        "scale": 1.0634033643800151,
+        "shift": -48.15628929771286,
+        "metrics_after_alignment": {
+         "n": 242064,
+         "ME": -5.4287858379631594e-11,
+         "RMSE": 8.36602437752815,
+         "MAE": 5.545562517257452,
+         "median": 0.6734678864310695,
+         "NMAD": 4.636639540325143,
+         "LE90": 14.588506016588545,
+         "LE95": 19.737654392784414,
+         "pearson_r": 0.9671456270010492,
+         "spearman_rho": 0.9634671517924994
+        },
+        "label": "oracle_affine_alignment"
+       },
+       "alignment": {
+        "dx": 0.011796631898956743,
+        "dy": -0.03300744975916028,
+        "method": "grid_search_subpixel",
+        "iterations": 1,
+        "converged": true,
+        "rmse_before": 8.83231307562568,
+        "rmse_after": 8.902502899916268,
+        "applied": false
+       },
+       "mask": {
+        "valid_pixels": 242064,
+        "before_exclusion": 242064,
+        "anchor_excluded_pixels": 0,
+        "border_px": 4,
+        "leakage_check": "passed"
+       },
+       "reference": {
+        "path": "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\reference\\swisssurface3d_rural_2621-1202_dsm_0.5m.tif",
+        "ref_type": "dsm",
+        "vertical_crs": "EPSG:5728",
+        "source_note": "bundled: swisssurface3d_rural_2621-1202_dsm_0.5m.tif",
+        "acquisition_date": null,
+        "native_posting_m": [
+         0.5,
+         0.5
+        ],
+        "datum_handling": "reference converted EPSG:5728 -> EGM2008 (correction -0.42..-0.40 m)"
+       },
+       "verdict": {
+        "band": "C (5-10 m)",
+        "text": "RMSE 8.83 m, bias -2.10 m, NMAD 4.05 m over 242064 pixels vs. the uploaded reference.",
+        "note": "Bands are descriptive only; the comparison grid is the job grid (reference area-averaged if finer)."
+       },
+       "caveats": [
+        "Pearson r is scale/offset-blind: read it together with ME/RMSE/NMAD (Phase 8 L0-08)."
+       ]
+      },
+      "dtm": {
+       "compared_layer": "terrain",
+       "metrics_overall": {
+        "n": 242064,
+        "ME": 4.10917861381741,
+        "RMSE": 10.769658192388519,
+        "MAE": 6.667052036315406,
+        "median": 0.43353271484375,
+        "NMAD": 4.3778054260253905,
+        "LE90": 21.684881591796877,
+        "LE95": 26.927899169921815,
+        "pearson_r": 0.9697164122076215,
+        "spearman_rho": 0.9677610027067834
+       },
+       "metrics_by_slope": {
+        "flat_lt5": {
+         "n": 23482,
+         "ME": -2.099533911509181,
+         "RMSE": 4.001188897101406,
+         "MAE": 3.048480345213721,
+         "median": -2.114715576171875,
+         "NMAD": 1.5266689819335937,
+         "LE90": 6.393243408203125,
+         "LE95": 7.660324096679688,
+         "pearson_r": 0.9681912568500668,
+         "spearman_rho": 0.9474421693675199
+        },
+        "moderate_5_15": {
+         "n": 66844,
+         "ME": 0.4936168689601091,
+         "RMSE": 7.205908039773458,
+         "MAE": 3.756415345155032,
+         "median": -0.840087890625,
+         "NMAD": 2.5194879455566404,
+         "LE90": 7.9223449707031275,
+         "LE95": 13.251229858398434,
+         "pearson_r": 0.9727084206784233,
+         "spearman_rho": 0.9882501332629196
+        },
+        "steep_15_30": {
+         "n": 114589,
+         "ME": 5.436895067558704,
+         "RMSE": 11.858487359744295,
+         "MAE": 7.625212355620208,
+         "median": 1.2327880859375,
+         "NMAD": 5.227830029296875,
+         "LE90": 23.421655273437494,
+         "LE95": 27.720495605468745,
+         "pearson_r": 0.9625142939710921,
+         "spearman_rho": 0.9449746908505631
+        },
+        "very_steep_gt30": {
+         "n": 37149,
+         "ME": 10.44393583676283,
+         "RMSE": 14.780031281928705,
+         "MAE": 11.236092026774253,
+         "median": 8.5391845703125,
+         "NMAD": 11.984319836425781,
+         "LE90": 25.888391113281266,
+         "LE95": 28.56767578125,
+         "pearson_r": 0.9710855452934363,
+         "spearman_rho": 0.9494000100326393
+        }
+       },
+       "metrics_by_object": {
+        "ground_lt1m": {
+         "n": 220175,
+         "ME": 3.8302218644215893,
+         "RMSE": 10.47680025936461,
+         "MAE": 6.295913213455028,
+         "median": 0.2755126953125,
+         "NMAD": 3.932093371582031,
+         "LE90": 21.539746093750004,
+         "LE95": 26.886718749999993,
+         "pearson_r": 0.9687503110113955,
+         "spearman_rho": 0.9679644749612984
+        },
+        "objects_ge1m": {
+         "n": 21889,
+         "ME": 6.915122343463576,
+         "RMSE": 13.36311162547068,
+         "MAE": 10.400228075571812,
+         "median": 6.200927734375,
+         "NMAD": 11.223021386718749,
+         "LE90": 22.751892089843754,
+         "LE95": 27.40018310546875,
+         "pearson_r": 0.9789003637574922,
+         "spearman_rho": 0.9568213489576736
+        }
+       },
+       "height_bins": {
+        "ref_q1_667.9_765.6m": {
+         "n": 60516,
+         "ME": 15.77899940576956,
+         "RMSE": 19.21954595811785,
+         "MAE": 15.931427402358919,
+         "median": 16.882965087890625,
+         "NMAD": 14.705602093505858,
+         "LE90": 29.52545166015625,
+         "LE95": 31.780059814453125,
+         "pearson_r": 0.8261687182610066,
+         "spearman_rho": 0.7427367931516767
+        },
+        "ref_q2_765.6_788.6m": {
+         "n": 60516,
+         "ME": 3.646920940362105,
+         "RMSE": 7.970222766984579,
+         "MAE": 5.212184722696658,
+         "median": 1.078369140625,
+         "NMAD": 4.570957873535156,
+         "LE90": 14.93768310546875,
+         "LE95": 19.501998901367188,
+         "pearson_r": 0.48986199926117907,
+         "spearman_rho": 0.5182240369723539
+        },
+        "ref_q3_788.6_811.6m": {
+         "n": 60516,
+         "ME": -1.1827311276585815,
+         "RMSE": 3.683826556019468,
+         "MAE": 2.749347811579208,
+         "median": -1.316375732421875,
+         "NMAD": 2.640293060302734,
+         "LE90": 6.40325927734375,
+         "LE95": 7.9976959228515625,
+         "pearson_r": 0.8630443533862292,
+         "spearman_rho": 0.8499950635793494
+        },
+        "ref_q4_811.6_894.4m": {
+         "n": 60516,
+         "ME": -1.8064747632034426,
+         "RMSE": 4.178058692398523,
+         "MAE": 2.775248208626838,
+         "median": -1.07403564453125,
+         "NMAD": 2.4115777587890626,
+         "LE90": 7.044891357421875,
+         "LE95": 9.180862426757812,
+         "pearson_r": 0.9777490536172664,
+         "spearman_rho": 0.9827754868274965
+        }
+       },
+       "oracle_affine": {
+        "scale": 1.1601238555112123,
+        "shift": -130.98807775453017,
+        "metrics_after_alignment": {
+         "n": 242064,
+         "ME": -5.4648794739565805e-11,
+         "RMSE": 8.729962941787582,
+         "MAE": 6.763001637586467,
+         "median": -2.1838218811462866,
+         "NMAD": 6.880533390844667,
+         "LE90": 14.339336567047063,
+         "LE95": 19.013075263561277,
+         "pearson_r": 0.9697164122076213,
+         "spearman_rho": 0.9677610027067834
+        },
+        "label": "oracle_affine_alignment"
+       },
+       "alignment": {
+        "dx": 0.013493887332740772,
+        "dy": -0.04009578772419319,
+        "method": "grid_search_subpixel",
+        "iterations": 1,
+        "converged": true,
+        "rmse_before": 10.769658192388519,
+        "rmse_after": 10.812174794255888,
+        "applied": false
+       },
+       "mask": {
+        "valid_pixels": 242064,
+        "before_exclusion": 242064,
+        "anchor_excluded_pixels": 0,
+        "border_px": 4,
+        "leakage_check": "passed"
+       },
+       "reference": {
+        "path": "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\reference\\swissalti3d_rural_2621-1202_dtm_0.5m.tif",
+        "ref_type": "dtm",
+        "vertical_crs": "EPSG:5728",
+        "source_note": "bundled: swissalti3d_rural_2621-1202_dtm_0.5m.tif",
+        "acquisition_date": null,
+        "native_posting_m": [
+         0.5,
+         0.5
+        ],
+        "datum_handling": "reference converted EPSG:5728 -> EGM2008 (correction -0.42..-0.40 m)"
+       },
+       "verdict": {
+        "band": "D (>10 m)",
+        "text": "RMSE 10.77 m, bias +4.11 m, NMAD 4.38 m over 242064 pixels vs. the uploaded reference.",
+        "note": "Bands are descriptive only; the comparison grid is the job grid (reference area-averaged if finer)."
+       },
+       "caveats": [
+        "Pearson r is scale/offset-blind: read it together with ME/RMSE/NMAD (Phase 8 L0-08)."
+       ]
+      }
+     }
+    },
+    "simulated_anchors": {
+     "status": "READY",
+     "stages_ms": {
+      "preprocessing_ms": 44.9,
+      "inference_ms": 680.7,
+      "model_forward_ms": 654.3,
+      "calibration_ms": 960.4,
+      "total_ms": 1686.4
+     },
+     "tier": "A",
+     "quality": "LIMITED",
+     "quality_triggers": [
+      "anchors: n=8 offset +0.99 m, hold-out NMAD 0.89 m",
+      "object scale from DEM residual fit (n=809, NMAD=1.81 m) \u2014 unvalidated"
+     ],
+     "flags": [
+      "OBJECT_SCALE_DEM_FIT"
+     ],
+     "object_scale_source": "dem_residual_fit (unvalidated)",
+     "object_scale_m_per_unit": 19.9373945054273,
+     "vertical_reference": "EGM2008",
+     "calib_report": {
+      "terrain": {
+       "sigma_cells": 1.5,
+       "w_min": 0.1,
+       "dem_posting_m": 30.0,
+       "max_raise_m": 0.5,
+       "block_factor": 15,
+       "cells": [
+        34,
+        34
+       ],
+       "support_mean": 0.5164590542099192,
+       "support_min": 0.0,
+       "raw_fallback_fraction": 0.0,
+       "dem_void_fraction": 0.0,
+       "correction_mean_m": -1.9188053223614372,
+       "correction_min_m": -24.94145537380291,
+       "method": "order1_normalized_convolution_correction (plane fit, DEM upper-bound clamp)"
+      },
+      "scale_fit": {
+       "scale": 19.9373945054273,
+       "method": "dem_residual_fit",
+       "n_cells": 809,
+       "r_value": 0.3995074939453727,
+       "residual_nmad_m": 1.8053635690227723,
+       "accepted": true,
+       "reason": "accepted",
+       "params": {
+        "intercept_m": 0.7212228957760922,
+        "ci95": [
+         10.437112984790327,
+         29.82340601374194
+        ],
+        "min_object_fraction": 0.3,
+        "implied_p99_object_height_m": 4.300011748041472,
+        "gates": {
+         "min_r": 0.1,
+         "implied_p99_range_m": [
+          2.0,
+          60.0
+         ]
+        },
+        "note": "DEM sees objects only at block scale and partially; unvalidated scene-level calibration (Phase 3 E19/E21)"
+       }
+      },
+      "anchors": {
+       "n_total": 24,
+       "n_in_grid": 24,
+       "n_ground": 12,
+       "n_object": 12,
+       "accepted": true,
+       "offset_m": 0.9872953497105641,
+       "scale_m_per_unit": null,
+       "datum": "anchor heights converted EPSG:5728 -> EGM2008 (unavailable until proj_trans is called | Inverse of Swiss Oblique Mercator 1995 + Inverse of ETRS89 to LN02 height using CH1903+ to ETRS89 (1) + Inverse of WGS 84 to WGS 84 (G873) + WGS 84 (G873) to EGM2008 height (from WGS 84 to EGM2008 height (1)) using CH1903+ to WGS 84 (1) + Swiss Oblique Mercator 1995 | pipeline)",
+       "input_vcrs": "EPSG:5728",
+       "fit_nmad_m": 2.7012668932156854,
+       "accept_tolerance_m": 5.0,
+       "blunders": [],
+       "n_used": 8,
+       "anchor_sigma_m": 0.3,
+       "reason": "accepted",
+       "holdout": {
+        "n": 4,
+        "ME": -0.7259500623422923,
+        "NMAD": 0.8861138178649737,
+        "RMSE": 1.007602694376185
+       },
+       "holdout_nmad": 0.8861138178649737,
+       "scale_fit": {
+        "scale": -394.5716789797273,
+        "n_inliers": 2,
+        "n_total": 7,
+        "residual_threshold": 1.5,
+        "method": "ransac_through_origin",
+        "inlier_fraction": 0.2857142857142857,
+        "implied_p99_object_height_m": -85.09952765369692,
+        "r_object_layer_vs_anchor_height": 0.7107666714338263,
+        "accepted": false,
+        "reason": "rejected: object layer does not track anchor heights (r=0.71, scale=-394.57, inliers 2/7, implied p99 height -85.1 m)"
+       }
+      },
+      "consistency": {
+       "ME": -1.438126802444458,
+       "NMAD": 1.7933450937271118,
+       "n": 131673
+      },
+      "dem": {
+       "source": {
+        "name": "bundled",
+        "product": "Copernicus GLO-30",
+        "files": [
+         "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\dem\\Copernicus_DSM_COG_10_N46_00_E007_00_DEM.tif"
+        ],
+        "vertical_crs": "EGM2008",
+        "posting_m": 30.0,
+        "accuracy_note": "Copernicus GLO-30: DSM-like; forest MAE ~5 m, built-up ~1.6 m before de-biasing (Phase 3 E19); DEMIX best 1-arcsec global DEM"
+       },
+       "src_vertical_crs": "EGM2008",
+       "dst_vertical_crs": "EGM2008",
+       "datum_transformed": false,
+       "void_fraction": 0.0
+      }
+     },
+     "validation": {
+      "dsm": {
+       "compared_layer": "dsm",
+       "metrics_overall": {
+        "n": 237840,
+        "ME": -1.1084825083979284,
+        "RMSE": 8.56631693695404,
+        "MAE": 5.407450325481826,
+        "median": -0.435455322265625,
+        "NMAD": 4.037967517089844,
+        "LE90": 14.869207763671875,
+        "LE95": 20.527246093749994,
+        "pearson_r": 0.9676462407089472,
+        "spearman_rho": 0.9638645109351165
+       },
+       "metrics_by_slope": {
+        "flat_lt5": {
+         "n": 18467,
+         "ME": -1.94931069438792,
+         "RMSE": 3.4939546192022424,
+         "MAE": 2.405286555414938,
+         "median": -1.484375,
+         "NMAD": 1.6029526611328124,
+         "LE90": 5.473669433593759,
+         "LE95": 6.635931396484375,
+         "pearson_r": 0.9780815585400972,
+         "spearman_rho": 0.9706625378456532
+        },
+        "moderate_5_15": {
+         "n": 52035,
+         "ME": -0.4632467496242763,
+         "RMSE": 4.227708405861847,
+         "MAE": 2.415106938379441,
+         "median": -0.16864013671875,
+         "NMAD": 2.30715146484375,
+         "LE90": 5.173645019531243,
+         "LE95": 7.203106689453122,
+         "pearson_r": 0.9867983800741802,
+         "spearman_rho": 0.9920254777842057
+        },
+        "steep_15_30": {
+         "n": 69969,
+         "ME": 0.050991246388467575,
+         "RMSE": 5.576039772040969,
+         "MAE": 3.264387991523478,
+         "median": 0.6163330078125,
+         "NMAD": 2.617444152832031,
+         "LE90": 7.056445312500001,
+         "LE95": 10.976013183593723,
+         "pearson_r": 0.9823837787815175,
+         "spearman_rho": 0.9835748265645514
+        },
+        "very_steep_gt30": {
+         "n": 97369,
+         "ME": -2.1270252452624248,
+         "RMSE": 12.043146306758745,
+         "MAE": 9.115976395734469,
+         "median": -2.0966796875,
+         "NMAD": 9.6875748046875,
+         "LE90": 20.803161621093743,
+         "LE95": 25.27542724609375,
+         "pearson_r": 0.9556056113608516,
+         "spearman_rho": 0.9218240317096759
+        }
+       },
+       "metrics_by_object": {
+        "ground_lt1m": {
+         "n": 216437,
+         "ME": -0.5815320889218594,
+         "RMSE": 7.72859167484746,
+         "MAE": 4.809585316290887,
+         "median": -0.2960205078125,
+         "NMAD": 3.619447924804687,
+         "LE90": 12.964184570312499,
+         "LE95": 18.495031738281213,
+         "pearson_r": 0.9714166943623785,
+         "spearman_rho": 0.9690018508733228
+        },
+        "objects_ge1m": {
+         "n": 21403,
+         "ME": -6.437248005764744,
+         "RMSE": 14.540409776142361,
+         "MAE": 11.453336836450351,
+         "median": -6.07373046875,
+         "NMAD": 12.501112353515625,
+         "LE90": 25.300244140624997,
+         "LE95": 29.544989013671866,
+         "pearson_r": 0.9541264920363441,
+         "spearman_rho": 0.9067851650570224
+        }
+       },
+       "height_bins": {
+        "ref_q1_670.3_776.2m": {
+         "n": 59460,
+         "ME": 4.26793377437136,
+         "RMSE": 11.305381325965536,
+         "MAE": 7.960449096597568,
+         "median": 2.307586669921875,
+         "NMAD": 6.79861323852539,
+         "LE90": 20.343395996093747,
+         "LE95": 25.431710815429685,
+         "pearson_r": 0.827009349020758,
+         "spearman_rho": 0.7931241288634292
+        },
+        "ref_q2_776.2_794.0m": {
+         "n": 59460,
+         "ME": -1.4096431851507316,
+         "RMSE": 6.1735979919380695,
+         "MAE": 4.040897572373366,
+         "median": -0.78302001953125,
+         "NMAD": 3.6271848815917966,
+         "LE90": 10.455615234375,
+         "LE95": 14.446008300781237,
+         "pearson_r": 0.5636156089603181,
+         "spearman_rho": 0.6265617515541466
+        },
+        "ref_q3_794.0_813.2m": {
+         "n": 59460,
+         "ME": -3.4378647327904264,
+         "RMSE": 6.988619975727211,
+         "MAE": 4.602989197290589,
+         "median": -1.708892822265625,
+         "NMAD": 4.194742694091796,
+         "LE90": 12.143463134765623,
+         "LE95": 16.387060546875,
+         "pearson_r": 0.6621149498347803,
+         "spearman_rho": 0.6922785563079905
+        },
+        "ref_q4_813.2_921.4m": {
+         "n": 59460,
+         "ME": -3.854355890021916,
+         "RMSE": 8.87476057145753,
+         "MAE": 5.025465435665784,
+         "median": -0.7327880859375,
+         "NMAD": 3.262326287841797,
+         "LE90": 15.869519042968747,
+         "LE95": 23.606097412109364,
+         "pearson_r": 0.9361292974666375,
+         "spearman_rho": 0.9627734289488594
+        }
+       },
+       "oracle_affine": {
+        "scale": 1.0615223405395509,
+        "shift": -47.72231340303031,
+        "metrics_after_alignment": {
+         "n": 237840,
+         "ME": -4.5483300797240306e-11,
+         "RMSE": 8.291934012646026,
+         "MAE": 5.494340651234608,
+         "median": 0.6672289349244238,
+         "NMAD": 4.600759182624466,
+         "LE90": 14.435052118648743,
+         "LE95": 19.558273530457104,
+         "pearson_r": 0.9676462407089471,
+         "spearman_rho": 0.9638645109351165
+        },
+        "label": "oracle_affine_alignment"
+       },
+       "alignment": {
+        "dx": 0.006450306612991571,
+        "dy": -0.0180366267157687,
+        "method": "grid_search_subpixel",
+        "iterations": 1,
+        "converged": true,
+        "rmse_before": 8.56631693695404,
+        "rmse_after": 8.604273490629714,
+        "applied": false
+       },
+       "mask": {
+        "valid_pixels": 237840,
+        "before_exclusion": 242064,
+        "anchor_excluded_pixels": 4224,
+        "border_px": 4,
+        "leakage_check": "passed"
+       },
+       "reference": {
+        "path": "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\reference\\swisssurface3d_rural_2621-1202_dsm_0.5m.tif",
+        "ref_type": "dsm",
+        "vertical_crs": "EPSG:5728",
+        "source_note": "bundled: swisssurface3d_rural_2621-1202_dsm_0.5m.tif",
+        "acquisition_date": null,
+        "native_posting_m": [
+         0.5,
+         0.5
+        ],
+        "datum_handling": "reference converted EPSG:5728 -> EGM2008 (correction -0.42..-0.40 m)"
+       },
+       "verdict": {
+        "band": "C (5-10 m)",
+        "text": "RMSE 8.57 m, bias -1.11 m, NMAD 4.04 m over 237840 pixels vs. the uploaded reference.",
+        "note": "Bands are descriptive only; the comparison grid is the job grid (reference area-averaged if finer)."
+       },
+       "caveats": [
+        "Pearson r is scale/offset-blind: read it together with ME/RMSE/NMAD (Phase 8 L0-08)."
+       ]
+      },
+      "dtm": {
+       "compared_layer": "terrain",
+       "metrics_overall": {
+        "n": 237840,
+        "ME": 5.070668399321924,
+        "RMSE": 11.127376939068514,
+        "MAE": 6.8211574766157135,
+        "median": 1.410858154296875,
+        "NMAD": 4.355544708251953,
+        "LE90": 22.658319091796876,
+        "LE95": 27.837530517578124,
+        "pearson_r": 0.9699075487166731,
+        "spearman_rho": 0.967955570051126
+       },
+       "metrics_by_slope": {
+        "flat_lt5": {
+         "n": 23120,
+         "ME": -1.1309310173905844,
+         "RMSE": 3.584453860413803,
+         "MAE": 2.383673560330612,
+         "median": -1.141937255859375,
+         "NMAD": 1.5384327758789063,
+         "LE90": 5.756823730468753,
+         "LE95": 7.126232910156247,
+         "pearson_r": 0.9682093291024527,
+         "spearman_rho": 0.9470265460971904
+        },
+        "moderate_5_15": {
+         "n": 66169,
+         "ME": 1.4743503254111276,
+         "RMSE": 7.3300380720800975,
+         "MAE": 3.6529653522357877,
+         "median": 0.14263916015625,
+         "NMAD": 2.51998564453125,
+         "LE90": 7.656994628906252,
+         "LE95": 14.021594238281242,
+         "pearson_r": 0.9727357739478752,
+         "spearman_rho": 0.9882831899869127
+        },
+        "steep_15_30": {
+         "n": 112035,
+         "ME": 6.423003768222891,
+         "RMSE": 12.298228827250352,
+         "MAE": 7.961054858998792,
+         "median": 2.202880859375,
+         "NMAD": 5.1847564453125,
+         "LE90": 24.46529541015625,
+         "LE95": 28.6752685546875,
+         "pearson_r": 0.9625546783218049,
+         "spearman_rho": 0.944656607036594
+        },
+        "very_steep_gt30": {
+         "n": 36516,
+         "ME": 11.364809490683985,
+         "RMSE": 15.392609703142993,
+         "MAE": 11.874348669170171,
+         "median": 9.473114013671875,
+         "NMAD": 11.915003942871094,
+         "LE90": 26.691864013671875,
+         "LE95": 29.334213256835938,
+         "pearson_r": 0.9713098570361847,
+         "spearman_rho": 0.9497197236875841
+        }
+       },
+       "metrics_by_object": {
+        "ground_lt1m": {
+         "n": 216437,
+         "ME": 4.7626654123600884,
+         "RMSE": 10.820066021534474,
+         "MAE": 6.429638611132277,
+         "median": 1.24761962890625,
+         "NMAD": 3.9120044311523436,
+         "LE90": 22.4960693359375,
+         "LE95": 27.77755126953121,
+         "pearson_r": 0.9690197219341705,
+         "spearman_rho": 0.9682329447585514
+        },
+        "objects_ge1m": {
+         "n": 21403,
+         "ME": 8.185336552807835,
+         "RMSE": 13.857269552676428,
+         "MAE": 10.780376683672594,
+         "median": 7.37188720703125,
+         "NMAD": 11.187096569824218,
+         "LE90": 23.772265625,
+         "LE95": 28.426635742187496,
+         "pearson_r": 0.9790577660481494,
+         "spearman_rho": 0.9562184305487367
+        }
+       },
+       "height_bins": {
+        "ref_q1_667.9_765.8m": {
+         "n": 59460,
+         "ME": 16.694657367766606,
+         "RMSE": 19.969739039916274,
+         "MAE": 16.778732439407467,
+         "median": 17.71990966796875,
+         "NMAD": 14.694290753173828,
+         "LE90": 30.41146240234375,
+         "LE95": 32.62962951660156,
+         "pearson_r": 0.8280201708885127,
+         "spearman_rho": 0.7412223897501425
+        },
+        "ref_q2_765.8_788.7m": {
+         "n": 59460,
+         "ME": 4.566234735667886,
+         "RMSE": 8.396053777589882,
+         "MAE": 5.453439110359118,
+         "median": 2.0302734375,
+         "NMAD": 4.520826013183593,
+         "LE90": 15.712475585937499,
+         "LE95": 20.369378662109355,
+         "pearson_r": 0.48853204196642,
+         "spearman_rho": 0.5178438252658174
+        },
+        "ref_q3_788.7_811.6m": {
+         "n": 59460,
+         "ME": -0.23033691159892156,
+         "RMSE": 3.4964780550718806,
+         "MAE": 2.5313547493029716,
+         "median": -0.37646484375,
+         "NMAD": 2.649613604736328,
+         "LE90": 5.746307373046875,
+         "LE95": 7.4956115722656245,
+         "pearson_r": 0.8631391015002062,
+         "spearman_rho": 0.8508032647904343
+        },
+        "ref_q4_811.6_894.4m": {
+         "n": 59460,
+         "ME": -0.747881594547871,
+         "RMSE": 3.710055933313993,
+         "MAE": 2.5211036073932975,
+         "median": -0.064666748046875,
+         "NMAD": 2.384340051269531,
+         "LE90": 6.2044982910156214,
+         "LE95": 8.24866027832029,
+         "pearson_r": 0.9793295064190845,
+         "spearman_rho": 0.9831765636447993
+        }
+       },
+       "oracle_affine": {
+        "scale": 1.1583328310490428,
+        "shift": -130.69456649195547,
+        "metrics_after_alignment": {
+         "n": 237840,
+         "ME": -5.366055450639965e-11,
+         "RMSE": 8.698862997268062,
+         "MAE": 6.726810944429185,
+         "median": -2.1808381229006955,
+         "NMAD": 6.821552538483127,
+         "LE90": 14.291835873864159,
+         "LE95": 18.993761877919393,
+         "pearson_r": 0.9699075487166726,
+         "spearman_rho": 0.967955570051126
+        },
+        "label": "oracle_affine_alignment"
+       },
+       "alignment": {
+        "dx": 0.007000328448641925,
+        "dy": -0.021907665142308685,
+        "method": "grid_search_subpixel",
+        "iterations": 1,
+        "converged": true,
+        "rmse_before": 11.127376939068514,
+        "rmse_after": 11.14926996364332,
+        "applied": false
+       },
+       "mask": {
+        "valid_pixels": 237840,
+        "before_exclusion": 242064,
+        "anchor_excluded_pixels": 4224,
+        "border_px": 4,
+        "leakage_check": "passed"
+       },
+       "reference": {
+        "path": "C:\\Users\\SEBIN\\Desktop\\DepthWizard\\assets\\reference\\swissalti3d_rural_2621-1202_dtm_0.5m.tif",
+        "ref_type": "dtm",
+        "vertical_crs": "EPSG:5728",
+        "source_note": "bundled: swissalti3d_rural_2621-1202_dtm_0.5m.tif",
+        "acquisition_date": null,
+        "native_posting_m": [
+         0.5,
+         0.5
+        ],
+        "datum_handling": "reference converted EPSG:5728 -> EGM2008 (correction -0.42..-0.40 m)"
+       },
+       "verdict": {
+        "band": "D (>10 m)",
+        "text": "RMSE 11.13 m, bias +5.07 m, NMAD 4.36 m over 237840 pixels vs. the uploaded reference.",
+        "note": "Bands are descriptive only; the comparison grid is the job grid (reference area-averaged if finer)."
+       },
+       "caveats": [
+        "Pearson r is scale/offset-blind: read it together with ME/RMSE/NMAD (Phase 8 L0-08)."
+       ]
+      }
+     }
+    }
+   },
+   "raw_copernicus_vs_reference": {
+    "dsm": {
+     "n": 242064,
+     "ME": -0.42885316199104045,
+     "RMSE": 7.450315700198456,
+     "MAE": 4.328512682824277,
+     "median": -0.34136962890625,
+     "NMAD": 2.2414099548339843,
+     "LE90": 13.044195556640634,
+     "LE95": 18.084121704101555,
+     "pearson_r": 0.9748123051303135,
+     "spearman_rho": 0.9703370286040988
+    },
+    "dtm": {
+     "n": 242064,
+     "ME": 6.078038167414532,
+     "RMSE": 11.487258441150077,
+     "MAE": 6.651206205712094,
+     "median": 0.97650146484375,
+     "NMAD": 2.7162600219726563,
+     "LE90": 23.977221679687503,
+     "LE95": 27.97021484375,
+     "pearson_r": 0.9677077373364459,
+     "spearman_rho": 0.9641566016877794
+    }
+   }
+  }
+ }
+}

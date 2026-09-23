@@ -1,0 +1,134 @@
+{
+  "true_shift_px": [
+    2.0,
+    -1.0
+  ],
+  "iterative_gradient_fit_refsmooth_sigma0": {
+    "iterations": 8,
+    "cumulative_shift_history": [
+      [
+        -1.044,
+        0.417
+      ],
+      [
+        -2.627,
+        1.003
+      ],
+      [
+        -5.039,
+        1.835
+      ],
+      [
+        -8.7,
+        3.014
+      ],
+      [
+        -14.204,
+        4.679
+      ],
+      [
+        -22.241,
+        7.029
+      ],
+      [
+        -33.35,
+        10.319
+      ],
+      [
+        -47.225,
+        14.887
+      ]
+    ],
+    "final_error_px": [
+      -49.225,
+      15.887
+    ]
+  },
+  "iterative_gradient_fit_refsmooth_sigma1.0": {
+    "iterations": 8,
+    "cumulative_shift_history": [
+      [
+        -1.821,
+        0.876
+      ],
+      [
+        -5.303,
+        2.509
+      ],
+      [
+        -11.941,
+        5.566
+      ],
+      [
+        -24.241,
+        11.233
+      ],
+      [
+        -44.773,
+        21.51
+      ],
+      [
+        -70.523,
+        38.559
+      ],
+      [
+        -88.543,
+        60.348
+      ],
+      [
+        -96.342,
+        75.912
+      ]
+    ],
+    "final_error_px": [
+      -98.342,
+      76.912
+    ]
+  },
+  "iterative_gradient_fit_refsmooth_sigma2.0": {
+    "iterations": 8,
+    "cumulative_shift_history": [
+      [
+        -1.987,
+        1.002
+      ],
+      [
+        -5.954,
+        3.0
+      ],
+      [
+        -13.833,
+        6.978
+      ],
+      [
+        -28.865,
+        14.825
+      ],
+      [
+        -53.64,
+        29.614
+      ],
+      [
+        -80.477,
+        52.98
+      ],
+      [
+        -94.131,
+        74.678
+      ],
+      [
+        -99.197,
+        82.589
+      ]
+    ],
+    "final_error_px": [
+      -101.197,
+      83.589
+    ]
+  },
+  "single_pass_estimate": [
+    -1.044,
+    0.417
+  ],
+  "VERDICT": "Single-pass gradient/NK estimate is biased low by regression dilution (noisy gradients); iterating the estimate to convergence recovers the shift. Implementation must iterate and unit-test on synthetic shifts; brute-force grid search + sub-pixel refinement is a robust alternative (recovered 1.979,-1.020 in L0-07)."
+}

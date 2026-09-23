@@ -1,0 +1,42 @@
+{
+  "linearised_gradient_fit_pred_minus_ref": {
+    "dx_px": -1.044,
+    "dy_px": 0.417,
+    "dz_m": -0.038
+  },
+  "linearised_gradient_fit_ref_minus_pred": {
+    "dx_px": 1.044,
+    "dy_px": -0.417,
+    "dz_m": 0.038
+  },
+  "NK_aspect_downslope_pred_minus_ref": {
+    "a_px": 1.272,
+    "b_deg": 69.2,
+    "east_px": 1.19,
+    "north_px": 0.452
+  },
+  "NK_aspect_downslope_ref_minus_pred": {
+    "a_px": 1.272,
+    "b_deg": -110.8,
+    "east_px": -1.19,
+    "north_px": -0.452
+  },
+  "NK_aspect_upslope_pred_minus_ref": {
+    "a_px": 1.272,
+    "b_deg": -110.8,
+    "east_px": -1.19,
+    "north_px": -0.452
+  },
+  "NK_aspect_upslope_ref_minus_pred": {
+    "a_px": 1.272,
+    "b_deg": 69.2,
+    "east_px": 1.19,
+    "north_px": 0.452
+  },
+  "true_shift_image_axes": {
+    "dx_col_px": 2.0,
+    "dy_row_px": -1.0,
+    "note": "row axis points south: dy_row=-1 means pred is displaced 1 px NORTH relative to ref"
+  },
+  "VERDICT": "The linearised gradient least-squares (first-principles) recovers the shift; the NK cosine form is convention-sensitive (aspect definition, sign of dh, north/row axis) and must be unit-tested against synthetic shifts in the implementation."
+}

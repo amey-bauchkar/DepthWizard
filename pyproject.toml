@@ -1,0 +1,15 @@
+[project]
+name = "depthwizard"
+version = "0.1.0"
+description = "DepthWizard — Single-View Height Estimation and 3D Flythrough (SIH26175 / ISRO). Sprint 1: Mode A relative pipeline."
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "slow: runs the real Depth Anything V2 model (needs weights; CPU ~seconds)",
+    "network: requires internet access",
+]
+filterwarnings = ["ignore::DeprecationWarning"]

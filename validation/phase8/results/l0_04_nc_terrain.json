@@ -1,0 +1,102 @@
+{
+  "config": {
+    "N": 300,
+    "cell_m": 30,
+    "sigma_cells": 1.5,
+    "w_min": 0.1,
+    "h_ground": 1.0,
+    "dem_noise_sigma": 1.0,
+    "canopy_penetration": 0.6
+  },
+  "ground_support_cells": {
+    "min": 0.0,
+    "mean": 0.692,
+    "raw_fallback_cells": 0
+  },
+  "raw_DEM_addback": {
+    "canopy": {
+      "ME": 7.79,
+      "RMSE": 7.968,
+      "NMAD": 1.559,
+      "n": 14300
+    },
+    "buildings": {
+      "ME": 12.161,
+      "RMSE": 14.277,
+      "NMAD": 4.61,
+      "n": 6000
+    },
+    "ground": {
+      "ME": 0.928,
+      "RMSE": 3.173,
+      "NMAD": 1.404,
+      "n": 69700
+    }
+  },
+  "NC_terrain": {
+    "canopy": {
+      "ME": 2.005,
+      "RMSE": 2.272,
+      "NMAD": 0.594,
+      "n": 14300
+    },
+    "buildings": {
+      "ME": -0.48,
+      "RMSE": 1.392,
+      "NMAD": 1.682,
+      "n": 6000
+    },
+    "ground": {
+      "ME": 0.447,
+      "RMSE": 1.772,
+      "NMAD": 1.897,
+      "n": 69700
+    }
+  },
+  "composed_DSM_error_raw": {
+    "all": {
+      "ME": 3.014,
+      "RMSE": 5.686,
+      "NMAD": 2.616,
+      "n": 90000
+    },
+    "canopy": {
+      "ME": 7.784,
+      "RMSE": 8.001,
+      "NMAD": 1.839,
+      "n": 14300
+    },
+    "buildings": {
+      "ME": 12.177,
+      "RMSE": 14.309,
+      "NMAD": 4.695,
+      "n": 6000
+    }
+  },
+  "composed_DSM_error_NC": {
+    "all": {
+      "ME": 0.879,
+      "RMSE": 1.996,
+      "NMAD": 1.88,
+      "n": 90000
+    },
+    "canopy": {
+      "ME": 1.998,
+      "RMSE": 2.405,
+      "NMAD": 1.27,
+      "n": 14300
+    },
+    "buildings": {
+      "ME": -0.465,
+      "RMSE": 1.603,
+      "NMAD": 1.755,
+      "n": 6000
+    }
+  },
+  "consistency_check_ME_NMAD": [
+    1.883,
+    2.261
+  ],
+  "bias_reduction_canopy_pct": 74.3,
+  "bias_reduction_buildings_pct": 96.1
+}

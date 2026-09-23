@@ -1,0 +1,149 @@
+{
+  "L0-03_resample_roundtrip_smooth": {
+    "max_abs_err_m": 0.0734,
+    "rmse_m": 0.0054,
+    "rel_rmse": 0.00106
+  },
+  "L0-03_resample_roundtrip_step": {
+    "max_abs_err_m": 13.2353,
+    "rmse_m": 0.5449,
+    "rel_rmse": 0.11556
+  },
+  "L0-06_slope_plane": {
+    "expected_deg": 6.3794,
+    "interior_max_abs_err_deg": 0.0,
+    "edge_max_abs_err_deg": 3.1798,
+    "aspect_interior_std_deg": 0.0
+  },
+  "L0-07_coregistration": {
+    "true_shift_px": [
+      2.0,
+      -1.0
+    ],
+    "grid_search_best": [
+      2,
+      -1
+    ],
+    "grid_search_subpixel": [
+      1.979,
+      -1.02
+    ],
+    "nuth_kaab_estimate_px": [
+      1.198,
+      0.442
+    ],
+    "nuth_kaab_sign_convention_note": "NK gives displacement of pred relative to ref in (east,north); image row axis is south-positive so dy sign flips",
+    "rmse_before_px_shift_m": 0.5197,
+    "rmse_after_grid_shift_m": 0.4238
+  },
+  "L0-08_metrics_gaussian_bias0.5_sigma2": {
+    "ME": 0.4959,
+    "RMSE": 2.0608,
+    "MAE": 1.6461,
+    "NMAD": 2.0099,
+    "LE90": 3.3996,
+    "LE95": 4.0436,
+    "pearson_r": 0.931251,
+    "spearman_rho": 0.931884
+  },
+  "L0-08_check_rmse2_eq_me2_plus_var": 2.0608,
+  "L0-08_check_nmad_vs_sigma": {
+    "nmad": 2.0099,
+    "sigma_true": 2.0
+  },
+  "L0-08_correlation_blindness": {
+    "pred_scaled_1.5x_plus_10m": {
+      "ME": 60.4323,
+      "RMSE": 60.4861,
+      "MAE": 60.4323,
+      "NMAD": 2.7429,
+      "LE90": 63.9031,
+      "LE95": 64.4535,
+      "pearson_r": 1.0,
+      "spearman_rho": 1.0
+    },
+    "note": "r=1 and rho=1 while ME/RMSE are tens of metres: correlation cannot certify absolute accuracy"
+  },
+  "L0-09_ground_dominance": {
+    "ground_fraction": 0.57,
+    "all_zero_prediction": {
+      "MAE": 3.385,
+      "RMSE": 6.632
+    },
+    "doubled_heights_prediction": {
+      "MAE": 3.385,
+      "RMSE": 6.632
+    },
+    "object_only_MAE_allzero": 7.871,
+    "object_only_MAE_doubled": 7.871,
+    "f1_he_allzero": 0.0,
+    "note": "aggregate MAE understates object failure by the ground fraction; object-focused metrics required (SynRS3D critique reproduced numerically)"
+  },
+  "L0-10_composition_nodata": {
+    "nan_terrain": 100,
+    "nan_ndsm": 100,
+    "nan_dsm": 200,
+    "propagation_ok": true,
+    "value_check": false
+  },
+  "L0-11_mesh_decimation_residual": {
+    "plane": {
+      "2": {
+        "max_abs_m": 0.15,
+        "rmse_m": 0.0817
+      },
+      "4": {
+        "max_abs_m": 0.45,
+        "rmse_m": 0.2451
+      },
+      "8": {
+        "max_abs_m": 1.05,
+        "rmse_m": 0.5719
+      }
+    },
+    "hills": {
+      "2": {
+        "max_abs_m": 0.2601,
+        "rmse_m": 0.0942
+      },
+      "4": {
+        "max_abs_m": 0.7677,
+        "rmse_m": 0.2822
+      },
+      "8": {
+        "max_abs_m": 1.7243,
+        "rmse_m": 0.6562
+      }
+    },
+    "step_buildings": {
+      "2": {
+        "max_abs_m": 17.9396,
+        "rmse_m": 0.703
+      },
+      "4": {
+        "max_abs_m": 20.0,
+        "rmse_m": 1.5354
+      },
+      "8": {
+        "max_abs_m": 20.0,
+        "rmse_m": 1.6935
+      }
+    },
+    "note": "regular-grid decimation only; RTIN (martini) residual NOT EXECUTED (JS, no implementation)"
+  },
+  "L0-12_tiling": {
+    "tile_starts": [
+      0,
+      48,
+      96,
+      136
+    ],
+    "full_coverage": true,
+    "weight_sum_min_max": [
+      0.0,
+      1.7391
+    ],
+    "normalized_blend_ok": true,
+    "note": "blend = sum(w*pred)/sum(w) is exact regardless of raw weight sums"
+  }
+}

@@ -1,0 +1,27 @@
+# environments
+.venv/
+.venv*/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+frontend/node_modules/
+node_modules/
+frontend/dist/
+dist/
+build/
+.env
+.env.*
+
+# large / generated artefacts (fetched by scripts, never committed)
+models/**/*.pth
+models/**/*.safetensors
+models/**/*.onnx
+models/**/*.bin
+data/
+!data/README.md
+
+# local logs
+*.log

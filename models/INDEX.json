@@ -1,0 +1,26 @@
+{
+  "models": {
+    "da-v2-small-baseline": {
+      "1.0.0": {
+        "file": "da-v2-small-baseline/1.0.0/depth_anything_v2_vits.pth",
+        "sha256": "715fade13be8f229f8a70cc02066f656f2423a59effd0579197bbf57860e1378",
+        "architecture": "Depth Anything V2 Small (DINOv2 ViT-S/14 encoder + DPT head), 24.8M params",
+        "licence": "Apache-2.0 (Small checkpoint); vendored code Apache-2.0, upstream commit a561b849ebae10a6f5ef49e26c83cbbcd36c71bf",
+        "output": "relative_inverse_depth",
+        "source": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small/resolve/main/depth_anything_v2_vits.pth",
+        "card": "da-v2-small-baseline/1.0.0/model_card.json"
+      }
+    },
+    "da-v2-small-metric": {
+      "1.0.0": {
+        "file": "da-v2-small-metric/1.0.0/depth_anything_v2_metric_s.pth",
+        "sha256": "fd6d317c6760fb48eb3d1e9c1f8b0ef91acce873c1546934b323cd6864a90bfe",
+        "architecture": "Depth Anything V2 Small (DINOv2 ViT-S/14 encoder + DPT head), 24.8M params",
+        "licence": "Apache-2.0; DepthWizard fine-tuned metric head",
+        "output": "metric_ndsm_metres",
+        "source": "local_training",
+        "card": "da-v2-small-metric/1.0.0/model_card.json"
+      }
+    }
+  }
+}

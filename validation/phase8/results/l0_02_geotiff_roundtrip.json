@@ -1,0 +1,46 @@
+{
+  "a_crs_roundtrip": true,
+  "a_transform_roundtrip": true,
+  "a_nodata": -9999.0,
+  "a_tags": {
+    "VERTICAL_CRS": "EPSG:3855",
+    "TIER": "T",
+    "MODEL_HASH": "deadbeef"
+  },
+  "a_overviews": [
+    2,
+    4
+  ],
+  "a_pixel_10_20_centre_xy": [
+    500010.5,
+    2999979.5
+  ],
+  "a_expected_centre_xy": [
+    500010.5,
+    2999979.5
+  ],
+  "a_centre_ok": "True",
+  "a_inverse_ok": true,
+  "a_bounds": [
+    500000.0,
+    2999936.0,
+    500064.0,
+    3000000.0
+  ],
+  "a_bounds_ok": true,
+  "a_nodata_count": 1,
+  "b_rotation_detected": true,
+  "b_gsd_from_transform_m": [
+    0.9055385138137417,
+    0.9055385138137417
+  ],
+  "c_local_gsd_m": [
+    0.9781,
+    1.1083
+  ],
+  "c_gsd_isotropic_ok": true,
+  "c_no_crs_would_be_mode_A": true,
+  "d_nocrs_crs_is_none": true,
+  "d_nocrs_transform_identity": true,
+  "PASS": true
+}

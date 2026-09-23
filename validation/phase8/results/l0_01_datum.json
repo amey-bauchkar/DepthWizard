@@ -1,0 +1,85 @@
+{
+  "proj_version": "9.8.1",
+  "pyproj": "3.8.0",
+  "offline": {
+    "Kanyakumari": {
+      "EGM96": -0.0,
+      "EGM2008": -0.0
+    },
+    "Bengaluru": {
+      "EGM96": -0.0,
+      "EGM2008": -0.0
+    },
+    "Mumbai": {
+      "EGM96": -0.0,
+      "EGM2008": -0.0
+    },
+    "Delhi": {
+      "EGM96": -0.0,
+      "EGM2008": -0.0
+    },
+    "Kolkata": {
+      "EGM96": -0.0,
+      "EGM2008": -0.0
+    },
+    "Leh": {
+      "EGM96": -0.0,
+      "EGM2008": -0.0
+    },
+    "Guwahati": {
+      "EGM96": -0.0,
+      "EGM2008": -0.0
+    },
+    "Dehradun": {
+      "EGM96": -0.0,
+      "EGM2008": -0.0
+    }
+  },
+  "online": {
+    "Kanyakumari": {
+      "EGM96": -98.554,
+      "EGM2008": -98.274
+    },
+    "Bengaluru": {
+      "EGM96": -86.421,
+      "EGM2008": -86.164
+    },
+    "Mumbai": {
+      "EGM96": -68.521,
+      "EGM2008": -67.672
+    },
+    "Delhi": {
+      "EGM96": -52.602,
+      "EGM2008": -52.555
+    },
+    "Kolkata": {
+      "EGM96": -56.863,
+      "EGM2008": -56.946
+    },
+    "Leh": {
+      "EGM96": -23.646,
+      "EGM2008": -24.322
+    },
+    "Guwahati": {
+      "EGM96": -49.0,
+      "EGM2008": -47.994
+    },
+    "Dehradun": {
+      "EGM96": -43.777,
+      "EGM2008": -43.089
+    }
+  },
+  "offline_pipeline_description": "Inverse of Transformation from EGM2008 height to WGS 84 (ballpark vertical transformation, without ellipsoid height to vertical height correction) (with axis order normalized for visualization)",
+  "offline_grids_available": false,
+  "FINDING": "Offline PROJ silently uses a ballpark (0 m) vertical transform when grids are absent; detection must inspect Transformer.description for 'ballpark' and verify grid files exist.",
+  "egm96_minus_egm2008_m": {
+    "Kanyakumari": -0.28,
+    "Bengaluru": -0.257,
+    "Mumbai": -0.849,
+    "Delhi": -0.047,
+    "Kolkata": 0.083,
+    "Leh": 0.676,
+    "Guwahati": -1.006,
+    "Dehradun": -0.688
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "da-v2-small-metric",
+  "version": "1.0.0",
+  "role": "Multi-terrain fine-tuned metric nDSM model (Phase 5 Concept C / Tier H)",
+  "architecture": "Depth Anything V2 Small: DINOv2 ViT-S/14 encoder, DPT decoder, features=64, out_channels=[48,96,192,384]",
+  "parameters_millions": 24.8,
+  "training_domain": "Multi-terrain remote sensing (GAMUS urban + swisstopo alpine/hilly + USGS 3DEP LiDAR)",
+  "output_quantity": "metric_ndsm_metres",
+  "output_semantics": "Metric height above local ground in metres (nDSM >= 0.0m) at canonical GSD with edge-preserving vertical step boundaries.",
+  "metric": true,
+  "calibration_tier": "H",
+  "known_limitations_evidence": [
+    "Height values are relative to local ground (nDSM); absolute elevation requires Tier T terrain layer from coarse DEM.",
+    "First-surface model (canopy top, roof top); cannot see ground under dense forest canopy.",
+    "Trained on 0.33m-1.0m nadir imagery; accuracy may degrade on extreme off-nadir oblique views (>30 deg)."
+  ],
+  "licence": "Apache-2.0",
+  "weights_source": "DepthWizard Google Colab Fine-Tuning Pipeline (DepthWizard_ZeroCompromise_FineTune.ipynb)",
+  "weights_sha256": "fd6d317c6760fb48eb3d1e9c1f8b0ef91acce873c1546934b323cd6864a90bfe",
+  "code_source": "ml/registry/vendor/depth_anything_v2",
+  "preprocess": {
+    "input_size": 518,
+    "size_multiple": 14,
+    "mean": [0.485, 0.456, 0.406],
+    "std": [0.229, 0.224, 0.225]
+  },
+  "validation": "Building RMSE <= 1.84m (Passes ASPRS Level-0 standards)"
+}

@@ -1,0 +1,10 @@
+{
+  "items": [
+    {"id": "urban_geotiff_hd", "label": "Zürich (urban) · Ultra-Clear HD 0.5 m · Mode B", "file": "swissimage_2019_2682-1247_0.5m.tif", "mode": "B", "anchors": "anchors_urban_simulated.csv", "reference_dsm": "swisssurface3d_urban_2682-1247_dsm_0.5m.tif", "reference_dtm": "swissalti3d_urban_2682-1247_dtm_0.5m.tif", "reference_vertical_crs": "EPSG:5728", "source": "swisstopo SWISSIMAGE 10 cm (0.5 m GSD high-res, 2000×2000 px); references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"},
+    {"id": "urban_geotiff", "label": "Zürich (urban) · GeoTIFF 2 m · Mode B", "file": "swissimage_2019_2682-1247_2m.tif", "mode": "B", "anchors": "anchors_urban_simulated.csv", "reference_dsm": "swisssurface3d_urban_2682-1247_dsm_0.5m.tif", "reference_dtm": "swissalti3d_urban_2682-1247_dtm_0.5m.tif", "reference_vertical_crs": "EPSG:5728", "source": "swisstopo SWISSIMAGE 10 cm (resampled 2 m) tile 2682-1247, 2019; references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"},
+    {"id": "rural_geotiff", "label": "Emmental (rural, hilly, forest) · GeoTIFF 2 m · Mode B", "file": "swissimage_2021_2621-1202_2m.tif", "mode": "B", "anchors": "anchors_rural_simulated.csv", "reference_dsm": "swisssurface3d_rural_2621-1202_dsm_0.5m.tif", "reference_dtm": "swissalti3d_rural_2621-1202_dtm_0.5m.tif", "reference_vertical_crs": "EPSG:5728", "source": "swisstopo SWISSIMAGE tile 2621-1202, 2021; references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"},
+    {"id": "urban_jpg_hd", "label": "Zürich (urban) · Ultra-Clear HD JPEG · Mode A", "file": "sample_urban_hd.jpg", "mode": "A", "source": "swisstopo SWISSIMAGE 2000×2000 px crystal clear aerial photo"},
+    {"id": "urban_jpg", "label": "Zürich (urban) · JPEG · Mode A", "file": "sample_urban.jpg", "mode": "A", "source": "same tile exported without georeferencing"},
+    {"id": "rural_jpg", "label": "Emmental (rural) · JPEG · Mode A", "file": "sample_rural.jpg", "mode": "A", "source": "same tile exported without georeferencing"}
+  ]
+}

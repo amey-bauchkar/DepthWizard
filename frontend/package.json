@@ -1,0 +1,20 @@
+{
+  "name": "depthwizard-frontend",
+  "private": true,
+  "version": "0.1.0-sprint1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mapbox/martini": "^0.2.0",
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.0"
+  }
+}

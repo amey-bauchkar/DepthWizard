@@ -1,0 +1,73 @@
+{
+  "suite": "phase8-L0-design-verification",
+  "environment": {
+    "date": "2026-09-21T20:07:06",
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.0",
+    "packages": {
+      "numpy": "2.5.2",
+      "scipy": "1.18.1",
+      "scikit-learn": "1.9.1",
+      "rasterio": "1.5.1",
+      "pyproj": "3.8.0",
+      "torch": "2.14.0+cpu",
+      "pillow": "12.3.0"
+    },
+    "gpu": "none detected (nvidia-smi not found)",
+    "note": "network required for PROJ CDN geoid grids in l0_01 'online' section"
+  },
+  "runs": [
+    {
+      "script": "l0_01_datum.py",
+      "sha256": "aeb14cbdefa8bcea",
+      "returncode": 0,
+      "seconds": 2.13,
+      "stderr_tail": ""
+    },
+    {
+      "script": "l0_02_geotiff_roundtrip.py",
+      "sha256": "245c1efb780bbab9",
+      "returncode": 0,
+      "seconds": 0.91,
+      "stderr_tail": "  dataset = writer("
+    },
+    {
+      "script": "l0_04_nc_terrain.py",
+      "sha256": "56e51d4a27a811b8",
+      "returncode": 0,
+      "seconds": 0.99,
+      "stderr_tail": ""
+    },
+    {
+      "script": "l0_05_anchors.py",
+      "sha256": "7846166da4cbf731",
+      "returncode": 0,
+      "seconds": 2.78,
+      "stderr_tail": "  warnings.warn(msg, UndefinedMetricWarning)"
+    },
+    {
+      "script": "l0_06_12_misc.py",
+      "sha256": "aea4fc975aa02016",
+      "returncode": 0,
+      "seconds": 2.28,
+      "stderr_tail": ""
+    }
+  ],
+  "results_files": [
+    "l0_01_datum.json",
+    "l0_01b_datum_offline_behaviour.json",
+    "l0_02_geotiff_roundtrip.json",
+    "l0_04_nc_terrain.json",
+    "l0_05_anchors.json",
+    "l0_06_12_misc.json",
+    "l0_07b_coregistration_conventions.json",
+    "l0_07c_coregistration_iterative.json",
+    "l0_07d_coregistration_corrected.json",
+    "l0_10_fix.json",
+    "l10_reproducibility_l0_suite.json",
+    "synthetic_nocrs.tif",
+    "synthetic_rot.tif",
+    "synthetic_utm.tif",
+    "synthetic_wgs84.tif"
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "L0-10_value_check_corrected": true,
+  "note": "previous check used a pixel outside the building footprint (test bug), design unaffected"
+}

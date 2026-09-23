@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DepthWizard — Single-View Height Estimation &amp; 3D Surface Explorer</title>
+    <meta name="description" content="DepthWizard: single-view height estimation and georeferenced 3D surface reconstruction. Mode A relative depth, Mode B DEM-anchored absolute DSM. SIH26175 / ISRO." />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+
+    <!-- ══════════════════════════════════════ TOPBAR -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">DEPTHWIZARD</div>
+        <div class="tagline">Single-View Height Estimation &amp; 3D Surface Explorer · Mode A (relative rDSM) · Mode B (DEM-anchored calibrated DSM) · SIH26175 · ISRO</div>
+      </div>
+      <div id="system-badge" class="badge muted">connecting…</div>
+    </header>
+
+    <main class="layout">
+
+      <!-- ══════════════════════════════════════ PANEL 1: INPUT -->
+      <section class="panel" id="panel-input">
+        <div class="panel-header">
+          <span class="panel-step">1</span>
+          <span class="panel-title">Input</span>
+        </div>
+
+        <div id="dropzone" class="dropzone">
+          <p><strong>Drop a PNG / JPG (Mode A) or GeoTIFF (Mode B) here</strong></p>
+          <input id="file-input" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,image/png,image/jpeg,image/tiff" />
+          <p class="hint" style="margin-top:8px">
+            Demo inputs (© swisstopo OGD, open government data):
+            <span id="demo-buttons"></span>
+          </p>
+        </div>
+
+        <details id="opt-inputs" class="opts">
+          <summary>Optional calibration inputs (Mode B)</summary>
+          <div class="optrow">
+            <label>
+              <strong>User DEM (GeoTIFF)</strong>
+              <input id="dem-input" type="file" accept=".tif,.tiff" />
+            </label>
+            <label>
+              <strong>DEM vertical CRS</strong>
+              <select id="dem-vcrs">
+                <option value="EGM2008">EGM2008 (Copernicus / default)</option>
+                <option value="EGM96">EGM96 (SRTM / NASADEM / AW3D30)</option>
+                <option value="ellipsoidal">WGS84 ellipsoidal</option>
+              </select>
+            </label>
+          </div>
+          <div class="optrow">
+            <label>
+              <strong>Anchors CSV</strong> <code>id,x,y,z,type[,sigma]</code>
+              <input id="anchors-input" type="file" accept=".csv,.txt" />
+            </label>
+            <span class="hint">
+              or simulated demo anchors (sampled from LiDAR — NOT surveyed):
+              <span id="anchor-demo-buttons"></span>
+              &nbsp;<button class="linkbtn" id="anchors-clear">clear</button>
+            </span>
+          </div>
+          <div id="opt-summary" class="hint"></div>
+        </details>
+
+        <div id="input-preview-wrap" class="hidden">
+          <img id="input-preview" alt="input preview" />
+        </div>
+
+        <table class="meta" id="meta-table">
+          <tr><th>Mode</th>        <td id="m-mode">—</td></tr>
+          <tr><th>Georeferenced</th><td id="m-geo">—</td></tr>
+          <tr><th>Metric</th>      <td id="m-metric">—</td></tr>
+          <tr><th>Calib. tier</th> <td id="m-tier">—</td></tr>
+          <tr><th>Model</th>       <td id="m-model">—</td></tr>
+          <tr><th>Image</th>       <td id="m-image">—</td></tr>
+        </table>
+
+        <button id="run-btn" class="primary" disabled>Generate Surface</button>
+        <div id="status" class="status"></div>
+      </section>
+
+      <!-- ══════════════════════════════════════ PANEL 2: RESULT -->
+      <section class="panel" id="panel-result">
+        <div class="panel-header">
+          <span class="panel-step">2</span>
+          <span class="panel-title">Result</span>
+        </div>
+
+        <div id="result-empty" class="result-empty">No result yet — upload an image and click Generate Surface.</div>
+
+        <div id="result-body" class="hidden">
+
+          <!-- PRIMARY: state badge + quality badge -->
+          <div id="result-primary" class="result-primary"></div>
+          <p id="result-state-desc" class="hint" style="margin-bottom:12px;line-height:1.6"></p>
+
+          <!-- SECONDARY: key metrics -->
+          <div class="result-secondary">
+            <div class="result-secondary-title">Surface metrics</div>
+            <div id="result-fields" class="result-grid"></div>
+          </div>
+
+          <!-- QUALITY CARD: why is quality X? -->
+          <div id="quality-card" class="quality-card q-UNVALIDATED"></div>
+
+          <!-- TRUST / PROVENANCE PANEL -->
+          <div id="trust-panel" class="trust-panel"></div>
+
+          <!-- LAYER TABS + LAYER CARD -->
+          <div id="layer-tabs" class="tabs"></div>
+          <div class="layer-card">
+            <div class="layer-header">
+              <div>
+                <div id="layer-name" class="layer-name"></div>
+                <div id="layer-desc" class="layer-desc"></div>
+                <div id="layer-meta" class="layer-meta"></div>
+              </div>
+            </div>
+            <div class="layer-body">
+              <div class="imgwrap">
+                <img id="layer-img" alt="layer preview" />
+              </div>
+              <!-- POINT READOUT -->
+              <div class="readout-panel">
+                <div class="readout-head">
+                  Point readout
+                  <span class="readout-authority" title="Measurements are always sampled from the server-side DSM raster, not from the rendered mesh">SOURCE: SERVER RASTER</span>
+                </div>
+                <div id="readout-body" class="readout-body empty">Click a point on the image or 3D mesh.</div>
+                <div class="measure-row">
+                  <button id="measure-btn" class="secondary">Measure (2 clicks)</button>
+                  <span id="measure-out" class="measure-out"></span>
+                </div>
+              </div>
+            </div>
+            <div id="layer-legend" class="hint" style="padding:4px 14px 10px"></div>
+          </div>
+
+          <!-- DOWNLOADS -->
+          <div id="downloads" class="actions"></div>
+
+          <!-- TECHNICAL DETAILS (collapsed) -->
+          <details class="tech-details">
+            <summary>Technical metadata (CRS · calibration report · timings · provenance JSON)</summary>
+            <pre id="result-json"></pre>
+          </details>
+
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════ PANEL 3: VALIDATION -->
+      <section class="panel" id="panel-validate">
+        <div class="panel-header">
+          <span class="panel-step">3</span>
+          <span class="panel-title">Validation against reference</span>
+          <span class="badge muted">Mode B only · reference is never used for calibration</span>
+        </div>
+
+        <div class="valform">
+          <div class="optrow">
+            <label>
+              <strong>Reference raster (GeoTIFF)</strong>
+              <input id="ref-input" type="file" accept=".tif,.tiff" />
+            </label>
+            <label>
+              <strong>or bundled</strong>
+              <select id="ref-bundled"><option value="">—</option></select>
+            </label>
+          </div>
+          <div class="optrow">
+            <label>
+              <strong>Type</strong>
+              <select id="ref-type">
+                <option value="dsm">DSM (compare to dsm.tif)</option>
+                <option value="dtm">DTM (compare to terrain layer)</option>
+                <option value="ndsm">nDSM (compare to object height)</option>
+              </select>
+            </label>
+            <label>
+              <strong>Reference vertical CRS</strong>
+              <select id="ref-vcrs">
+                <option value="same">same as output</option>
+                <option value="EGM2008">EGM2008</option>
+                <option value="EGM96">EGM96</option>
+                <option value="ellipsoidal">WGS84 ellipsoidal</option>
+                <option value="EPSG:5728">LN02 (EPSG:5728, swisstopo)</option>
+                <option value="unknown">unknown</option>
+              </select>
+            </label>
+            <button id="validate-btn" class="primary" disabled style="width:auto;margin-top:0">Run validation</button>
+          </div>
+          <div id="val-status" class="status"></div>
+        </div>
+
+        <div id="val-result" class="hidden" style="margin-top:14px">
+          <div class="val-verdict-card">
+            <div id="val-verdict-title" class="val-verdict-title"></div>
+            <div id="val-context" class="val-context"></div>
+          </div>
+          <div class="valgrid">
+            <div>
+              <table class="metrics" id="val-overall"></table>
+              <details>
+                <summary style="font-size:12px;color:var(--muted);cursor:pointer;padding:4px 0">By slope class / object class / height quartile / oracle affine</summary>
+                <div id="val-strata"></div>
+              </details>
+              <details style="margin-top:8px">
+                <summary style="font-size:12px;color:var(--muted);cursor:pointer;padding:4px 0">Alignment · mask · datum handling · caveats</summary>
+                <pre id="val-json" style="font-size:11px;max-height:200px;overflow:auto;background:#1e293b;color:#cbd5e1;padding:10px;border-radius:6px;margin-top:6px"></pre>
+              </details>
+            </div>
+            <figure>
+              <img id="val-residual" alt="residual map" />
+              <figcaption>Residual map (prediction − reference). Blue = below reference, red = above.</figcaption>
+            </figure>
+          </div>
+          <div id="val-history" class="hint" style="margin-top:8px"></div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════ PANEL 4: 3D VIEWER -->
+      <section class="panel wide" id="panel-3d">
+        <div class="panel-header">
+          <span class="panel-step">4</span>
+          <span class="panel-title">3D Surface Explorer</span>
+          <span class="badge muted" id="view-badge">Open a result to load the heightfield</span>
+        </div>
+
+        <div class="viewer-toolbar">
+          <!-- Camera Mode switch: Orbit vs First-Person Walk -->
+          <div class="btn-group" id="cam-mode-group" title="Camera Navigation Mode">
+            <button id="cam-orbit-btn" class="sub-btn active" type="button" title="Aerial Orbit controls (default)">🛰️ Orbit</button>
+            <button id="cam-walk-btn" class="sub-btn" type="button" title="First-Person Ground Walking (WASD + mouse look)">🚶 Walk</button>
+          </div>
+
+          <!-- Mesh Simplification switch: Regular 1:1 vs Adaptive RTIN (Martini) -->
+          <label>
+            Mesh
+            <select id="mesh-mode-sel" title="Switch between uniform regular grid and client-side adaptive RTIN mesh">
+              <option value="regular">1:1 Regular Grid</option>
+              <option value="rtin">Adaptive RTIN (Martini)</option>
+            </select>
+          </label>
+          <label id="rtin-tol-wrap" class="hidden" title="Elevation error threshold for simplification">
+            Tol
+            <input id="rtin-tol" type="range" min="0.1" max="5.0" step="0.1" value="0.5" />
+            <span id="rtin-tol-val">0.5 m</span>
+          </label>
+
+          <label>
+            Layer
+            <select id="view-layer"></select>
+          </label>
+          <label id="zscale-wrap">
+            Display height scale
+            <input id="zscale" type="range" min="0.02" max="0.6" step="0.01" value="0.2" />
+            <span id="zscale-val">0.20</span>
+            <span class="hint">(visual only)</span>
+          </label>
+          <label id="exag-wrap" class="hidden">
+            Vertical exaggeration
+            <input id="exag" type="range" min="0.5" max="5" step="0.1" value="1" />
+            <span id="exag-val">×1.0 (true scale)</span>
+          </label>
+          <label>
+            <input id="wire" type="checkbox" />
+            Wireframe
+          </label>
+          <label title="Eliminate vertical texture smearing on building facades and steep cliffs">
+            <input id="antismear" type="checkbox" checked />
+            Anti-Smear
+          </label>
+          <label id="lod1-wrap" class="hidden" title="Render clean extruded 3D building blocks with 90° vertical walls">
+            <input id="lod1-chk" type="checkbox" />
+            🏢 3D Buildings
+          </label>
+          <button id="reset-cam" class="secondary">Reset camera</button>
+          <button id="open3d-btn" class="primary" disabled style="width:auto;margin-top:0">Open 3D View</button>
+          <span id="mesh-info"></span>
+          <span id="mesh-reduction-pill" class="badge ok hidden" title="Real-time triangle reduction statistics"></span>
+        </div>
+
+        <div id="viewer" class="viewer">
+          <div id="viewer-msg" class="viewer-msg">Open a result to build the heightfield — geometry is derived from the DSM raster.</div>
+          <!-- First-Person Walk HUD Overlay -->
+          <div id="walk-hud" class="walk-hud hidden">
+            <div class="walk-crosshair"></div>
+            <div class="walk-instructions">
+              <span class="walk-tag">🚶 FIRST-PERSON WALK</span>
+              <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</span>
+              <span><kbd>Shift</kbd> Sprint</span>
+              <span>Mouse Look</span>
+              <span><kbd>ESC</kbd> Exit to Orbit</span>
+            </div>
+            <div id="walk-hud-stats" class="walk-hud-stats">1.70 m Eye Height · 0.0 km/h</div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="foot">
+      <b>Calibration tiers:</b>
+      <b>R</b> relative (no units, no scale) ·
+      <b>T</b> terrain-absolute via DEM (object scale from residual fit — unvalidated unless anchors present) ·
+      <b>A</b> anchor-refined (ground control applied) ·
+      <b>H</b> metric head (fine-tuned model — <i>not available in this build</i>).
+      &emsp;Vertical reference of absolute outputs: EGM2008 unless stated.
+      &emsp;Measurements are always sampled server-side from DSM rasters — never from the rendered mesh.
+      &emsp;The 3D viewer is a visual representation only.
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

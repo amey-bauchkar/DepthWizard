@@ -1,0 +1,57 @@
+{
+  "true_offset": -3.0,
+  "true_scale": 1.2,
+  "ground_n3": {
+    "offset_median": 2.555,
+    "offset_huber": 2.576,
+    "error_m": 0.445,
+    "blunders_flagged": 0
+  },
+  "ground_n5": {
+    "offset_median": 3.053,
+    "offset_huber": 10.999,
+    "error_m": 0.053,
+    "blunders_flagged": 2
+  },
+  "ground_n10": {
+    "offset_median": 2.868,
+    "offset_huber": 2.946,
+    "error_m": 0.132,
+    "blunders_flagged": 2
+  },
+  "ground_n30": {
+    "offset_median": 2.97,
+    "offset_huber": 3.083,
+    "error_m": 0.03,
+    "blunders_flagged": 2
+  },
+  "object_n3": {
+    "scale_ransac": 0.7955,
+    "expected": 0.8333,
+    "inliers": 3
+  },
+  "object_n5": {
+    "scale_ransac": 0.833,
+    "expected": 0.8333,
+    "inliers": 4
+  },
+  "object_n8": {
+    "scale_ransac": 0.8248,
+    "expected": 0.8333,
+    "inliers": 7
+  },
+  "object_n20": {
+    "scale_ransac": 0.8321,
+    "expected": 0.8333,
+    "inliers": 19
+  },
+  "holdout": {
+    "n_fit": 21,
+    "n_hold": 9,
+    "offset_fit": 3.019,
+    "holdout_ME": 2.215,
+    "holdout_NMAD": 0.83,
+    "holdout_RMSE_incl_outliers": 6.809
+  },
+  "note": "Synthetic: noise sigma 0.5 m, gross outliers injected; demonstrates estimator correctness only, not real anchor availability/accuracy."
+}

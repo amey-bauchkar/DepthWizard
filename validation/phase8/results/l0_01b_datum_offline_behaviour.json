@@ -1,0 +1,10 @@
+{
+  "offline_default_pipeline": "Inverse of Transformation from EGM2008 height to WGS 84 (ballpark vertical transformation, without ellipsoid height to vertical height correction) (with axis order normalized for visualization)",
+  "offline_default_result_delhi_h": 0.0,
+  "offline_only_best_result": 0.0,
+  "offline_only_best_desc": "Inverse of Transformation from EGM2008 height to WGS 84 (ballpark vertical transformation, without ellipsoid height to vertical height correction) (with axis order normalized for visualization)",
+  "grids_in_proj_data_dir": [],
+  "user_writable_dir_grids": [],
+  "online_only_best_desc": "unavailable until proj_trans is called",
+  "online_only_best_result_delhi_h": 52.555
+}

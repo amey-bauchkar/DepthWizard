@@ -1,0 +1,23 @@
+{
+  "name": "da-v2-small-baseline",
+  "version": "1.0.0",
+  "role": "Sprint 1 zero-shot baseline (Phase 5 Concept A fallback path). NOT fine-tuned for remote sensing.",
+  "architecture": "Depth Anything V2 Small: DINOv2 ViT-S/14 encoder, DPT decoder, features=64, out_channels=[48,96,192,384]",
+  "parameters_millions": 24.8,
+  "training_domain": "natural images (595K synthetic + 62M pseudo-labelled real, upstream)",
+  "output_quantity": "relative_inverse_depth",
+  "output_semantics": "Unitless, per-image affine-ambiguous inverse-depth-like values. Larger = closer to camera. For nadir imagery this is treated as MONOTONIC in surface height (higher value = higher surface) — an assumption, not a calibration.",
+  "metric": false,
+  "calibration_tier": "R",
+  "known_limitations_evidence": [
+    "Zero-shot metric depth models fail at nadir (Phase 3 E15: AerialMetric delta1~0%).",
+    "Zero-shot DA-V2 on DFC2019 satellite scenes: MAE 4.59 m with scale drift (Phase 3 E16, Sat3R).",
+    "No remote-sensing adaptation applied in this version."
+  ],
+  "licence": "Apache-2.0",
+  "weights_source": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small",
+  "weights_sha256": "715fade13be8f229f8a70cc02066f656f2423a59effd0579197bbf57860e1378",
+  "code_source": "https://github.com/DepthAnything/Depth-Anything-V2 @ a561b849ebae10a6f5ef49e26c83cbbcd36c71bf (vendored under ml/registry/vendor; cv2 import made optional)",
+  "preprocess": {"input_size": 518, "size_multiple": 14, "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+  "validation": "none — Sprint 1 pipeline execution only; no accuracy measured"
+}

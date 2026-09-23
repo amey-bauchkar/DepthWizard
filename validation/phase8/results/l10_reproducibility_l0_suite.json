@@ -1,0 +1,17 @@
+{
+  "l0_04_nc_terrain.py": {
+    "run1": "723b9c7cb2500e8b",
+    "run2": "723b9c7cb2500e8b",
+    "deterministic": true
+  },
+  "l0_05_anchors.py": {
+    "run1": "bae3975813ba468a",
+    "run2": "bae3975813ba468a",
+    "deterministic": true
+  },
+  "l0_06_12_misc.py": {
+    "run1": "2f8b553c44ce9cce",
+    "run2": "2f8b553c44ce9cce",
+    "deterministic": true
+  }
+}
