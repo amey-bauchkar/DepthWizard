@@ -17,6 +17,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { HeightfieldMeta } from "./api";
 import { buildRTINGeometry, type RTINMeshResult } from "./martini";
 import { buildLoD1BuildingGroup, createFacadeTexture, type LoD1Data } from "./lod1";
+import { TURBO_GLSL, type ShaderVisualMode } from "./shaders/heatmap";
+import { buildPedestalGeometry } from "./pedestal";
 
 export interface ViewerInfo { vertices: number; triangles: number; nodataDropped: number; extent: [number, number] }
 export interface LoadOptions {
@@ -59,10 +61,21 @@ export class HeightfieldViewer {
   private shaderUniforms: Record<string, { value: any }> | null = null;
   private buildingsData: LoD1Data | null = null;
   private buildingsGroup: THREE.Group | null = null;
-  private lod1Visible = false;
+  private lod1Visible = true;
+  private aerialTex: THREE.Texture | null = null;
+  private cityMode = false;
 
-  // Camera & Mesh mode states
+  // Visual Shaders & Pedestal
+  private visualMode: ShaderVisualMode = "aerial";
+  private pedestalMesh: THREE.Mesh | null = null;
+
+  // Cinematic Flythrough & Camera modes
   private cameraMode: "orbit" | "walk" = "orbit";
+  private flythroughActive = false;
+  private flythroughAngle = 0;
+  private flythroughSpeed = 0.0032;
+  private onFlythroughToggleCb: ((active: boolean) => void) | null = null;
+
   private meshMode: "regular" | "rtin" = "regular";
   private rtinTolerance = 0.5;
   private onCameraModeChangeCb: ((mode: "orbit" | "walk") => void) | null = null;
@@ -107,27 +120,34 @@ export class HeightfieldViewer {
     this.controls.minDistance = 0.5;
     this.controls.maxDistance = 150000;
     this.controls.maxPolarAngle = Math.PI * 0.88;
+    this.controls.addEventListener("start", () => {
+      if (this.flythroughActive) {
+        this.setFlythrough(false);
+      }
+    });
 
-    // Scene background — deep navy
-    this.scene.background = new THREE.Color(0x0c1527);
-    this.scene.fog = new THREE.FogExp2(0x0c1527, 0.00008);
+    // Scene background — sleek dark obsidian slate
+    this.scene.background = new THREE.Color(0x0b1120);
+    this.scene.fog = new THREE.FogExp2(0x0b1120, 0.00006);
 
-    // Lighting — tuned for nadir aerial imagery:
-    //   hemisphere: sky cool blue + ground warm earth
-    const hemi = new THREE.HemisphereLight(0xd4e8ff, 0x8a7a60, 0.90);
+    // 1. Ambient baseline illumination — guarantees all building facades are clean, bright, and legible
+    const amb = new THREE.AmbientLight(0xffffff, 0.90);
+    this.scene.add(amb);
+
+    // 2. Z-UP Hemisphere light — bright sky from above (+Z), soft fill from below (-Z)
+    const hemi = new THREE.HemisphereLight(0xffffff, 0xdbeafe, 0.70);
+    hemi.position.set(0, 0, 1);
     this.scene.add(hemi);
-    //   main sun: from high above-left (matches typical satellite imagery illumination)
-    const sun = new THREE.DirectionalLight(0xfff5e8, 1.4);
-    sun.position.set(1, -0.8, 3);
+
+    // 3. Primary warm sun — casts crisp architectural relief across roofs and walls
+    const sun = new THREE.DirectionalLight(0xfffaea, 1.30);
+    sun.position.set(600, -800, 1200);
     this.scene.add(sun);
-    //   fill from opposite side to reduce harsh slope shadows
-    const fill = new THREE.DirectionalLight(0xa8c4e0, 0.45);
-    fill.position.set(-1, 1, 1.5);
+
+    // 4. Soft cool sky fill — illuminates opposing facades
+    const fill = new THREE.DirectionalLight(0xe0f2fe, 0.50);
+    fill.position.set(-600, 800, 900);
     this.scene.add(fill);
-    //   subtle back-bounce from below to lift shadow floors
-    const bounce = new THREE.DirectionalLight(0xfff0d0, 0.15);
-    bounce.position.set(0, 0.5, -1);
-    this.scene.add(bounce);
 
     // HUD containers
     this.hudTL = this._hud("hud-tl");
@@ -240,11 +260,31 @@ export class HeightfieldViewer {
     this.raf = requestAnimationFrame(this.animate);
     if (this.cameraMode === "walk") {
       this.updateWalk();
+    } else if (this.flythroughActive) {
+      this.updateFlythrough();
     } else {
       this.controls.update();
     }
     this.renderer.render(this.scene, this.camera);
   };
+
+  private updateFlythrough() {
+    this.flythroughAngle += this.flythroughSpeed;
+    const d = Math.max(this.extentX, this.extentY);
+    const radX = d * 0.70;
+    const radY = d * 0.60;
+    const zBase = Math.max(40, d * 0.38);
+    const zWave = Math.sin(this.flythroughAngle * 2.0) * (d * 0.06);
+    this.camera.position.set(
+      Math.sin(this.flythroughAngle) * radX,
+      Math.cos(this.flythroughAngle) * radY,
+      zBase + zWave
+    );
+    const targetZ = this.metric ? (this.zMax - this.zMin) * this.exaggeration * 0.25 : 0;
+    this.controls.target.set(0, 0, targetZ);
+    this.camera.lookAt(this.controls.target);
+    this.controls.update();
+  }
 
   private getGroundZ(x: number, y: number): number {
     if (!this.baseZ || this.W === 0 || this.H === 0) return 0;
@@ -507,6 +547,8 @@ export class HeightfieldViewer {
     for (let i = 0; i < W * H; i++) if (!Number.isFinite(base[i])) base[i] = this.zMin;
     this.baseZ = base;
     this.applyZ(pos);
+    geom.computeVertexNormals();
+    geom.computeBoundingBox();
 
     // Remove triangles touching nodata pixels
     if (dropped > 0) {
@@ -523,16 +565,32 @@ export class HeightfieldViewer {
       this.facadeTex.colorSpace = THREE.SRGBColorSpace;
     }
 
-    // Material with aerial texture + slope-aware triplanar anti-smear shader
+    // Material with aerial texture + slope-aware triplanar anti-smear shader + Turbo elevation heatmap
     const tex = new THREE.TextureLoader().load(textureUrl);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = Math.min(16, this.renderer.capabilities.getMaxAnisotropy());
+    this.aerialTex = tex;
+    if (this.buildingsGroup) {
+      this.buildingsGroup.traverse((child) => {
+        if (child instanceof THREE.Mesh && Array.isArray(child.material)) {
+          const roof = child.material[0];
+          if (roof instanceof THREE.MeshStandardMaterial) {
+            roof.map = tex;
+            roof.needsUpdate = true;
+          }
+        }
+      });
+    }
     const mat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.72, metalness: 0.0 });
 
     const facade = this.facadeTex;
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uFacadeTex = { value: facade };
       shader.uniforms.uAntiSmear = { value: this.antiSmearEnabled ? 1.0 : 0.0 };
+      shader.uniforms.uVisualMode = { value: this.visualMode === "heatmap" ? 1.0 : this.visualMode === "cyber" ? 2.0 : 0.0 };
+      shader.uniforms.uZMin = { value: 0.0 };
+      shader.uniforms.uZMax = { value: Math.max(1.0, (this.zMax - this.zMin) * this.exaggeration) };
+      shader.uniforms.uContourInterval = { value: Math.max(2.0, ((this.zMax - this.zMin) * this.exaggeration) / 25.0) };
       this.shaderUniforms = shader.uniforms;
 
       shader.vertexShader = shader.vertexShader.replace(
@@ -554,21 +612,47 @@ export class HeightfieldViewer {
         `#include <common>
         uniform sampler2D uFacadeTex;
         uniform float uAntiSmear;
+        uniform float uVisualMode;
+        uniform float uZMin;
+        uniform float uZMax;
+        uniform float uContourInterval;
         varying vec3 vDWWorldPos;
-        varying vec3 vDWNormal;`
+        varying vec3 vDWNormal;
+
+        ${TURBO_GLSL}`
       );
 
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <map_fragment>",
         `#ifdef USE_MAP
           vec4 texColor = texture2D(map, vMapUv);
-          if (uAntiSmear > 0.5) {
-            float slopeCos = abs(vDWNormal.z);
-            float wallWeight = smoothstep(0.72, 0.48, slopeCos);
-            if (wallWeight > 0.01) {
-              vec2 fUv = vec2(vDWWorldPos.x * 0.12 + vDWWorldPos.y * 0.12, vDWWorldPos.z * 0.12);
-              vec4 fColor = texture2D(uFacadeTex, fUv);
-              texColor = mix(texColor, fColor, wallWeight * 0.85);
+
+          float altSpan = max(0.01, uZMax - uZMin);
+          float tNorm = clamp((vDWWorldPos.z - uZMin) / altSpan, 0.0, 1.0);
+
+          if (uVisualMode > 1.5) {
+            // 2.0 = Cyber Blueprint Mode
+            vec3 cyberBase = vec3(0.03, 0.07, 0.14);
+            float cMajor = computeContour(vDWWorldPos.z, uContourInterval * 2.0, 1.8);
+            float cMinor = computeContour(vDWWorldPos.z, uContourInterval, 1.0);
+            vec3 contourGlow = mix(vec3(0.0, 0.72, 1.0) * cMinor, vec3(0.2, 0.95, 1.0) * cMajor, 0.6);
+            texColor = vec4(cyberBase + contourGlow * 0.85, 1.0);
+          } else if (uVisualMode > 0.5) {
+            // 1.0 = Scientific Elevation Heatmap Mode
+            vec3 heat = turboColormap(tNorm);
+            float contour = computeContour(vDWWorldPos.z, uContourInterval, 1.2);
+            heat = mix(heat, vec3(0.06, 0.08, 0.12), contour * 0.40);
+            texColor = vec4(heat, 1.0);
+          } else {
+            // 0.0 = Photometric Aerial Map Mode
+            if (uAntiSmear > 0.5) {
+              float slopeCos = abs(vDWNormal.z);
+              float wallWeight = smoothstep(0.72, 0.48, slopeCos);
+              if (wallWeight > 0.01) {
+                vec2 fUv = vec2(vDWWorldPos.x * 0.12 + vDWWorldPos.y * 0.12, vDWWorldPos.z * 0.12);
+                vec4 fColor = texture2D(uFacadeTex, fUv);
+                texColor = mix(texColor, fColor, wallWeight * 0.65);
+              }
             }
           }
           diffuseColor *= texColor;
@@ -582,6 +666,35 @@ export class HeightfieldViewer {
     this.cameraMode = "orbit";
     this.controls.enabled = true;
     this.scene.add(this.mesh);
+
+    // Build architectural ground pedestal
+    if (this.pedestalMesh) {
+      this.scene.remove(this.pedestalMesh);
+      this.pedestalMesh.geometry.dispose();
+      (this.pedestalMesh.material as THREE.Material).dispose();
+      this.pedestalMesh = null;
+    }
+    const pedestalGeom = buildPedestalGeometry(
+      this.baseZ,
+      W,
+      H,
+      this.extentX,
+      this.extentY,
+      this.spacing,
+      this.zMin,
+      this.exaggeration,
+      this.metric,
+      this.zScale,
+      { zBottom: -12.0 }
+    );
+    const pedestalMat = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      roughness: 0.85,
+      metalness: 0.15,
+      side: THREE.DoubleSide,
+    });
+    this.pedestalMesh = new THREE.Mesh(pedestalGeom, pedestalMat);
+    this.scene.add(this.pedestalMesh);
 
     // Subtle grid at ground level (metric mode only)
     if (opts.metric) {
@@ -691,9 +804,81 @@ export class HeightfieldViewer {
       const pill = this.hudTR.querySelector(".hud-exag") as HTMLElement;
       if (pill) pill.textContent = `⚡ VERT. EXAG ${e.toFixed(1)}×${Math.abs(e - 1) < 1e-6 ? " (true scale)" : " — VISUAL ONLY"}`;
     }
-    if (this.buildingsData) {
-      this.loadBuildings(this.buildingsData);
+    if (this.shaderUniforms) {
+      if (this.shaderUniforms.uZMax) {
+        this.shaderUniforms.uZMax.value = Math.max(1.0, (this.zMax - this.zMin) * this.exaggeration);
+      }
+      if (this.shaderUniforms.uContourInterval) {
+        this.shaderUniforms.uContourInterval.value = Math.max(2.0, ((this.zMax - this.zMin) * this.exaggeration) / 25.0);
+      }
     }
+    if (this.pedestalMesh && this.baseZ) {
+      this.pedestalMesh.geometry.dispose();
+      this.pedestalMesh.geometry = buildPedestalGeometry(
+        this.baseZ,
+        this.W,
+        this.H,
+        this.extentX,
+        this.extentY,
+        this.spacing,
+        this.zMin,
+        this.exaggeration,
+        this.metric,
+        this.zScale,
+        { zBottom: -12.0 }
+      );
+    }
+    if (this.buildingsData) {
+      this.loadBuildings(this.buildingsData, this.cityMode);
+    }
+  }
+
+  setFlythrough(active: boolean) {
+    this.flythroughActive = active;
+    if (active) {
+      if (this.cameraMode === "walk") {
+        this.setCameraMode("orbit");
+      }
+      this.flythroughAngle = 0;
+    }
+    if (this.onFlythroughToggleCb) {
+      this.onFlythroughToggleCb(active);
+    }
+  }
+
+  onFlythroughToggle(cb: (active: boolean) => void) {
+    this.onFlythroughToggleCb = cb;
+  }
+
+  get isFlythrough() { return this.flythroughActive; }
+
+  setShaderMode(mode: ShaderVisualMode) {
+    this.visualMode = mode;
+    if (this.shaderUniforms && this.shaderUniforms.uVisualMode) {
+      this.shaderUniforms.uVisualMode.value = mode === "heatmap" ? 1.0 : mode === "cyber" ? 2.0 : 0.0;
+    }
+  }
+
+  get currentShaderMode() { return this.visualMode; }
+
+  setPresetView(preset: "nadir" | "oblique" | "horizon") {
+    if (this.flythroughActive) this.setFlythrough(false);
+    if (this.cameraMode === "walk") this.setCameraMode("orbit");
+    const d = Math.max(this.extentX, this.extentY);
+    const targetZ = this.metric ? (this.zMax - this.zMin) * this.exaggeration * 0.25 : 0;
+    this.controls.target.set(0, 0, targetZ);
+
+    if (preset === "nadir") {
+      this.camera.position.set(0, 0, d * 1.35);
+      this.camera.up.set(0, 1, 0);
+    } else if (preset === "oblique") {
+      this.camera.position.set(0, -d * 0.65, d * 0.70);
+      this.camera.up.set(0, 0, 1);
+    } else if (preset === "horizon") {
+      this.camera.position.set(-d * 0.60, -d * 0.60, Math.max(30, d * 0.22));
+      this.camera.up.set(0, 0, 1);
+    }
+    this.controls.update();
   }
 
   setAntiSmear(enabled: boolean) {
@@ -703,8 +888,9 @@ export class HeightfieldViewer {
     }
   }
 
-  loadBuildings(data: LoD1Data | null) {
+  loadBuildings(data: LoD1Data | null, cityMode = false) {
     this.buildingsData = data;
+    this.cityMode = cityMode;
     if (this.buildingsGroup) {
       this.scene.remove(this.buildingsGroup);
       this.buildingsGroup = null;
@@ -714,7 +900,13 @@ export class HeightfieldViewer {
       exaggeration: this.exaggeration,
       metric: this.metric,
       zMin: this.zMin,
+      extentX: this.extentX,
+      extentY: this.extentY,
+      dataExtentX: data.extent?.[0],
+      dataExtentY: data.extent?.[1],
+      cityMode,
       facadeTexture: this.facadeTex || undefined,
+      aerialTexture: this.aerialTex || undefined,
     });
     this.buildingsGroup.visible = this.lod1Visible;
     this.scene.add(this.buildingsGroup);
@@ -738,13 +930,7 @@ export class HeightfieldViewer {
   get isMetric() { return this.metric; }
 
   resetCamera() {
-    const d = Math.max(this.extentX, this.extentY);
-    // Start at a 45° overhead angle — better for aerial scenes than low oblique.
-    // User can orbit down to inspect terrain from the side.
-    this.camera.position.set(0, -d * 0.6, d * 0.85);
-    this.camera.up.set(0, 0, 1);
-    this.controls.target.set(0, 0, (this.zMax - this.zMin) * this.exaggeration * 0.25);
-    this.controls.update();
+    this.setPresetView("oblique");
   }
 
   clear() {
@@ -760,6 +946,12 @@ export class HeightfieldViewer {
       this.rtinGeometry = null;
     }
     this.regularGeometry = null;
+    if (this.pedestalMesh) {
+      this.scene.remove(this.pedestalMesh);
+      this.pedestalMesh.geometry.dispose();
+      (this.pedestalMesh.material as THREE.Material).dispose();
+      this.pedestalMesh = null;
+    }
     if (this.buildingsGroup) {
       this.scene.remove(this.buildingsGroup);
       this.buildingsGroup = null;

@@ -150,14 +150,26 @@ async function initSystem() {
     const d = await api.demo();
     state.demo = d.items; state.references = d.references;
     const wrap = $("demo-buttons"); wrap.innerHTML = "";
-    d.items.forEach((it, i) => {
-      const b = document.createElement("button");
-      b.className = "linkbtn";
-      b.textContent = it.label;
-      b.title = it.source ?? "";
-      b.addEventListener("click", () => loadDemo(it));
-      wrap.appendChild(b);
-      if (i < d.items.length - 1) wrap.append(" · ");
+    d.items.forEach((it) => {
+      const pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = `demo-pill demo-mode-${it.mode.toLowerCase()}`;
+      const isHD = it.id.includes("hd");
+      const isRural = it.id.includes("rural");
+      const icon = isRural ? (it.mode === "B" ? "🌲" : "🏞️") : (it.mode === "B" ? "🏙️" : "📷");
+      const title = isRural
+        ? (it.mode === "B" ? "Emmental Ridge" : "Emmental Photo")
+        : (it.mode === "B" ? (isHD ? "Zürich Core HD" : "Zürich City 2m") : (isHD ? "Zürich Photo HD" : "Zürich Photo"));
+      const tag = it.mode === "B" ? (isHD ? "0.5m DSM" : "2m DSM") : "Mode A";
+
+      pill.innerHTML = `<span class="demo-icon">${icon}</span><span class="demo-name">${title}</span><span class="demo-tag">${tag}</span>`;
+      pill.title = `${it.label} — ${it.source ?? ""}`;
+      pill.addEventListener("click", () => {
+        wrap.querySelectorAll(".demo-pill").forEach((c) => c.classList.remove("active"));
+        pill.classList.add("active");
+        loadDemo(it);
+      });
+      wrap.appendChild(pill);
     });
     const aw = $("anchor-demo-buttons"); aw.innerHTML = "";
     ["urban", "rural"].forEach((t, i) => {
@@ -403,13 +415,14 @@ async function renderResult(job: Job, res: Result) {
   const vl = $("view-layer") as HTMLSelectElement; vl.innerHTML = "";
   const opts: [string, string][] = res.mode === "B"
     ? [
-        ["dsm", "DSM (metres, terrain + buildings)"],
-        ["ndsm", "nDSM (metres, height above ground — flat ground, buildings only)"],
+        ...(res.artifacts?.buildings_json ? [["city", "🏙️ LoD-1 Digital Twin (Extruded 3D Building Blocks)"] as [string, string]] : []),
+        ["dsm", "🗺️ DSM Surface Grid (Continuous 2.5D Raster Mesh)"],
         ["terrain", "Terrain layer (metres, bare ground)"],
+        ["ndsm", "nDSM (metres, height above ground — flat ground, buildings only)"],
         ["relative", "Relative structure (tier R, non-metric)"]
       ]
     : [["relative", "Relative structure (tier R, non-metric)"]];
-  opts.filter(([k]) => res.layers?.[k]?.heightfield || (res.mode === "A" && k === "relative")).forEach(([k, l]) => {
+  opts.filter(([k]) => k === "city" || res.layers?.[k]?.heightfield || (res.mode === "A" && k === "relative")).forEach(([k, l]) => {
     const o = document.createElement("option"); o.value = k; o.textContent = l; vl.appendChild(o);
   });
   state.viewLayer = vl.value;
@@ -577,7 +590,17 @@ async function open3d() {
       state.viewer.onCameraModeChange((mode) => {
         $("cam-orbit-btn").classList.toggle("active", mode === "orbit");
         $("cam-walk-btn").classList.toggle("active", mode === "walk");
+        $("cam-fly-btn").classList.remove("active");
         $("walk-hud").classList.toggle("hidden", mode !== "walk");
+      });
+      state.viewer.onFlythroughToggle((active) => {
+        $("cam-fly-btn").classList.toggle("active", active);
+        if (active) {
+          $("cam-orbit-btn").classList.remove("active");
+          $("cam-walk-btn").classList.remove("active");
+        } else {
+          $("cam-orbit-btn").classList.add("active");
+        }
       });
       state.viewer.onWalkStats((eyeZ, speedKmH) => {
         $("walk-hud-stats").textContent = `${eyeZ.toFixed(2)} m Eye Height · ${speedKmH.toFixed(1)} km/h`;
@@ -585,9 +608,13 @@ async function open3d() {
     }
     const res = state.result;
     const layer = ($("view-layer") as HTMLSelectElement).value || "relative";
+    const isCity = layer === "city";
+    // City mode: use terrain layer (smooth bare ground, no building spikes from nDSM).
+    // LoD-1 buildings sit on top with correct absolute elevation alignment.
+    const actualLayer = isCity ? "terrain" : layer;
     const metric = res.mode === "B" && layer !== "relative";
-    const hfName  = res.mode === "B" ? (res.layers?.[layer]?.heightfield ?? "heightfield_relative.f32") : "heightfield.f32";
-    const metaName = res.mode === "B" ? (res.layers?.[layer]?.heightfield_meta ?? "heightfield_relative.json") : null;
+    const hfName  = res.mode === "B" ? (res.layers?.[actualLayer]?.heightfield ?? "heightfield_relative.f32") : "heightfield.f32";
+    const metaName = res.mode === "B" ? (res.layers?.[actualLayer]?.heightfield_meta ?? "heightfield_relative.json") : null;
 
     msg.textContent = "Loading heightfield…";
     const [hf, meta] = await Promise.all([
@@ -606,12 +633,17 @@ async function open3d() {
       state:    metric ? sd.hudState : "RELATIVE SURFACE STRUCTURE",
       tier:     tierLine,
       quality:  res.quality ?? "UNVALIDATED",
-      layer:    LAYER_DEFS[layer]?.label ?? layer.toUpperCase(),
+      layer:    isCity ? "3D City (LoD-1)" : (LAYER_DEFS[layer]?.label ?? layer.toUpperCase()),
       showNorth: metric,   // only meaningful for georeferenced output
     };
     state.currentHud = hudInfo;
 
-    const exag = Number(($("exag") as HTMLInputElement).value);
+    // Default to true scale 1.0× so building heights are true-to-life architectural proportions
+    const exagEl = $("exag") as HTMLInputElement;
+    const currentExag = Number(exagEl.value) || 1.0;
+    const exag = isCity ? 1.0 : (currentExag <= 1.0 ? 1.0 : currentExag);
+    exagEl.value = String(exag);
+    $("exag-val").textContent = `×${exag.toFixed(1)}${Math.abs(exag - 1) < 1e-6 ? " (true scale)" : ""}`;
     const info = await state.viewer.load(hf, meta, api.artifactUrl(state.jobId, res.artifacts.texture), {
       metric, spacing, exaggeration: exag, hud: hudInfo,
     });
@@ -622,10 +654,17 @@ async function open3d() {
     $("zscale-wrap").classList.toggle("hidden", metric);
     $("exag-wrap").classList.toggle("hidden", !metric);
 
-    // Reset camera mode & mesh mode UI toggles to defaults
+    // Reset camera mode, presets & shader UI toggles to defaults
     $("cam-orbit-btn").classList.add("active");
     $("cam-walk-btn").classList.remove("active");
+    $("cam-fly-btn").classList.remove("active");
     $("walk-hud").classList.add("hidden");
+    $("preset-nadir-btn").classList.remove("active");
+    $("preset-oblique-btn").classList.add("active");
+    $("preset-horizon-btn").classList.remove("active");
+    $("shader-aerial-btn").classList.add("active");
+    $("shader-heatmap-btn").classList.remove("active");
+    $("shader-cyber-btn").classList.remove("active");
     ($("mesh-mode-sel") as HTMLSelectElement).value = "regular";
     $("rtin-tol-wrap").classList.add("hidden");
     $("mesh-reduction-pill").classList.add("hidden");
@@ -652,9 +691,11 @@ async function open3d() {
     if (res.artifacts?.buildings_json) {
       try {
         const bData = await fetch(api.artifactUrl(state.jobId, res.artifacts.buildings_json)).then((r) => r.json());
-        state.viewer.loadBuildings(bData);
+        state.viewer.loadBuildings(bData, isCity);
         lod1Wrap.classList.remove("hidden");
-        lod1Chk.checked = true;
+        const showBuildings = isCity || lod1Chk.checked;
+        lod1Chk.checked = showBuildings;
+        state.viewer.setBuildingsVisible(showBuildings);
       } catch (err) {
         console.warn("Failed to load 3D buildings", err);
         lod1Wrap.classList.add("hidden");
@@ -714,6 +755,40 @@ function wire() {
   // Camera Mode buttons
   $("cam-orbit-btn").addEventListener("click", () => state.viewer?.setCameraMode("orbit"));
   $("cam-walk-btn").addEventListener("click", () => state.viewer?.setCameraMode("walk"));
+  $("cam-fly-btn").addEventListener("click", () => {
+    if (!state.viewer) return;
+    state.viewer.setFlythrough(!state.viewer.isFlythrough);
+  });
+
+  // Preset view buttons
+  const presetMap: Record<string, "nadir" | "oblique" | "horizon"> = {
+    "preset-nadir-btn": "nadir",
+    "preset-oblique-btn": "oblique",
+    "preset-horizon-btn": "horizon",
+  };
+  Object.entries(presetMap).forEach(([id, preset]) => {
+    $(id).addEventListener("click", () => {
+      if (!state.viewer) return;
+      state.viewer.setPresetView(preset);
+      Object.keys(presetMap).forEach((k) => $(k).classList.remove("active"));
+      $(id).classList.add("active");
+    });
+  });
+
+  // Shader mode buttons
+  const shaderMap: Record<string, "aerial" | "heatmap" | "cyber"> = {
+    "shader-aerial-btn": "aerial",
+    "shader-heatmap-btn": "heatmap",
+    "shader-cyber-btn": "cyber",
+  };
+  Object.entries(shaderMap).forEach(([id, mode]) => {
+    $(id).addEventListener("click", () => {
+      if (!state.viewer) return;
+      state.viewer.setShaderMode(mode);
+      Object.keys(shaderMap).forEach((k) => $(k).classList.remove("active"));
+      $(id).classList.add("active");
+    });
+  });
 
   // Mesh Mode & Adaptive RTIN controls
   const meshSel = $("mesh-mode-sel") as HTMLSelectElement;

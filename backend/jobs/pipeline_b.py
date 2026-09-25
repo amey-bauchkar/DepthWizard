@@ -276,13 +276,29 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
             layers[name]["heightfield_meta"] = f"heightfield_{name}.json"
 
         # LoD-1 3D vector building extraction (Solution C)
+        # Uses AI-powered RGB segmentation + nDSM height fusion when RGB is available
         if ndsm is not None:
             try:
                 from core.terrain.lod1 import extract_lod1_buildings, save_lod1_buildings
-                lod1_data = extract_lod1_buildings(ndsm, terrain_res.terrain, gsd_m=gsd_m)
-                save_lod1_buildings(job_dir / "buildings.json", lod1_data)
+                buildings_path = job_dir / "buildings.json"
+                # Cache: skip extraction if buildings.json already exists with data
+                if buildings_path.exists():
+                    try:
+                        cached = json.loads(buildings_path.read_text(encoding="utf-8"))
+                        if cached.get("count", 0) > 0:
+                            lod1_data = cached
+                            log.event("LOD1", f"using cached {cached['count']} buildings")
+                        else:
+                            raise ValueError("empty cache")
+                    except Exception:
+                        lod1_data = extract_lod1_buildings(ndsm, terrain_res.terrain, rgb=ing.rgb, gsd_m=gsd_m)
+                        save_lod1_buildings(buildings_path, lod1_data)
+                else:
+                    lod1_data = extract_lod1_buildings(ndsm, terrain_res.terrain, rgb=ing.rgb, gsd_m=gsd_m)
+                    save_lod1_buildings(buildings_path, lod1_data)
                 artifacts["buildings_json"] = "buildings.json"
-                log.event("LOD1", f"extracted {lod1_data['count']} LoD-1 building instances")
+                seg_method = lod1_data.get("segmentation_method", "unknown")
+                log.event("LOD1", f"extracted {lod1_data['count']} LoD-1 building instances ({seg_method})")
             except Exception as e:  # noqa: BLE001
                 log.event("WARN", f"LoD-1 extraction skipped: {e}")
     elif tier.tier == "H":

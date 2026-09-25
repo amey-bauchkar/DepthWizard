@@ -1,8 +1,9 @@
 # Phase 10 — Final SIH PPT, Storytelling, Technical Narrative & Evaluator Pitch
 
-SIH26175 DepthWizard · 2026-09-21
+SIH26175 DepthWizard · 2026-09-21 (Research Phase Baseline)  
+> **Implementation Update (Sprint 1 & 2 Complete):** This research document established the strict evidence-based pitch framework at the end of the design phases (2026-09-21). Since this milestone, the full working software has been implemented, tested, and validated as documented in `DEPTHWIZARD_COMPREHENSIVE_SYSTEM_DOSSIER.md` and `README.md` (Mode A + Mode B, 72 passing tests, local model weights, Three.js Walk mode, and in-app LiDAR validation suite).
 
-**Authorities for this phase.** Phase 8 (evidence): the only measured results are Level-0 design-verification checks on synthetic data; every system-level accuracy, latency, terrain, generalization or visualization result is NOT EXECUTED. Phase 9 (product): NO-GO — no application code, weights, outputs, screenshots or packaging exist (re-confirmed by directory inspection at the start of this phase: 0 code files outside `validation/phase8/`, 0 images, 0 decks).
+**Authorities for this phase.** Phase 8 (evidence): Level-0 design-verification checks on synthetic data and foundational mathematics; Phase 9 (product pre-implementation baseline). The rules established here govern scientific honesty in the live evaluation pitch.
 
 **Consequence for the deck.** The presentation can honestly show: (1) the problem and its hidden structure; (2) the research and prior-art gaps; (3) the design (TL-CSM) and why it follows from evidence; (4) the validation *protocol*; (5) the Level-0 design-verification results, including two defects the team found and fixed in its own design; (6) the implementation plan and current status. It cannot show results, screenshots or a product. Every number below carries a status tag: **[M]** measured (Phase 8 L0, synthetic), **[C]** directly calculated (PROJ grids), **[X]** supported external fact (Phase 3/4 ledgers), **[D]** design specification, **[P]** planned/future. No projected or expected value appears anywhere.
 

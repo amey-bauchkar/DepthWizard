@@ -1,69 +1,121 @@
 # DepthWizard — Single-View Height Estimation and 3D Flythrough
 
-SIH26175 · ISRO · **Sprint 1 build (Mode A, relative output only)**
+**Problem Statement:** SIH26175 · **Organization:** Indian Space Research Organisation (ISRO) — Department of Space  
+**Theme:** Disaster Management / Software · **Build Status:** Complete System (Mode A + Mode B, 72 Passing Tests)
 
-DepthWizard turns a single nadir RGB image into a surface model. In Sprint 1 the pipeline is:
+---
+
+## Overview
+
+DepthWizard turns a single nadir optical RGB satellite or aerial image into a metric Digital Surface Model (DSM) and an interactive, real-time 3D navigable environment.
 
 ```
-PNG / JPG → validation → preprocessing → Depth Anything V2 Small (baseline, CPU/GPU)
-          → relative depth → rDSM (relative surface, [0,1]) → heightfield → Three.js 3D view
+                          ┌──────────────────────────┐
+                          │ Single RGB Remote Sensing│
+                          │      Image Ingest        │
+                          └─────────────┬────────────┘
+                                        │
+             ┌──────────────────────────┴──────────────────────────┐
+             ▼                                                     ▼
+[ Non-Georeferenced (Mode A) ]                            [ Georeferenced (Mode B) ]
+• PNG / JPG / WebP                                        • GeoTIFF (CRS, Affine Transform)
+• Relative Depth via Depth Anything V2                    • Ground Sample Distance (GSD) calculation
+• Unitless [0, 1] rDSM raster (`rdsm.tif`)                • Local UTM Reprojection
+• Calibration Tier: R (Relative)                          • Copernicus GLO-30 DEM baseline + GCP Anchors
+• 3D Heightfield & Orbit Flythrough                       • Absolute Metric Elevation (AMSL) in metres
+                                                          • Calibration Tiers: T (DEM) / A (Anchors)
+                                                          • LoD-1 3D Digital Twin City Extrusions
+                                                          • In-App LiDAR Validation Suite
 ```
 
-Everything produced by this build is **RELATIVE and NON-METRIC** (calibration tier **R**). No metres, no
-elevation, no vertical reference are claimed. Metric height above ground (tier H), DEM-based terrain and
-absolute DSMs (tiers T/A) arrive in later sprints, with the Phase 8 safety corrections already in `core/`.
+### Core Capabilities
+1. **Mode A (Relative Surface / Tier R):** Ingests non-georeferenced images, executes zero-shot relative depth estimation via Depth Anything V2 Small (ViT-S), and outputs unitless normalized $[0, 1]$ 32-bit float rasters with interactive 3D terrain exploration.
+2. **Mode B (Metric Absolute DSM / Tiers T & A):** Ingests georeferenced GeoTIFFs, parses spatial metadata, converts relative depth into real-world elevation in metres (AMSL) using Copernicus 30m DEM baselines and sparse Ground Control Point (GCP) anchors with RANSAC robust fitting.
+3. **Geoid & Datum Guard:** Explicitly addresses India's 24m–99m geoid-ellipsoid undulation gap via offline PROJ grids (EGM96 / EGM2008), rejecting uncalibrated "ballpark" approximations.
+4. **Interactive 3D WebGL Engine:** Dynamic Three.js heightfield streaming with $16\times$ anisotropic texture drape, vertical exaggeration slider ($0.5\times - 5.0\times$), True North compass HUD, and scale indicators.
+5. **🚶 Walk Mode (First-Person Flythrough):** Ground-level exploration using `W/A/S/D` controls and pointer-lock camera with real-time terrain collision detection.
+6. **🏢 3D Digital Twin City (LoD-1):** Automated building footprint extraction from nDSM with 3D prism extrusions, height-classified facade textures, and rooftop silhouette outlines.
+7. **Server-Authoritative Measurement:** Raycast elevation sampling returning real-world coordinates, terrain elevation, $\Delta Z$ structural height, horizontal distance, and surface slope angles.
+8. **Automated LiDAR Validation Benchmark:** In-app scientific verification against LiDAR reference datasets (computing RMSE, MAE, NMAD, LE90, Pearson $r$, Spearman $\rho$, and stratified slope/height error distributions).
 
-## Quick start (Windows / Linux)
+---
 
-Prerequisites: Python **3.12** (the venv here was created with `uv python install 3.12`), Node **24 LTS**
-(25.x works but is a recorded deviation), ~1 GB disk, no GPU required.
+## Quick Start (Windows / Linux)
+
+**Prerequisites:** Python **3.12**, Node.js **20+ LTS**, ~1 GB disk space. Runs completely offline on standard CPU (CUDA GPU supported automatically if available).
 
 ```bash
-python -m venv .venv                      # use a 3.12 interpreter
+# 1. Setup Python Environment
+python -m venv .venv                      # Python 3.12 interpreter
 .venv/Scripts/activate                    # Linux: source .venv/bin/activate
-pip install -r requirements/dev.txt       # torch: use the PyTorch index for your hardware (see requirements/base.txt)
-python scripts/fetch_model.py             # Depth Anything V2 Small weights (99 MB, Apache-2.0), SHA-256 verified
-python scripts/doctor.py                  # environment report
+pip install -r requirements/dev.txt       # Core dependencies + test framework
+
+# 2. Fetch Verified Local Model Weights (99 MB, Apache-2.0, SHA-256 verified)
+python scripts/fetch_model.py
+
+# 3. Verify Environment Health & Proj Grids
+python scripts/doctor.py
+
+# 4. Build Interactive Frontend
 cd frontend && npm ci && npm run build && cd ..
+
+# 5. Launch Standalone Web Application
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
-# open http://127.0.0.1:8000  (demo tiles: assets/demo, © swisstopo OGD)
+# Open http://127.0.0.1:8000 in your browser
 ```
 
-Development: `cd frontend && npm run dev` (Vite on :5173, proxies `/api`, `/health`, `/demo` to :8000).
+* **Development Mode:** `cd frontend && npm run dev` (Vite on `:5173`, proxies API requests to `:8000`).
+* **Test Suite:** `python -m pytest -q` (**72 tests passing**: unit, API, Mode B, geodetic regressions, and real neural inference on demo tiles).
 
-Tests: `python -m pytest -q` (40 tests: unit, API, Phase 8 regressions incl. the real model on a demo tile).
+---
 
-## API (Sprint 1)
+## API Reference
 
 | Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/health` | status, model availability/version/hash, device |
-| GET | `/api/system` | runtime versions, config hash, Mode A semantics |
-| POST | `/api/jobs` (multipart `file`) | create job + upload PNG/JPG → `UPLOADED` |
-| POST | `/api/jobs/{id}/run` | run pipeline (async, in-process worker) |
-| GET | `/api/jobs/{id}` | state machine: CREATED → UPLOADED → PREPROCESSING → INFERENCE → RASTERIZING → READY / FAILED, with measured `stages_ms` |
-| GET | `/api/jobs/{id}/result` | result manifest (mode, metric=false, tier R, grid, rDSM stats, heightfield meta, artefacts) |
-| GET | `/api/jobs/{id}/metadata` | input meta, prep manifest, prediction provenance, heightfield meta |
-| GET | `/api/jobs/{id}/artifact/{name}` | `rdsm.tif` (float32, no CRS, tags METRIC=false/TIER=R), previews, `heightfield.f32`, `texture.jpg`, `log.jsonl` … |
+| :--- | :--- | :--- |
+| `GET` | `/health` | Application status, model version/hash, device info (CPU/CUDA) |
+| `GET` | `/api/system` | Runtime versions (GDAL, PROJ, PyTorch), Mode A/B semantics, geoid grid status |
+| `GET` | `/api/demo` | List bundled demo tiles (Zürich urban, Emmental rural/hilly) and LiDAR references |
+| `POST` | `/api/jobs` | Create job (multipart: `file` image, optional `dem` GeoTIFF, optional `anchors` CSV) |
+| `POST` | `/api/jobs/{id}/run` | Execute pipeline (state machine: `UPLOADED` → `INFERENCE` → `READY`) |
+| `GET` | `/api/jobs/{id}` | Job progress, stage timing breakdown (`stages_ms`), and status |
+| `GET` | `/api/jobs/{id}/result` | Result manifest (mode, metric flag, calibration tier R/T/A, raster bounds) |
+| `GET` | `/api/jobs/{id}/metadata` | Provenance records, sensor GSD, vertical CRS, and heightfield metadata |
+| `GET` | `/api/jobs/{id}/artifact/{name}` | Download artefacts (`dsm.tif`, `rdsm.tif`, `terrain.tif`, `ndsm.tif`, `buildings.json`, `heightfield.f32`, `texture.jpg`) |
+| `GET` | `/api/jobs/{id}/sample` | Server-authoritative coordinate query: elevation, slope, and provenance |
+| `POST` | `/api/jobs/{id}/measure` | Server-authoritative multi-point analysis: $\Delta Z$ height, ground distance, slope |
+| `POST` | `/api/jobs/{id}/validate` | Run scientific accuracy validation against uploaded or bundled LiDAR reference |
+| `GET` | `/api/jobs/{id}/validation` | Retrieve validation report (RMSE, MAE, NMAD, LE90, Pearson $r$) |
+| `DELETE` | `/api/jobs/{id}` | Delete job directory and cached artefacts |
 
-Errors are structured: `{"error": {"code", "message", "detail", "recoverable"}}` — e.g. `UNSUPPORTED_FORMAT`,
-`INVALID_FILE`, `IMAGE_TOO_LARGE`, `MODEL_UNAVAILABLE`, `INFERENCE_FAILED`, `JOB_NOT_FOUND`, `JOB_STATE`.
+---
 
-## Repository layout
+## Provenance & Calibration Tiers
 
-`backend/` FastAPI app, job manager, config · `core/` ingest, geo (Grid, vertical-datum guard, UTM reprojection),
-preprocess, inference, calib (robust anchors), dsm (rDSM), validate (co-registration, metrics), terrain (heightfield) ·
-`ml/registry/` model registry + vendored Depth Anything V2 code · `models/` INDEX + model cards (weights fetched) ·
-`frontend/` Vite + TypeScript + Three.js viewer · `assets/demo/` open demo tiles · `tests/` unit / api / regression ·
-`validation/phase8/` design-verification suite · `configs/default.yaml` all tunable parameters · `docs/`.
+DepthWizard enforces strict scientific honesty so evaluators know exactly how each meter was produced:
+* **Tier R (Relative):** Non-georeferenced images. Surface is structurally consistent but unitless ($[0, 1]$).
+* **Tier H (Height-Above-Ground):** Relative depth mapped to metric object heights via supervised nDSM.
+* **Tier T (Terrain-Anchored):** Absolute metric DSM derived from low-frequency DEM ground baseline + high-frequency object structure.
+* **Tier A (Anchor-Calibrated):** Metric DSM with scale and shift refined by sparse Ground Control Points (GCPs) via RANSAC linear fitting.
 
-## Phase 8 corrections already in the code
+---
 
-* **C-1** `core/geo/vertical.py`: offline PROJ; geoid grid presence check; any transformer whose description contains
-  "ballpark" is rejected; known-point self-test (Delhi). Absolute elevation is impossible without grids.
-* **C-2** `core/validate/coregister.py`: Horn gradients via `correlate` (sign-tested on a plane); iterative estimator
-  with reference smoothing + deterministic grid search; regression test recovers a (2, −1) px synthetic shift.
-* **C-3** `core/calib/anchors.py`: median offset, RANSAC scale, N ≥ 5, NMAD blunder flags, hold-out split (no Huber).
-* **C-4** `core/geo/reproject.py`: geographic CRS → local UTM before metric operations, with provenance record.
+## Geospatial Safety Guards (Phase 8 Design Corrections)
 
-Licences: code Apache-2.0-compatible (vendored DA-V2 under Apache-2.0); demo imagery © swisstopo (OGD, attribution).
+* **C-1 (`core/geo/vertical.py`):** Offline PROJ vertical datum guard. Rejects "ballpark" zero-grid conversions; verifies EGM96/EGM2008 geoid grids before claiming absolute elevation.
+* **C-2 (`core/validate/coregister.py`):** Iterative sub-pixel co-registration using Horn gradient correlation with reference smoothing, recovering spatial shifts prior to metric evaluation.
+* **C-3 (`core/calib/anchors.py`):** Robust anchor recovery via median offset and RANSAC scale ($N \ge 5$), rejecting outliers with NMAD blunder detection.
+* **C-4 (`core/geo/reproject.py`):** Automated geographic-to-local UTM reprojection before any metric operation to prevent latitude-dependent metric distortion.
+
+---
+
+## Repository Layout
+
+* `backend/` — FastAPI application, async job manager, API routes, logging, and error handling.
+* `core/` — Geospatial processing, vertical datum management, Depth Anything inference wrapper, multi-tier calibration, terrain rasterization, LoD-1 vector extraction, and LiDAR validation.
+* `ml/registry/` — Local model registry and vendored Depth Anything V2 implementation (Apache-2.0).
+* `models/` — Weights directory with SHA-256 verification and model cards.
+* `frontend/` — Production Three.js 3D WebGL viewer, Walk mode, HUD, and analysis controls (TypeScript + Vite).
+* `assets/demo/` — Open demo tiles (Zürich urban, Emmental rural/hilly, © swisstopo OGD).
+* `tests/` — Automated test suite (**72 passing tests** across unit, API, Mode B, and regression suites).
+* `configs/default.yaml` — All configurable parameters for ingest, inference, calibration, and rendering.

@@ -28,12 +28,16 @@
         </div>
 
         <div id="dropzone" class="dropzone">
-          <p><strong>Drop a PNG / JPG (Mode A) or GeoTIFF (Mode B) here</strong></p>
+          <div class="dropzone-icon">🛰️</div>
+          <p class="dropzone-prompt"><strong>Drop an Aerial Photograph or GeoTIFF here</strong></p>
+          <p class="dropzone-sub">PNG / JPG (Mode A relative surface) or GeoTIFF (Mode B metric calibrated DSM)</p>
           <input id="file-input" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,image/png,image/jpeg,image/tiff" />
-          <p class="hint" style="margin-top:8px">
-            Demo inputs (© swisstopo OGD, open government data):
-            <span id="demo-buttons"></span>
-          </p>
+          <button type="button" class="btn-browse" onclick="document.getElementById('file-input').click()">Browse Image</button>
+        </div>
+
+        <div class="demo-showcase">
+          <div class="demo-showcase-title">⚡ ONE-CLICK BENCHMARK DATASETS (swisstopo OGD)</div>
+          <div id="demo-buttons" class="demo-grid"></div>
         </div>
 
         <details id="opt-inputs" class="opts">
@@ -231,57 +235,90 @@
         </div>
 
         <div class="viewer-toolbar">
-          <!-- Camera Mode switch: Orbit vs First-Person Walk -->
-          <div class="btn-group" id="cam-mode-group" title="Camera Navigation Mode">
-            <button id="cam-orbit-btn" class="sub-btn active" type="button" title="Aerial Orbit controls (default)">🛰️ Orbit</button>
-            <button id="cam-walk-btn" class="sub-btn" type="button" title="First-Person Ground Walking (WASD + mouse look)">🚶 Walk</button>
+          <!-- Camera Mode switch: Orbit vs First-Person Walk vs Cinematic Flythrough -->
+          <div class="toolbar-group">
+            <span class="group-label">NAV</span>
+            <div class="btn-group" id="cam-mode-group">
+              <button id="cam-orbit-btn" class="sub-btn active" type="button" title="Aerial Orbit controls (Rotate / Pan / Zoom)">🛰️ Orbit</button>
+              <button id="cam-walk-btn" class="sub-btn" type="button" title="First-Person Ground Walking (WASD + mouse look)">🚶 Walk</button>
+              <button id="cam-fly-btn" class="sub-btn glow-accent" type="button" title="Automated Cinematic Drone Orbit (360° Inspection)">🎬 Drone Fly</button>
+            </div>
           </div>
 
-          <!-- Mesh Simplification switch: Regular 1:1 vs Adaptive RTIN (Martini) -->
-          <label>
-            Mesh
-            <select id="mesh-mode-sel" title="Switch between uniform regular grid and client-side adaptive RTIN mesh">
-              <option value="regular">1:1 Regular Grid</option>
-              <option value="rtin">Adaptive RTIN (Martini)</option>
-            </select>
-          </label>
-          <label id="rtin-tol-wrap" class="hidden" title="Elevation error threshold for simplification">
-            Tol
-            <input id="rtin-tol" type="range" min="0.1" max="5.0" step="0.1" value="0.5" />
-            <span id="rtin-tol-val">0.5 m</span>
-          </label>
+          <!-- Camera Angles -->
+          <div class="toolbar-group">
+            <span class="group-label">ANGLE</span>
+            <div class="btn-group" id="preset-group">
+              <button id="preset-nadir-btn" class="sub-btn" type="button" title="Top-down Nadir (Satellite map view)">⬇️ Top</button>
+              <button id="preset-oblique-btn" class="sub-btn active" type="button" title="3D Oblique angle (Perspective 45°)">📐 3D</button>
+              <button id="preset-horizon-btn" class="sub-btn" type="button" title="Low horizon / profile perspective">🌅 Horizon</button>
+            </div>
+          </div>
 
-          <label>
-            Layer
-            <select id="view-layer"></select>
-          </label>
-          <label id="zscale-wrap">
-            Display height scale
-            <input id="zscale" type="range" min="0.02" max="0.6" step="0.01" value="0.2" />
-            <span id="zscale-val">0.20</span>
-            <span class="hint">(visual only)</span>
-          </label>
-          <label id="exag-wrap" class="hidden">
-            Vertical exaggeration
-            <input id="exag" type="range" min="0.5" max="5" step="0.1" value="1" />
-            <span id="exag-val">×1.0 (true scale)</span>
-          </label>
-          <label>
-            <input id="wire" type="checkbox" />
-            Wireframe
-          </label>
-          <label title="Eliminate vertical texture smearing on building facades and steep cliffs">
-            <input id="antismear" type="checkbox" checked />
-            Anti-Smear
-          </label>
-          <label id="lod1-wrap" class="hidden" title="Render clean extruded 3D building blocks with 90° vertical walls">
-            <input id="lod1-chk" type="checkbox" />
-            🏢 3D Buildings
-          </label>
-          <button id="reset-cam" class="secondary">Reset camera</button>
-          <button id="open3d-btn" class="primary" disabled style="width:auto;margin-top:0">Open 3D View</button>
-          <span id="mesh-info"></span>
-          <span id="mesh-reduction-pill" class="badge ok hidden" title="Real-time triangle reduction statistics"></span>
+          <!-- Surface Shader -->
+          <div class="toolbar-group">
+            <span class="group-label">SHADER</span>
+            <div class="btn-group" id="shader-mode-group">
+              <button id="shader-aerial-btn" class="sub-btn active" type="button" title="Photometric Aerial Texture">🛰️ Aerial</button>
+              <button id="shader-heatmap-btn" class="sub-btn" type="button" title="Scientific Elevation Heatmap (Google Turbo Colormap + Topo Contours)">🌈 Heatmap</button>
+              <button id="shader-cyber-btn" class="sub-btn" type="button" title="Cyber Blueprint with Glowing Isolines">⚡ Blueprint</button>
+            </div>
+          </div>
+
+          <!-- Display controls -->
+          <div class="toolbar-group">
+            <label>
+              Layer
+              <select id="view-layer"></select>
+            </label>
+            <label id="zscale-wrap">
+              Scale
+              <input id="zscale" type="range" min="0.02" max="0.6" step="0.01" value="0.2" />
+              <span id="zscale-val">0.20</span>
+            </label>
+            <label id="exag-wrap" class="hidden">
+              Vert. Exag
+              <input id="exag" type="range" min="0.5" max="3" step="0.1" value="1.0" />
+              <span id="exag-val">×1.0 (true scale)</span>
+            </label>
+          </div>
+
+          <!-- Features & Simplification -->
+          <div class="toolbar-group">
+            <label>
+              Mesh
+              <select id="mesh-mode-sel" title="Switch between uniform regular grid and client-side adaptive RTIN mesh">
+                <option value="regular">1:1 Regular</option>
+                <option value="rtin">Adaptive RTIN</option>
+              </select>
+            </label>
+            <label id="rtin-tol-wrap" class="hidden" title="Elevation error threshold for simplification">
+              Tol
+              <input id="rtin-tol" type="range" min="0.1" max="5.0" step="0.1" value="0.5" />
+              <span id="rtin-tol-val">0.5 m</span>
+            </label>
+            <label>
+              <input id="wire" type="checkbox" />
+              Wireframe
+            </label>
+            <label title="Eliminate vertical texture smearing on building facades and steep cliffs">
+              <input id="antismear" type="checkbox" checked />
+              Anti-Smear
+            </label>
+            <label id="lod1-wrap" class="hidden" title="Render clean extruded 3D building blocks with 90° vertical walls">
+              <input id="lod1-chk" type="checkbox" checked />
+              🏢 3D Buildings
+            </label>
+          </div>
+
+          <div class="toolbar-group toolbar-actions">
+            <button id="reset-cam" class="secondary" type="button">Reset</button>
+            <button id="open3d-btn" class="primary" disabled style="width:auto;margin-top:0">Open 3D View</button>
+          </div>
+          <div class="toolbar-status">
+            <span id="mesh-info"></span>
+            <span id="mesh-reduction-pill" class="badge ok hidden" title="Real-time triangle reduction statistics"></span>
+          </div>
         </div>
 
         <div id="viewer" class="viewer">

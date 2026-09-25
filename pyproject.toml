@@ -1,7 +1,7 @@
 [project]
 name = "depthwizard"
 version = "0.1.0"
-description = "DepthWizard — Single-View Height Estimation and 3D Flythrough (SIH26175 / ISRO). Sprint 1: Mode A relative pipeline."
+description = "DepthWizard — Single-View Height Estimation and 3D Flythrough (SIH26175 / ISRO). Mode A relative + Mode B calibrated metric DSM pipeline with real-time 3D exploration."
 requires-python = ">=3.12,<3.13"
 readme = "README.md"
 
