@@ -19,6 +19,7 @@ export interface Result {
   calibration_tier: string; quality?: string; quality_triggers?: string[]; flags?: string[]; notes?: string[];
   units: string; vertical_reference: string | null; object_scale_source?: string | null; object_scale_m_per_unit?: number | null;
   grid: Record<string, any>; gsd_m?: number; dem?: Record<string, any> | null; rdsm_stats?: Record<string, unknown>;
+  tile_refinement?: { applied: boolean; n_tiles?: number } & Record<string, unknown>; method_version?: string;
   layers?: Record<string, LayerInfo>; heightfield: HeightfieldMeta; artifacts: Record<string, string>; timings_ms: Record<string, number>;
 }
 export interface SampleValue { value: number | null; valid: boolean; quantity: string; units: string; metric?: boolean; absolute?: boolean; tier?: string; vertical_reference?: string; scale_source?: string }

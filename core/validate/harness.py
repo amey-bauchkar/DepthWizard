@@ -46,6 +46,7 @@ class ValidationResult:
     residual_stats: dict[str, Any]
     artifacts: dict[str, str]
     caveats: list[str] = field(default_factory=list)
+    metrics_baseline: dict[str, Any] | None = None  # input DEM alone on the same mask (no model), for comparison
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -56,7 +57,7 @@ def _native_posting(path: str) -> tuple[float, float]:
         return (abs(ds.transform.a), abs(ds.transform.e))
 
 
-def run_validation(job_dir: Path, grid: Grid, pred: np.ndarray, ref_spec: ReferenceSpec, *, out_vcrs: str, ndsm: np.ndarray | None, anchors_xy: np.ndarray | None = None, exclusion_radius_m: float = 15.0, border_px: int = 4, max_shift_px: int = 4) -> ValidationResult:
+def run_validation(job_dir: Path, grid: Grid, pred: np.ndarray, ref_spec: ReferenceSpec, *, out_vcrs: str, ndsm: np.ndarray | None, anchors_xy: np.ndarray | None = None, exclusion_radius_m: float = 15.0, border_px: int = 4, max_shift_px: int = 4, baseline: np.ndarray | None = None) -> ValidationResult:
     caveats: list[str] = []
     native = _native_posting(ref_spec.path)
     gsd = grid.pixel_size or (1.0, 1.0)
@@ -70,7 +71,7 @@ def run_validation(job_dir: Path, grid: Grid, pred: np.ndarray, ref_spec: Refere
         step = max(1, min(grid.width, grid.height) // 16)
         rows = np.arange(0, grid.height, step); cols = np.arange(0, grid.width, step)
         cc, rr = np.meshgrid(cols, rows)
-        xs, ys = grid.transform * (cc + 0.5, rr + 0.5)  # type: ignore[operator]
+        xs, ys = grid.transform @ (cc + 0.5, rr + 0.5)  # type: ignore[operator]
         z1, _info = transform_heights_xy(np.asarray(xs), np.asarray(ys), np.zeros(np.shape(xs)), grid.crs, ref_spec.vertical_crs, out_vcrs)
         z1 = np.asarray(z1).reshape(np.shape(xs))
         from scipy.ndimage import zoom
@@ -100,6 +101,7 @@ def run_validation(job_dir: Path, grid: Grid, pred: np.ndarray, ref_spec: Refere
 
     pred_al = ndimage.shift(np.nan_to_num(pred, nan=np.nanmedian(pred)), (-shift.dy, -shift.dx), order=1, mode="nearest") if (abs(shift.dx) > 0.05 or abs(shift.dy) > 0.05) else pred
     overall = metric_set(pred_al, ref, m)
+    base_metrics = metric_set(baseline, ref, m & np.isfinite(baseline)) if baseline is not None else None
     # strata: slope classes from the reference; object vs ground from ndsm when available
     slope_ref, _ = slope_aspect_deg(np.where(np.isfinite(ref), ref, np.nanmedian(ref)), gsd[0], gsd[1])
     by_slope = {}
@@ -139,8 +141,9 @@ def run_validation(job_dir: Path, grid: Grid, pred: np.ndarray, ref_spec: Refere
         reference={**asdict(ref_spec), "native_posting_m": list(native), "datum_handling": datum_note},
         comparison_grid={"posting_m": list(gsd), "resampling": resampling.name, "reference_finer_than_grid": bool(finer), "width": grid.width, "height": grid.height},
         alignment=shift.to_dict() | {"applied": bool(abs(shift.dx) > 0.05 or abs(shift.dy) > 0.05)},
-        mask={"valid_pixels": int(m.sum()), "before_exclusion": n_before, "anchor_excluded_pixels": excluded, "border_px": border_px, "leakage_check": "passed" if excluded >= 0 else "n/a"},
+        mask={"valid_pixels": int(m.sum()), "before_exclusion": n_before, "anchor_excluded_pixels": excluded, "border_px": border_px, "leakage_check": ("passed" if excluded > 0 else "no anchor pixels overlapped the mask") if anchors_xy is not None and len(anchors_xy) else "n/a (no anchors used)"},
         metrics_overall=overall,
+        metrics_baseline=base_metrics,
         metrics_by_slope=by_slope,
         metrics_by_object=by_obj,
         height_bins=bins,

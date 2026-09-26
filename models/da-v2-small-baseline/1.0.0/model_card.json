@@ -1,7 +1,7 @@
 {
   "name": "da-v2-small-baseline",
   "version": "1.0.0",
-  "role": "Sprint 1 zero-shot baseline (Phase 5 Concept A fallback path). NOT fine-tuned for remote sensing.",
+  "role": "Zero-shot relative-depth backbone for Mode A and Mode B (run on the whole image and on overlapping 518 px tiles). NOT fine-tuned for remote sensing.",
   "architecture": "Depth Anything V2 Small: DINOv2 ViT-S/14 encoder, DPT decoder, features=64, out_channels=[48,96,192,384]",
   "parameters_millions": 24.8,
   "training_domain": "natural images (595K synthetic + 62M pseudo-labelled real, upstream)",
@@ -18,6 +18,19 @@
   "weights_source": "https://huggingface.co/depth-anything/Depth-Anything-V2-Small",
   "weights_sha256": "715fade13be8f229f8a70cc02066f656f2423a59effd0579197bbf57860e1378",
   "code_source": "https://github.com/DepthAnything/Depth-Anything-V2 @ a561b849ebae10a6f5ef49e26c83cbbcd36c71bf (vendored under ml/registry/vendor; cv2 import made optional)",
-  "preprocess": {"input_size": 518, "size_multiple": 14, "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
-  "validation": "none — Sprint 1 pipeline execution only; no accuracy measured"
+  "preprocess": {
+    "input_size": 518,
+    "size_multiple": 14,
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ]
+  },
+  "validation": "No stand-alone accuracy claim for the model. System-level DSM accuracy (DEM + calibrated tiled detail) is measured against swisstopo LiDAR in docs/validation_results.md."
 }

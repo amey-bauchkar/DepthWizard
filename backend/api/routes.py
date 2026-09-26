@@ -9,7 +9,7 @@ from typing import Any
 
 import torch
 from fastapi import APIRouter, Body, File, Form, Query, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from backend.config.settings import REPO_ROOT
 from backend.errors import DepthWizardError, InvalidFileError, JobNotFoundError, UnsupportedFormatError
@@ -39,16 +39,17 @@ def system(request: Request):
 
     mgr = _mgr(request)
     s = mgr.settings
+    has_h = mgr.metric_predictor() is not None
     return {
-        "app": {"name": "DepthWizard", "version": request.app.version, "modes_supported": ["A", "B"], "tiers_available": ["R", "T", "A"], "tiers_unavailable": {"H": "no fine-tuned metric head in this build (no GPU / no training data)"}},
+        "app": {"name": "DepthWizard", "version": request.app.version, "modes_supported": ["A", "B"], "tiers_available": ["R", "H", "T", "A"] if has_h else ["R", "T", "A"], "tiers_unavailable": {} if has_h else {"H": "no fine-tuned metric nDSM model installed (train with notebooks/DepthWizard_FineTune_nDSM_Colab.ipynb, install with scripts/install_finetuned_model.py)"}},
         "runtime": {"os": platform.platform(), "python": platform.python_version(), "torch": torch.__version__, "cuda": torch.cuda.is_available(), "numpy": numpy.__version__, "rasterio": rasterio.__version__, "gdal": rasterio.__gdal_version__, "pyproj": pyproj.__version__, "proj": pyproj.proj_version_str},
         "model": mgr.model_status(),
-        "config": {"hash": s.config_hash(), "model": s.model.model_dump(), "ingest": s.ingest.model_dump(), "rdsm": s.rdsm.model_dump(), "calib": s.calib.model_dump(), "validation": s.validation.model_dump(), "terrain": s.terrain.model_dump()},
+        "config": {"hash": s.config_hash(), "model": s.model.model_dump(), "ingest": s.ingest.model_dump(), "rdsm": s.rdsm.model_dump(), "calib": s.calib.model_dump(), "fusion": s.fusion.model_dump(), "validation": s.validation.model_dump(), "terrain": s.terrain.model_dump()},
         "geoid_grids": [g.__dict__ for g in grid_status()],
         "dem_tiles": sorted(p.name for p in s.dem_dir.glob("*.tif")) if s.dem_dir.exists() else [],
         "semantics": {
-            "mode_A": "PNG/JPEG -> relative surface structure (rDSM). Unitless. metric=false. calibration_tier=R. No vertical reference.",
-            "mode_B": "GeoTIFF -> terrain layer (DEM, datum-transformed) + object layer (zero-shot relative structure x calibrated scale). metric=true. calibration_tier=T (DEM) or A (anchors). Object scale from DEM residual is UNVALIDATED; quality <= LIMITED unless anchors.",
+            "mode_A": "PNG/JPEG/non-georeferenced TIFF -> relative surface structure (rDSM). Unitless. metric=false. calibration_tier=R. No vertical reference.",
+            "mode_B": "GeoTIFF -> DSM = DEM (datum-transformed) + zero-shot model detail below one DEM posting, scaled per tile against the DEM band (tiled inference). metric=true. calibration_tier=T (DEM) or A (anchors). DEM-band detail scale is UNVALIDATED without anchors/reference; quality <= LIMITED unless anchors.",
         },
     }
 
@@ -170,7 +171,7 @@ def job_artifact(request: Request, job_id: str, name: str):
 @router.delete("/api/jobs/{job_id}", status_code=204)
 def delete_job(request: Request, job_id: str):
     _mgr(request).delete(job_id)
-    return JSONResponse(status_code=204, content=None)
+    return Response(status_code=204)
 
 
 def error_response(exc: DepthWizardError) -> JSONResponse:

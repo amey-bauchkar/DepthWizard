@@ -25,6 +25,15 @@ class ModelCfg(BaseModel):
     size_multiple: int = 14
 
 
+class MetricModelCfg(BaseModel):
+    """Optional fine-tuned metric nDSM model (tier H), used for Mode B tiled inference when installed.
+    Install with scripts/install_finetuned_model.py; if missing, Mode B falls back to the zero-shot model."""
+    enabled: bool = True
+    name: str = "da-v2-small-ndsm"
+    version: str = "1.0.0"
+    verify_hash: bool = True
+
+
 class IngestCfg(BaseModel):
     max_image_dim: int = 4096
     allowed_extensions: list[str] = Field(default_factory=lambda: [".png", ".jpg", ".jpeg", ".tif", ".tiff"])
@@ -38,17 +47,26 @@ class CalibCfg(BaseModel):
     w_min: float = 0.1
     ground_window_m: float = 60.0
     datum_sanity_m: float = 15.0
-    min_object_fraction: float = 0.3
-    # Object scale plausibility gates (applied to the DEM residual scale fit)
-    # min_implied_p99_m: minimum expected p99 object height (m). 0.5m allows modest buildings at 2m GSD.
-    min_implied_p99_m: float = 0.5
-    max_implied_p99_m: float = 80.0
-    min_r: float = 0.05
     anchor_min_n: int = 5
     anchor_holdout_fraction: float = 0.3
     anchor_accept_k: float = 3.0
     anchor_accept_nmad_m: float = 5.0  # offset accepted when fit NMAD <= max(k*sigma, this): terrain-layer scatter, not anchor noise, dominates
-    anchor_scale_min_inlier_fraction: float = 0.6
+
+
+class FusionCfg(BaseModel):
+    """Tiled inference + DEM-preserving detail fusion (core.calib.fusion)."""
+    enabled: bool = True
+    inference_gsd_m: float = 0.5  # Mode B: imagery is resampled so the model sees ~this GSD per tile pixel
+    min_upsample: float = 0.25
+    max_upsample: float = 4.0
+    tile_px: int = 518  # DA-V2 native input size (multiple of 14)
+    overlap: float = 0.25
+    max_tiles: int = 64  # CPU budget; the inference GSD is coarsened automatically to stay within it
+    max_tile_gain: float | None = None  # optional cap on the per-tile DEM-band gain (m per relative unit)
+    anchor_gain_max: float = 4.0  # plausibility bound on the anchor-fitted detail gain
+    mode_a_tiling: bool = True  # Mode A: refine large images with native-resolution tiles
+    metric_composition: Literal["highpass", "terrain_plus_ndsm"] = "highpass"  # how a metric nDSM model is combined with the DEM
+    metric_ground_max_m: float = 1.0  # model nDSM below this = ground (terrain-layer support)
 
 
 class ValidateCfg(BaseModel):
@@ -88,10 +106,12 @@ class ServerCfg(BaseModel):
 
 class Settings(BaseModel):
     model: ModelCfg = Field(default_factory=ModelCfg)
+    model_metric: MetricModelCfg = Field(default_factory=MetricModelCfg)
     ingest: IngestCfg = Field(default_factory=IngestCfg)
     preprocess: PreprocessCfg = Field(default_factory=PreprocessCfg)
     rdsm: RdsmCfg = Field(default_factory=RdsmCfg)
     calib: CalibCfg = Field(default_factory=CalibCfg)
+    fusion: FusionCfg = Field(default_factory=FusionCfg)
     validation: ValidateCfg = Field(default_factory=ValidateCfg)
     terrain: TerrainCfg = Field(default_factory=TerrainCfg)
     storage: StorageCfg = Field(default_factory=StorageCfg)
@@ -135,14 +155,18 @@ def _deep_update(base: dict[str, Any], upd: dict[str, Any]) -> dict[str, Any]:
 def _env_overrides() -> dict[str, Any]:
     """DW_MODEL_NAME=stub -> {"model": {"name": "stub"}}; DW_INGEST_MAX_IMAGE_DIM=1024 etc."""
     out: dict[str, Any] = {}
-    sections = {"model", "ingest", "preprocess", "rdsm", "calib", "validation", "terrain", "storage", "server"}
+    sections = {"model", "ingest", "preprocess", "rdsm", "calib", "fusion", "validation", "terrain", "storage", "server"}
     for key, val in os.environ.items():
         if not key.startswith("DW_"):
             continue
-        parts = key[3:].lower().split("_", 1)
-        if len(parts) != 2 or parts[0] not in sections:
-            continue
-        section, field = parts
+        low = key[3:].lower()
+        if low.startswith("model_metric_"):  # two-word section: DW_MODEL_METRIC_ENABLED=false
+            section, field = "model_metric", low[len("model_metric_"):]
+        else:
+            parts = low.split("_", 1)
+            if len(parts) != 2 or parts[0] not in sections:
+                continue
+            section, field = parts
         # coerce simple scalars
         v: Any = val
         if val.lower() in {"true", "false"}:

@@ -2,7 +2,7 @@
 
 Vocabulary is fixed here and must be used everywhere:
   * relative height  -> unitless, Mode A (tier R)
-  * nDSM             -> metres above local ground (tier H)
+  * nDSM             -> metres above the terrain layer (tier T/A; tier H would need a fine-tuned metric head)
   * terrain / DSM    -> metres on a declared vertical CRS (tier T/A)
 """
 from __future__ import annotations
@@ -43,7 +43,7 @@ class Grid:
         t = self.transform
         xs, ys = [], []
         for col, row in ((0, 0), (self.width, 0), (0, self.height), (self.width, self.height)):
-            x, y = t * (col, row)
+            x, y = t @ (col, row)
             xs.append(x)
             ys.append(y)
         return (min(xs), min(ys), max(xs), max(ys))
@@ -59,12 +59,12 @@ class Grid:
         """Centre-of-pixel convention: pixel (col,row) centre is at (col+0.5, row+0.5)."""
         if self.transform is None:
             return (col + 0.5, row + 0.5)
-        return self.transform * (col + 0.5, row + 0.5)
+        return self.transform @ (col + 0.5, row + 0.5)
 
     def crs_to_pixel(self, x: float, y: float) -> tuple[float, float]:
         if self.transform is None:
             return (x - 0.5, y - 0.5)
-        col, row = ~self.transform * (x, y)
+        col, row = ~self.transform @ (x, y)
         return (col - 0.5, row - 0.5)
 
     def assert_same(self, other: "Grid") -> None:

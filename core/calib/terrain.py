@@ -1,23 +1,20 @@
-"""Two-layer calibration (TL-CSM) — terrain layer and object-layer scale.
+"""Terrain layer (ground-weighted DEM reconstruction) and the relative object layer used as its ground mask.
 
 Terrain layer (Phase 6 §7, validated synthetically in Phase 8 L0-04): the coarse DEM is sampled preferentially
 where the image model sees bare ground, then reconstructed by normalized convolution so canopy/roof-contaminated
 DEM cells are down-weighted; where support is absent the raw DEM is used and flagged.
 
-Object layer in THIS build (no fine-tuned metric head available — Phase 8 §3, no GPU): the zero-shot relative
-structure is converted to a non-negative "object" layer by a morphological ground filter (opening) and its
-metric scale is estimated either from anchors (tier A, core.calib.anchors) or from the DEM residual above the
-terrain layer (tier T, "dem_residual_fit"). The latter is a scene-level calibration explicitly allowed by the PS,
-but it is unvalidated in general: the DEM sees objects only at 30 m block scale and partially (X-band canopy
-penetration). It is labelled as such everywhere.
+The metric object layer itself (sub-DEM-posting detail) is produced by core.calib.fusion (tiled inference +
+DEM-preserving detail fusion). The earlier global "DEM residual" object-scale fit was removed: measured against
+LiDAR it degraded the DEM (docs/validation_results.md, 2026-09-26).
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from scipy import ndimage, stats
+from scipy import ndimage
 
 
 @dataclass
@@ -35,21 +32,6 @@ class ObjectLayerResult:
     object_rel: np.ndarray  # relative object layer >= 0 (unitless)
     ground_mask: np.ndarray
     params: dict[str, Any]
-
-
-@dataclass
-class ScaleFitResult:
-    scale: float | None  # metres per relative unit
-    method: str
-    n_cells: int
-    r_value: float | None
-    residual_nmad_m: float | None
-    accepted: bool
-    reason: str
-    params: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -126,58 +108,3 @@ def terrain_layer(dem: np.ndarray, dem_valid: np.ndarray, ground: np.ndarray, *,
     raw_fb = ndimage.zoom(raw_fb_c.astype(np.float32), (zh, zw), order=0)[: dem.shape[0], : dem.shape[1]] > 0.5
     stats_ = {"block_factor": f, "cells": [int(corr_c.shape[1]), int(corr_c.shape[0])], "support_mean": float(w[cell_valid].mean()) if cell_valid.any() else 0.0, "support_min": float(w[cell_valid].min()) if cell_valid.any() else 0.0, "raw_fallback_fraction": float(raw_fb_c[cell_valid].mean()) if cell_valid.any() else 0.0, "dem_void_fraction": float(1 - dem_valid.mean()), "correction_mean_m": float(corr_c[cell_valid].mean()) if cell_valid.any() else 0.0, "correction_min_m": float(corr_c[cell_valid].min()) if cell_valid.any() else 0.0, "method": "order1_normalized_convolution_correction (plane fit, DEM upper-bound clamp)"}
     return TerrainResult(terrain, ground, support, raw_fb, {"sigma_cells": sigma_cells, "w_min": w_min, "dem_posting_m": dem_posting_m, "max_raise_m": max_raise_m}, stats_)
-
-
-def fit_object_scale_to_dem_residual(dem: np.ndarray, terrain: np.ndarray, object_rel: np.ndarray, valid: np.ndarray, *, gsd_m: float, dem_posting_m: float = 30.0, min_object_fraction: float = 0.3, min_cells: int = 12, min_r: float = 0.1, min_implied_p99_m: float = 2.0, max_implied_p99_m: float = 60.0) -> ScaleFitResult:
-    """Scene-level object-scale estimate (tier T when no anchors): DEM - terrain ≈ s * mean(object_rel) per DEM cell.
-    Robust Theil–Sen slope through the origin-ish (we fit slope only, intercept absorbed by terrain)."""
-    f = max(1, int(round(dem_posting_m / max(gsd_m, 1e-6))))
-    resid_c = _block_reduce(np.where(valid, dem - terrain, np.nan), f)
-    obj_c = _block_reduce(np.where(valid, object_rel, np.nan), f)
-    objfrac_c = _block_reduce(np.where(valid, (object_rel > 0).astype(float), np.nan), f)
-    m = np.isfinite(resid_c) & np.isfinite(obj_c) & (objfrac_c >= min_object_fraction) & (obj_c > 1e-4)
-    n = int(m.sum())
-    if n < min_cells:
-        return ScaleFitResult(None, "dem_residual_fit", n, None, None, False, f"too few object-dominated DEM cells ({n} < {min_cells})")
-    x, y = obj_c[m], resid_c[m]
-    slope, intercept, lo, hi = stats.theilslopes(y, x)
-    r = float(np.corrcoef(x, y)[0, 1]) if x.std() > 0 and y.std() > 0 else None
-    res = y - (slope * x + intercept)
-    nmad = float(1.4826 * np.median(np.abs(res - np.median(res))))
-    accepted = bool(slope > 0 and (lo > 0))
-    reason = "accepted" if accepted else f"slope {slope:.3f} not significantly positive (95% CI [{lo:.3f},{hi:.3f}])"
-    # Plausibility gates: the implied object heights must be physically sensible and the fit must explain something.
-    p99_obj = float(np.nanquantile(object_rel[valid & np.isfinite(object_rel)], 0.99)) if valid.any() else 0.0
-    final_scale = float(slope)
-    implied_p99_m = float(slope * p99_obj)
-    # For spaceborne InSAR DEMs (e.g. Copernicus GLO-30), high-frequency building and canopy heights are
-    # attenuated at 30 m posting. If the positive slope indicates physical elevation excess over terrain,
-    # but the raw cell-averaged DEM residual is attenuated (implied p99 < 5 m), we adjust for cell
-    # dilution and radar attenuation (~8x, Phase 3 E19) to recover realistic metric relief.
-    if accepted and implied_p99_m < 5.0 and p99_obj > 1e-4:
-        cell_height_est = resid_c[m] / np.maximum(objfrac_c[m], 0.2)
-        copernicus_radar_factor = 8.0
-        scaled_height = cell_height_est * copernicus_radar_factor
-        adj_scale = float(np.nanmedian(scaled_height / np.maximum(obj_c[m], 1e-4)))
-        adj_implied = adj_scale * p99_obj
-        if min_implied_p99_m <= adj_implied <= max_implied_p99_m:
-            final_scale = adj_scale
-            implied_p99_m = adj_implied
-            reason = "accepted (DEM residual adjusted for 30m radar urban attenuation)"
-    if accepted and not (min_implied_p99_m <= implied_p99_m <= max_implied_p99_m):
-        accepted, reason = False, f"implied p99 object height {implied_p99_m:.1f} m outside [{min_implied_p99_m}, {max_implied_p99_m}] m — fit rejected"
-    if accepted and (r is None or r < min_r):
-        accepted, reason = False, f"fit correlation r={r if r is None else round(r, 3)} < {min_r} — DEM residual does not track the object layer; fit rejected"
-    return ScaleFitResult(final_scale if accepted else None, "dem_residual_fit", n, r, nmad, accepted, reason, {"intercept_m": float(intercept), "ci95": [float(lo), float(hi)], "min_object_fraction": min_object_fraction, "implied_p99_object_height_m": implied_p99_m, "gates": {"min_r": min_r, "implied_p99_range_m": [min_implied_p99_m, max_implied_p99_m]}, "note": "DEM sees objects only at block scale and partially; unvalidated scene-level calibration (Phase 3 E19/E21)"})
-
-
-def compose_dsm(terrain: np.ndarray, object_rel: np.ndarray, scale_m_per_unit: float | None, valid: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
-    """DSM = terrain + s * object_rel. Returns (dsm, ndsm_m) or (terrain copy, None) when no scale is available."""
-    if scale_m_per_unit is None:
-        d = np.where(valid, terrain, np.nan).astype(np.float32)
-        return d, None
-    ndsm = (object_rel * scale_m_per_unit).astype(np.float32)
-    dsm = (terrain + ndsm).astype(np.float32)
-    dsm[~valid] = np.nan
-    ndsm[~valid] = np.nan
-    return dsm, ndsm

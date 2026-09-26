@@ -22,7 +22,8 @@ from backend.errors import DepthWizardError, JobNotFoundError, JobStateError
 from backend.jobs import pipeline, pipeline_b
 from core.ingest.geotiff import is_georeferenced_tiff
 from backend.logging_setup import JobLogger
-from core.inference.predictor import BasePredictor, build_predictor
+from core.calib.fusion import needs_tiling
+from core.inference.predictor import BasePredictor, build_metric_predictor, build_predictor
 
 STATES = ["CREATED", "UPLOADED", "PREPROCESSING", "INFERENCE", "CALIBRATION", "RASTERIZING", "READY", "FAILED"]
 IN_FLIGHT = {"PREPROCESSING", "INFERENCE", "CALIBRATION", "RASTERIZING"}
@@ -64,6 +65,9 @@ class JobManager:
         self._predictor: BasePredictor | None = None
         self._predictor_error: DepthWizardError | None = None
         self._predictor_lock = threading.Lock()
+        self._metric: BasePredictor | None = None
+        self._metric_error: DepthWizardError | None = None
+        self._metric_tried = False
         self._load_existing()
 
     # ---- persistence -------------------------------------------------------
@@ -96,12 +100,25 @@ class JobManager:
                 self._predictor = build_predictor(self.settings)  # raises ModelUnavailableError with a clear message
             return self._predictor
 
+    def metric_predictor(self) -> BasePredictor | None:
+        """Fine-tuned metric nDSM model (tier H) if installed and enabled; None otherwise (reason in model_status)."""
+        with self._predictor_lock:
+            if not self._metric_tried:
+                self._metric_tried = True
+                try:
+                    self._metric = build_metric_predictor(self.settings)
+                except DepthWizardError as e:
+                    self._metric_error = e
+            return self._metric
+
     def model_status(self) -> dict[str, Any]:
+        mp = self.metric_predictor()
+        metric = {"available": True, "name": mp.card.name, "version": mp.card.version, "sha256": mp.card.sha256_actual, "output_quantity": mp.card.output_quantity, "validation": (mp.card.extra or {}).get("validation")} if mp else {"available": False, "reason": self._metric_error.detail if self._metric_error else "not loaded"}
         try:
             p = self.predictor()
-            return {"available": True, "name": p.card.name, "version": p.card.version, "device": p.device, "sha256": p.card.sha256_actual, "output_quantity": p.card.output_quantity, "licence": p.card.licence, "load_ms": getattr(p, "load_ms", None)}
+            return {"available": True, "name": p.card.name, "version": p.card.version, "device": p.device, "sha256": p.card.sha256_actual, "output_quantity": p.card.output_quantity, "licence": p.card.licence, "load_ms": getattr(p, "load_ms", None), "metric_model": metric}
         except DepthWizardError as e:
-            return {"available": False, "error": e.to_dict(), "name": self.settings.model.name, "version": self.settings.model.version}
+            return {"available": False, "error": e.to_dict(), "name": self.settings.model.name, "version": self.settings.model.version, "metric_model": metric}
 
     # ---- lifecycle ---------------------------------------------------------
     def create(self) -> Job:
@@ -206,18 +223,29 @@ class JobManager:
             t1 = time.perf_counter()
             # stage_inference only needs .rgb; both ingest results expose it
             rel_depth, prov = pipeline.stage_inference(d, ing if mode_b else ing_a, predictor, log)  # type: ignore[arg-type]
-            job.stages_ms["inference_ms"] = round((time.perf_counter() - t1) * 1000, 1)
             job.stages_ms["model_forward_ms"] = round(prov["timings_ms"]["inference_ms"], 1)
+            # overlapping-tile inference: sub-DEM-posting detail (Mode B) / native-resolution detail (large Mode A images)
+            tiled = None
+            fz = self.settings.fusion
+            if fz.enabled and (mode_b or (fz.mode_a_tiling and needs_tiling(rgb.shape[0], rgb.shape[1], self.settings.model.input_size))):
+                t_tiles = time.perf_counter()
+                # Mode B: the fine-tuned metric nDSM model when installed (tier H heights), else the zero-shot model
+                tile_pred = (self.metric_predictor() or predictor) if mode_b else predictor
+                if tile_pred is not predictor:
+                    job.model["tiles"] = {"name": tile_pred.card.name, "version": tile_pred.card.version, "sha256": tile_pred.card.sha256_actual, "output_quantity": tile_pred.card.output_quantity}
+                tiled = pipeline_b.stage_tiled_inference(d, rgb, ing.meta.gsd_m if mode_b else None, tile_pred, self.settings, log)
+                job.stages_ms["tiled_inference_ms"] = round((time.perf_counter() - t_tiles) * 1000, 1)
+            job.stages_ms["inference_ms"] = round((time.perf_counter() - t1) * 1000, 1)
             t2 = time.perf_counter()
             if mode_b:
                 self._set(job, "CALIBRATION")
                 dem_file = d / job.inputs["dem"] if "dem" in job.inputs else None
                 anchors_file = d / job.inputs["anchors"] if "anchors" in job.inputs else None
-                pipeline_b.stage_calibrate_and_compose(d, ing, rel_depth, prov, self.settings, log, user_dem=dem_file, user_dem_vcrs=job.inputs.get("dem_vcrs", "EGM2008"), anchors_path=anchors_file)
+                pipeline_b.stage_calibrate_and_compose(d, ing, rel_depth, prov, self.settings, log, tiled=tiled, user_dem=dem_file, user_dem_vcrs=job.inputs.get("dem_vcrs", "EGM2008"), anchors_path=anchors_file)
                 job.stages_ms["calibration_ms"] = round((time.perf_counter() - t2) * 1000, 1)
             else:
                 self._set(job, "RASTERIZING")
-                pipeline.stage_rasterize(d, ing_a, rel_depth, prov, self.settings, log)
+                pipeline.stage_rasterize(d, ing_a, rel_depth, prov, self.settings, log, tiled=tiled)
                 job.stages_ms["raster_ms"] = round((time.perf_counter() - t2) * 1000, 1)
             job.stages_ms["total_ms"] = round((time.perf_counter() - t0) * 1000, 1)
             self._set(job, "READY")

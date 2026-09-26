@@ -29,6 +29,7 @@ LAYERS_B = {
     "slope": ("SLOPE", "deg"),
     "aspect": ("ASPECT", "deg"),
     "relative": ("RELATIVE STRUCTURE (non-metric)", "rel"),
+    "dem": ("INPUT DEM (resampled to the job grid, datum-transformed)", "m"),
 }
 LAYERS_A = {"rdsm": ("RELATIVE STRUCTURE (non-metric)", "rel")}
 
@@ -110,7 +111,7 @@ def sample(job_dir: Path, result: dict[str, Any], x: float, y: float, crs: str =
         if name == "relative" or name == "rdsm":
             entry["metric"] = False
             entry["tier"] = "R"
-        elif name in ("dsm", "terrain"):
+        elif name in ("dsm", "terrain", "dem"):
             entry["metric"] = True
             entry["absolute"] = True
             entry["tier"] = result.get("calibration_tier")
@@ -179,10 +180,16 @@ def validate_job(job_dir: Path, result: dict[str, Any], ref_path: Path, ref_type
         pts = json.loads(au.read_text(encoding="utf-8")).get("points", [])
         if pts:
             anchors_xy = np.array([[p["x_grid"], p["y_grid"]] for p in pts], float)
+    baseline = None
+    dm = CACHE.get(job_dir, "dem") if ref_type in ("dsm", "dtm") else None
+    if dm is not None:
+        baseline = dm[0].astype(np.float64)
+        if dm[2] is not None:
+            baseline[baseline == dm[2]] = np.nan
     grid = Grid(width=grid.width, height=grid.height, transform=grid.transform, crs=grid.crs, dtype="float32", nodata=nodata, units="m", metric=True, vertical_reference=result.get("vertical_reference"), tier=result.get("calibration_tier"))
     t0 = time.perf_counter()
     try:
-        vr = run_validation(job_dir, grid, pred, ReferenceSpec(str(ref_path), ref_type, vertical_crs, source_note, acquisition_date), out_vcrs=result.get("vertical_reference") or "EGM2008", ndsm=ndsm, anchors_xy=anchors_xy, exclusion_radius_m=settings.validation.anchor_exclusion_radius_m, border_px=settings.validation.border_px, max_shift_px=settings.validation.max_shift_px)
+        vr = run_validation(job_dir, grid, pred, ReferenceSpec(str(ref_path), ref_type, vertical_crs, source_note, acquisition_date), out_vcrs=result.get("vertical_reference") or "EGM2008", ndsm=ndsm, anchors_xy=anchors_xy, exclusion_radius_m=settings.validation.anchor_exclusion_radius_m, border_px=settings.validation.border_px, max_shift_px=settings.validation.max_shift_px, baseline=baseline)
     except rasterio.errors.RasterioIOError as e:
         raise InvalidFileError(f"reference raster unreadable: {e}") from e
     d = vr.to_dict()
@@ -206,5 +213,11 @@ def _verdict(d: dict[str, Any]) -> dict[str, Any]:
     if rmse is None:
         return {"band": "NO_DATA", "text": "no overlapping valid pixels"}
     band = "A (<2 m RMSE)" if rmse < 2 else "B (2-5 m)" if rmse < 5 else "C (5-10 m)" if rmse < 10 else "D (>10 m)"
-    txt = f"RMSE {rmse:.2f} m, bias {me:+.2f} m, NMAD {nmad:.2f} m over {m.get('n')} pixels vs. the uploaded reference."
-    return {"band": band, "text": txt, "note": "Bands are descriptive only; the comparison grid is the job grid (reference area-averaged if finer)."}
+    txt = f"RMSE {rmse:.2f} m, bias {me:+.2f} m, NMAD {nmad:.2f} m over {m.get('n')} pixels vs. the reference."
+    out = {"band": band, "text": txt, "note": "Bands are descriptive only; the comparison grid is the job grid (reference area-averaged if finer)."}
+    b = d.get("metrics_baseline") or {}
+    if b.get("RMSE") is not None:
+        delta = rmse - b["RMSE"]
+        out["baseline_text"] = f"Input DEM alone on the same pixels: RMSE {b['RMSE']:.2f} m -> DepthWizard {rmse:.2f} m ({delta:+.2f} m, {100 * delta / b['RMSE']:+.1f} %)."
+        out["improves_on_dem"] = bool(delta < 0)
+    return out

@@ -114,6 +114,8 @@ def test_validation_harness_end_to_end(client, synthetic_scene):
     r2 = client.post(f"/api/jobs/{jid}/validate", files={"reference": ("ref_dsm.tif", synthetic_scene["ref_dsm"], "image/tiff")}, data={"ref_type": "dsm", "vertical_crs": "same"})
     assert r2.status_code == 200 and len(client.get(f"/api/jobs/{jid}/validation").json()["runs"]) == 2
     assert "metrics_by_slope" in r2.json()
+    b = r2.json()["metrics_baseline"]
+    assert b and b["n"] > 0 and "baseline_text" in r2.json()["verdict"]  # input DEM alone, same mask
     # bad inputs
     assert client.post(f"/api/jobs/{jid}/validate", data={"ref_type": "dsm"}).status_code == 400
     assert client.post(f"/api/jobs/{jid}/validate", data={"bundled": "nope.tif", "ref_type": "dsm"}).status_code == 404
@@ -131,7 +133,7 @@ def test_anchors_give_tier_a_and_are_excluded_from_validation(client, synthetic_
     lines = ["# crs=EPSG:32643", "id,x,y,z,type,sigma"]
     for i in range(10):  # ground anchors on the true ground, shifted by a known +2 m datum-like offset
         r, c = int(rng.integers(100, 130)), int(rng.integers(180, 230))
-        x, y = tr * (c + 0.5, r + 0.5)
+        x, y = tr @ (c + 0.5, r + 0.5)
         lines.append(f"G{i},{x:.2f},{y:.2f},{g[r, c] + 2.0:.3f},ground,0.2")
     lines.append(f"BL,{X0 + 5:.2f},{Y0 - 5:.2f},{g[2, 2] + 60.0:.3f},ground,0.2")  # a blunder
     csv = "\n".join(lines).encode()
@@ -163,3 +165,47 @@ def test_system_reports_mode_b(client):
     assert j["app"]["modes_supported"] == ["A", "B"] and "H" in j["app"]["tiers_unavailable"]
     assert "UNVALIDATED" in j["semantics"]["mode_B"]
     assert isinstance(j["geoid_grids"], list) and {g["name"] for g in j["geoid_grids"]} == {"EGM96", "EGM2008"}
+
+
+@pytest.fixture()
+def metric_client(tmp_path, monkeypatch):
+    """Stub zero-shot model + stub METRIC nDSM model (height = 20 m x brightness above 0.3)."""
+    monkeypatch.setenv("DW_MODEL_NAME", "stub")
+    monkeypatch.setenv("DW_MODEL_METRIC_ENABLED", "true")
+    monkeypatch.setenv("DW_MODEL_METRIC_NAME", "stub-metric")
+    monkeypatch.setenv("DW_DATA_DIR", str(tmp_path / "data"))
+    from fastapi.testclient import TestClient
+
+    from backend.config.settings import load_settings
+    from backend.main import create_app
+
+    s = load_settings()
+    assert s.model_metric.name == "stub-metric" and s.model_metric.enabled is True
+    return TestClient(create_app(s))
+
+
+def test_metric_model_mode_b_with_dem(metric_client, synthetic_scene):
+    c = metric_client
+    assert c.get("/health").json()["model"]["metric_model"]["available"] is True
+    jid, done = _run(c, {"file": ("scene.tif", synthetic_scene["image"], "image/tiff"), "dem": ("dem.tif", synthetic_scene["dem"], "image/tiff")})
+    assert done["model"]["tiles"]["name"] == "stub-metric"
+    res = c.get(f"/api/jobs/{jid}/result").json()
+    assert res["calibration_tier"] == "T" and "METRIC_NDSM_MODEL" in res["flags"] and res["object_scale_source"] == "fine-tuned metric nDSM model"
+    assert any("fine-tuned metric nDSM model" in n for n in res["notes"])
+    rd = lambda n: rasterio.open(io.BytesIO(c.get(f"/api/jobs/{jid}/artifact/{n}").content)).read(1, masked=True).filled(np.nan)  # noqa: E731
+    dsm, terr, ndsm = rd("dsm.tif"), rd("terrain.tif"), rd("ndsm.tif")
+    ok = np.isfinite(dsm) & np.isfinite(terr)
+    assert np.allclose((dsm - terr)[ok], ndsm[ok], atol=1e-3) and (terr[ok] <= dsm[ok] + 1e-3).all()
+    assert np.nanmedian(ndsm[50:70, 50:70]) > 8.0 and np.nanmedian(ndsm[100:120, 200:220]) < 1.0  # building vs open ground
+
+
+def test_metric_model_without_dem_is_tier_h(metric_client, synthetic_scene, monkeypatch):
+    monkeypatch.setenv("DW_DEM_DIR", "nonexistent_dem_dir")
+    c = metric_client
+    jid, _ = _run(c, {"file": ("scene.tif", synthetic_scene["image"], "image/tiff")})
+    res = c.get(f"/api/jobs/{jid}/result").json()
+    assert res["calibration_tier"] == "H" and res["absolute_elevation"] is False and res["units"] == "metres" and res["vertical_reference"] is None
+    assert "dsm_tif" not in res["artifacts"] and res["artifacts"]["ndsm_tif"] == "ndsm.tif"
+    assert res["layers"]["ndsm"]["heightfield"] == "heightfield_ndsm.f32"
+    s = c.get(f"/api/jobs/{jid}/sample", params={"x": 60, "y": 60}).json()
+    assert s["values"]["ndsm"]["units"] == "m" and s["values"]["ndsm"]["value"] > 8.0

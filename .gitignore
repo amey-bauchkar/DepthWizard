@@ -25,3 +25,9 @@ data/
 
 # local logs
 *.log
+
+# fine-tuned model bundle from the Colab notebook (99 MB; install with scripts/install_finetuned_model.py)
+depthwizard_ndsm_model.zip
+
+.claude/
+

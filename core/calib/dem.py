@@ -95,7 +95,7 @@ def load_dem_on_grid(src: DemSource, grid: Grid, out_vcrs: str) -> tuple[np.ndar
         rows = np.arange(0, grid.height, step)
         cols = np.arange(0, grid.width, step)
         cc, rr = np.meshgrid(cols, rows)
-        xs, ys = grid.transform * (cc + 0.5, rr + 0.5)  # type: ignore[operator]
+        xs, ys = grid.transform @ (cc + 0.5, rr + 0.5)  # type: ignore[operator]
         t = Transformer.from_crs(grid.crs, "EPSG:4326", always_xy=True)
         lon, lat = t.transform(xs, ys)
         z0 = np.zeros_like(lon)

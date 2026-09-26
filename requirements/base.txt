@@ -1,10 +1,11 @@
-# DepthWizard — runtime dependencies (Sprint 1). Verified together on Windows 11 / CPython 3.12.14 / CPU on 2026-09-21.
+# DepthWizard — runtime dependencies. Verified together on Windows 11 / CPython 3.12.14 (2026-09-21) and CPython 3.14.0 (2026-09-26), CPU.
 # torch/torchvision: install from the PyTorch index matching your hardware, e.g.
 #   pip install torch==2.14.0 torchvision==0.29.0 --index-url https://download.pytorch.org/whl/cpu
 torch==2.14.0
 torchvision==0.29.0
 numpy==2.5.2
 scipy==1.18.1
+scikit-image==0.26.0
 rasterio==1.5.1
 pyproj==3.8.0
 affine==3.0.1

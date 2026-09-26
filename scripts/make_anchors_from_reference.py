@@ -48,14 +48,14 @@ def main() -> None:
     gidx = np.flatnonzero(gmask)
     for i, k in enumerate(rng.choice(gidx, a.n_ground, replace=False)):
         r, c = divmod(int(k), w)
-        x, y = tr * (c + 0.5, r + 0.5)
+        x, y = tr @ (c + 0.5, r + 0.5)
         rows.append((f"G{i+1:02d}", x, y, dtm[r, c], "ground", a.sigma))
     omask = np.zeros_like(dsm, bool)
     omask[m:-m, m:-m] = np.isfinite(ndsm[m:-m, m:-m]) & (ndsm[m:-m, m:-m] > 4.0)
     oidx = np.flatnonzero(omask)
     for i, k in enumerate(rng.choice(oidx, a.n_object, replace=False)):
         r, c = divmod(int(k), w)
-        x, y = tr * (c + 0.5, r + 0.5)
+        x, y = tr @ (c + 0.5, r + 0.5)
         rows.append((f"O{i+1:02d}", x, y, dsm[r, c], "object", a.sigma))
     out = Path(a.out)
     with out.open("w", encoding="utf-8") as f:

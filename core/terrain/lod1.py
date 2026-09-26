@@ -112,7 +112,7 @@ def extract_lod1_buildings(
     """Extract LoD-1 buildings — one clean block per building.
 
     Pipeline:
-      1. Build unified building mask (AI segmentation or height threshold)
+      1. Build building mask (RGB spectral + nDSM rules, or height threshold)
       2. Marker-controlled watershed to separate touching buildings without area loss
       3. Vectorize all components in a single pass
       4. Sample exact roof height & base elevation per building using fast bounding slices
@@ -128,18 +128,16 @@ def extract_lod1_buildings(
     # ── Step 1: Build unified building mask ───────────────────────────────
     if rgb is not None:
         try:
-            from core.terrain.building_segmentation import extract_building_mask_ai
-            log.info("AI building segmentation: RGB + nDSM + vegetation filter")
-            base_mask = extract_building_mask_ai(
+            from core.terrain.building_segmentation import extract_building_mask
+            base_mask = extract_building_mask(
                 rgb, ndsm,
                 min_height_m=min_height_m,
                 veg_threshold=0.05,
                 building_score_threshold=0.3,
-                use_unet=False,
             )
-            segmentation_method = "ai_rgb_ndsm_fusion"
+            segmentation_method = "rgb_spectral_ndsm_rules"
         except Exception as e:
-            log.warning("AI segmentation failed: %s", e)
+            log.warning("Building mask failed, falling back to height threshold: %s", e)
             base_mask = (ndsm >= min_height_m) & np.isfinite(ndsm) & np.isfinite(terrain) & (ndsm < 200.0)
             segmentation_method = "height_threshold_fallback"
     else:
@@ -263,53 +261,48 @@ def extract_lod1_buildings(
             break
 
     # ── Step 5: Deduplicate courtyard hole polygons & contained fragments ──
+    # Watershed labels are disjoint, but outer rings ignore holes: a block inside a courtyard overlaps the filled
+    # outer polygon. Candidate pairs come from a vectorised bbox test; only those are rasterised and compared.
     if len(buildings) > 1:
         try:
             from PIL import Image, ImageDraw
-            to_remove = set()
-            for i in range(len(buildings)):
+
+            bb = np.array([b["pixel_bbox"] for b in buildings], dtype=np.int64)
+            area = np.maximum(1, (bb[:, 2] - bb[:, 0]) * (bb[:, 3] - bb[:, 1]))
+            to_remove: set[int] = set()
+
+            def raster(idx: int, min_x: int, min_y: int, w: int, h: int) -> np.ndarray:
+                im = Image.new("1", (w, h), 0)
+                pts = [(((p[0] + extent_x / 2.0) / gsd_m) - min_x, ((extent_y / 2.0 - p[1]) / gsd_m) - min_y) for p in buildings[idx]["coords"]]
+                ImageDraw.Draw(im).polygon(pts, fill=1)
+                return np.array(im)
+
+            for i in range(len(buildings) - 1):
                 if i in to_remove:
                     continue
-                bb1 = buildings[i]["pixel_bbox"]
-                a1 = max(1, (bb1[2] - bb1[0]) * (bb1[3] - bb1[1]))
-                for j in range(i + 1, len(buildings)):
-                    if j in to_remove:
+                j = np.arange(i + 1, len(buildings))
+                ox = np.clip(np.minimum(bb[i, 2], bb[j, 2]) - np.maximum(bb[i, 0], bb[j, 0]), 0, None)
+                oy = np.clip(np.minimum(bb[i, 3], bb[j, 3]) - np.maximum(bb[i, 1], bb[j, 1]), 0, None)
+                cand = j[(ox * oy) / np.minimum(area[i], area[j]) > 0.5]
+                for jj in cand.tolist():
+                    if jj in to_remove:
                         continue
-                    bb2 = buildings[j]["pixel_bbox"]
-                    ox = max(0, min(bb1[2], bb2[2]) - max(bb1[0], bb2[0]))
-                    oy = max(0, min(bb1[3], bb2[3]) - max(bb1[1], bb2[1]))
-                    if ox * oy == 0:
-                        continue
-                    a2 = max(1, (bb2[2] - bb2[0]) * (bb2[3] - bb2[1]))
-                    if (ox * oy) / min(a1, a2) > 0.5:
-                        min_x = max(bb1[0], bb2[0])
-                        min_y = max(bb1[1], bb2[1])
-                        max_x = min(bb1[2], bb2[2])
-                        max_y = min(bb1[3], bb2[3])
-                        w = max(1, max_x - min_x + 1)
-                        h = max(1, max_y - min_y + 1)
-                        im1 = Image.new("1", (w, h), 0)
-                        im2 = Image.new("1", (w, h), 0)
-                        pts1 = [(((p[0] + extent_x / 2.0) / gsd_m) - min_x, ((extent_y / 2.0 - p[1]) / gsd_m) - min_y) for p in buildings[i]["coords"]]
-                        pts2 = [(((p[0] + extent_x / 2.0) / gsd_m) - min_x, ((extent_y / 2.0 - p[1]) / gsd_m) - min_y) for p in buildings[j]["coords"]]
-                        ImageDraw.Draw(im1).polygon(pts1, fill=1)
-                        ImageDraw.Draw(im2).polygon(pts2, fill=1)
-                        arr1 = np.array(im1)
-                        arr2 = np.array(im2)
-                        overlap_px = int((arr1 & arr2).sum())
-                        min_px = min(int(arr1.sum()), int(arr2.sum()))
-                        if min_px > 0 and (overlap_px / min_px) > 0.4:
-                            if int(arr1.sum()) <= int(arr2.sum()):
-                                to_remove.add(i)
-                                break
-                            else:
-                                to_remove.add(j)
+                    min_x, min_y = int(max(bb[i, 0], bb[jj, 0])), int(max(bb[i, 1], bb[jj, 1]))
+                    w = max(1, int(min(bb[i, 2], bb[jj, 2])) - min_x + 1)
+                    h = max(1, int(min(bb[i, 3], bb[jj, 3])) - min_y + 1)
+                    a1, a2 = raster(i, min_x, min_y, w, h), raster(jj, min_x, min_y, w, h)
+                    n1, n2 = int(a1.sum()), int(a2.sum())
+                    if min(n1, n2) > 0 and int((a1 & a2).sum()) / min(n1, n2) > 0.4:
+                        if n1 <= n2:
+                            to_remove.add(i)
+                            break
+                        to_remove.add(jj)
             if to_remove:
                 buildings = [b for idx, b in enumerate(buildings) if idx not in to_remove]
                 for idx, b in enumerate(buildings):
                     b["id"] = idx + 1
                 log.info("LoD-1: Removed %d courtyard/contained overlap polygons", len(to_remove))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             log.debug("LoD-1 overlap deduplication skipped: %s", e)
 
     log.info("LoD-1: %d clean non-overlapping buildings via %s", len(buildings), segmentation_method)

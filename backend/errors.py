@@ -32,7 +32,7 @@ class InvalidFileError(DepthWizardError):
 
 class UnsupportedFormatError(DepthWizardError):
     code = "UNSUPPORTED_FORMAT"
-    user_message = "Unsupported file type. Supported: PNG, JPEG."
+    user_message = "Unsupported file type. Supported: PNG, JPEG, TIFF / GeoTIFF."
     http_status = 400
 
 

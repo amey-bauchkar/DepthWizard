@@ -1,7 +1,12 @@
 # Phase 10 — Final SIH PPT, Storytelling, Technical Narrative & Evaluator Pitch
 
 SIH26175 DepthWizard · 2026-09-21 (Research Phase Baseline)  
-> **Implementation Update (Sprint 1 & 2 Complete):** This research document established the strict evidence-based pitch framework at the end of the design phases (2026-09-21). Since this milestone, the full working software has been implemented, tested, and validated as documented in `DEPTHWIZARD_COMPREHENSIVE_SYSTEM_DOSSIER.md` and `README.md` (Mode A + Mode B, 72 passing tests, local model weights, Three.js Walk mode, and in-app LiDAR validation suite).
+> **Implementation status (updated 2026-09-26).** This research document fixed the evidence-based pitch framework at the end of the design phases (2026-09-21); statements below about "nothing built yet" describe that date. The software now exists and is documented in `README.md` and `DEPTHWIZARD_COMPREHENSIVE_SYSTEM_DOSSIER.md`: Mode A + Mode B, automated tests, local Depth Anything V2 Small weights, Three.js orbit / walk / drone flythrough, LoD-1 blocks, in-app LiDAR validation. **How the build relates to the plan below:**
+(1) The LiDAR-supervised metric head **was trained** (2026-09-26, Colab T4) on swisstopo SWISSIMAGE + swissSURFACE3D − swissALTI3D with a region-blocked split. On held-out regions its height-above-ground error is RMSE 3.86 m (r 0.875), against 6.74 m for the zero-shot model even with oracle scaling. Tier H is available when no DEM exists.
+(2) The built Mode B method keeps the DEM for everything ≥ 30 m, adds the model's < 30 m heights, and takes terrain = DSM − heights.
+(3) On the held-out DepthWizard test tiles it cuts error against the raw Copernicus GLO-30 DEM by 14–40 % for the DSM and 54–60 % for the terrain (`docs/validation_results.md`).
+
+The training data are Swiss only, so claims about Indian imagery must still be phrased as unmeasured.
 
 **Authorities for this phase.** Phase 8 (evidence): Level-0 design-verification checks on synthetic data and foundational mathematics; Phase 9 (product pre-implementation baseline). The rules established here govern scientific honesty in the live evaluation pitch.
 

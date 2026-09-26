@@ -12,8 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-TARGET_PY = (3, 12)
-REQUIRED = ["torch", "torchvision", "safetensors", "numpy", "scipy", "rasterio", "pyproj", "PIL", "fastapi", "uvicorn", "pydantic", "yaml", "multipart"]
+MIN_PY = (3, 12)
+REQUIRED = ["torch", "torchvision", "safetensors", "numpy", "scipy", "skimage", "rasterio", "pyproj", "PIL", "fastapi", "uvicorn", "pydantic", "yaml", "multipart"]
 
 
 def ver(mod: str) -> str | None:
@@ -37,14 +37,12 @@ def cmd(*args: str) -> str | None:
 def main() -> int:
     rep: dict = {"os": platform.platform(), "python": platform.python_version(), "python_exe": sys.executable}
     problems: list[str] = []
-    if sys.version_info[:2] != TARGET_PY:
-        problems.append(f"Python {platform.python_version()} != target {TARGET_PY[0]}.{TARGET_PY[1]} (Phase 7 pin)")
+    if sys.version_info[:2] < MIN_PY:
+        problems.append(f"Python {platform.python_version()} < required {MIN_PY[0]}.{MIN_PY[1]}")
     rep["node"] = cmd("node", "--version")
     rep["npm"] = cmd("npm", "--version")
     if rep["node"] is None:
-        problems.append("node not found (frontend build needs Node 24 LTS)")
-    elif not rep["node"].startswith("v24"):
-        rep["node_note"] = "Phase 7 targets Node 24 LTS; other versions may work but are a recorded deviation"
+        problems.append("node not found (frontend build needs Node 20+; not needed if frontend/dist is already built)")
     for m in REQUIRED:
         rep[m] = ver(m)
         if rep[m] is None:
@@ -70,7 +68,7 @@ def main() -> int:
 
         rep["geoid_grids"] = [s.__dict__ for s in grid_status()]
         if not all(s.found for s in grid_status()):
-            rep["geoid_grids_note"] = "Geoid grids absent: Mode B absolute elevation will be REFUSED (Phase 8 C-1). Not needed for Sprint 1 Mode A."
+            rep["geoid_grids_note"] = "Geoid grids absent: Mode B absolute elevation will be REFUSED (Phase 8 C-1). Mode A is unaffected."
     except Exception as e:  # noqa: BLE001
         rep["geoid_grids"] = f"check failed: {e}"
     idx = ROOT / "models" / "INDEX.json"
@@ -86,9 +84,19 @@ def main() -> int:
     else:
         problems.append("models/INDEX.json missing")
     rep["frontend_dist"] = (ROOT / "frontend" / "dist" / "index.html").exists()
+    if not rep["frontend_dist"]:
+        problems.append("frontend not built: cd frontend && npm ci && npm run build")
+    rep["dem_tiles"] = sorted(p.name for p in (ROOT / "assets" / "dem").glob("*.tif"))
     rep["problems"] = problems
     print(json.dumps(rep, indent=2, default=str))
-    return 1 if any("missing python package" in p or "weights missing" in p or "INDEX.json" in p for p in problems) else 0
+    print()
+    if problems:
+        print("RESULT: problems found:")
+        for pr in problems:
+            print("  -", pr)
+    else:
+        print("RESULT: OK - ready to run (python run_server.py)")
+    return 1 if any("missing python package" in p or "weights missing" in p or "INDEX.json" in p or "< required" in p for p in problems) else 0
 
 
 if __name__ == "__main__":

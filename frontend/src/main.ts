@@ -1,11 +1,11 @@
 /**
  * DepthWizard — main application logic.
  *
- * Result state model (maps to existing backend tier/flags — no backend changes):
+ * Result state model (maps to backend tier/flags):
  *   RELATIVE       Mode A, tier R — relative surface structure, no units
- *   TERRAIN_ONLY   Mode B, tier T/A, NO_OBJECT_SCALE flag — terrain elev. absolute, object heights relative
- *   TERRAIN_SCALED Mode B, tier T,   OBJECT_SCALE_DEM_FIT flag — terrain + unvalidated object scale
- *   ANCHOR_REFINED Mode B, tier A,   OBJECT_SCALE_ANCHORS flag — terrain + anchor-calibrated objects
+ *   TERRAIN_ONLY   Mode B, tier T/A, NO_OBJECT_SCALE flag — DSM = DEM relief only (no model detail calibrated)
+ *   TERRAIN_SCALED Mode B, tier T/A, OBJECT_SCALE_DEM_FIT flag — DEM + model detail scaled against the DEM band
+ *   ANCHOR_REFINED Mode B, tier A,   OBJECT_SCALE_ANCHORS flag — DEM + model detail with anchor-fitted gain
  *
  * Measurement architecture: measurements are ALWAYS sampled server-side from the DSM raster.
  * The Three.js mesh is a visual representation only; picks are converted to raster pixel coords.
@@ -16,7 +16,7 @@ import { HeightfieldViewer } from "./viewer";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 // ──────────────────────────────────────── Result state model
-type ResultState = "RELATIVE" | "TERRAIN_ONLY" | "TERRAIN_SCALED" | "ANCHOR_REFINED";
+type ResultState = "RELATIVE" | "TERRAIN_ONLY" | "TERRAIN_SCALED" | "ANCHOR_REFINED" | "METRIC_MODEL" | "METRIC_HEIGHTS";
 
 interface StateDisplay {
   label: string;      // short badge label
@@ -35,36 +35,52 @@ const STATE_DISPLAY: Record<ResultState, StateDisplay> = {
     hudTier:  "Tier R · non-metric",
   },
   TERRAIN_ONLY: {
-    label: "TERRAIN ELEVATION ONLY",
-    full:  "Terrain Elevation (DEM-derived, absolute) + Relative Object Structure (non-metric). Object heights are NOT calibrated metres.",
+    label: "DEM RELIEF ONLY",
+    full:  "Absolute elevation from the DEM (datum-checked). No model detail could be calibrated for this scene, so sub-30 m structure (buildings, tree crowns) is not added.",
     cssClass: "state-TERRAIN_ONLY",
-    hudState: "TERRAIN ELEVATION ONLY",
+    hudState: "DEM RELIEF ONLY",
     hudTier:  "",  // filled dynamically
   },
   TERRAIN_SCALED: {
-    label: "TERRAIN + SCALED OBJECTS (UNVALIDATED)",
-    full:  "Terrain Elevation (DEM-derived, absolute) + Object Layer scaled from DEM residual fit. Object scale is unvalidated — LIMITED quality.",
+    label: "DEM + CALIBRATED MODEL DETAIL",
+    full:  "Absolute DSM: the DEM keeps everything it resolves (≥ 30 m); Depth Anything V2 (tiled) adds the finer detail, scaled per tile against the DEM. Without anchors or a reference this scale is unvalidated — quality ≤ LIMITED.",
     cssClass: "state-TERRAIN_SCALED",
-    hudState: "TERRAIN + SCALED OBJECTS",
+    hudState: "DEM + MODEL DETAIL",
     hudTier:  "",
   },
   ANCHOR_REFINED: {
-    label: "TERRAIN + ANCHOR-CALIBRATED OBJECTS",
-    full:  "Terrain Elevation (DEM-derived, absolute) + Object Layer calibrated by ground control anchors.",
+    label: "DEM + ANCHOR-CALIBRATED DETAIL",
+    full:  "Absolute DSM: DEM + tiled model detail whose gain was fitted to ground-control anchors (accepted only when leave-one-out error improves). Ground anchors also correct the terrain datum.",
     cssClass: "state-ANCHOR_REFINED",
     hudState: "ANCHOR-CALIBRATED DSM",
+    hudTier:  "",
+  },
+  METRIC_MODEL: {
+    label: "DEM + FINE-TUNED METRIC HEIGHTS",
+    full:  "Absolute DSM: the DEM keeps everything ≥ 30 m; the fine-tuned DepthWizard nDSM model (heights in metres, validated on held-out regions) adds building and tree structure. Terrain = DSM − model heights.",
+    cssClass: "state-TERRAIN_SCALED",
+    hudState: "DEM + METRIC nDSM MODEL",
+    hudTier:  "",
+  },
+  METRIC_HEIGHTS: {
+    label: "METRIC HEIGHTS · NO ELEVATION (TIER H)",
+    full:  "Heights above ground in metres from the fine-tuned nDSM model. No DEM (or no safe datum) for this area, so there is no absolute elevation — upload a DEM or anchors for tier T/A.",
+    cssClass: "state-TERRAIN_ONLY",
+    hudState: "METRIC HEIGHTS ABOVE GROUND",
     hudTier:  "",
   },
 };
 
 function resolveState(res: Result): ResultState {
-  if (res.mode !== "B") return "RELATIVE";
+  if (res.mode === "B" && res.calibration_tier === "H") return "METRIC_HEIGHTS";
+  if (res.mode !== "B" || res.calibration_tier === "R") return "RELATIVE"; // Mode B without DEM / safe datum stays relative
   const flags = res.flags ?? [];
+  if (flags.includes("METRIC_NDSM_MODEL") && !flags.includes("OBJECT_SCALE_ANCHORS")) return "METRIC_MODEL";
   if (flags.includes("NO_OBJECT_SCALE")) return "TERRAIN_ONLY";
   if (flags.includes("OBJECT_SCALE_ANCHORS")) return "ANCHOR_REFINED";
   if (flags.includes("OBJECT_SCALE_DEM_FIT")) return "TERRAIN_SCALED";
   // Fallback: if scale source exists use it, else terrain-only
-  if (res.object_scale_source === "anchors") return "ANCHOR_REFINED";
+  if (res.object_scale_source?.includes("anchor")) return "ANCHOR_REFINED";
   if (res.object_scale_source) return "TERRAIN_SCALED";
   return "TERRAIN_ONLY";
 }
@@ -78,6 +94,7 @@ interface State {
   demo: DemoItem[]; references: string[];
   viewLayer: string;
   currentHud: { state: string; tier: string; quality: string; layer: string; showNorth: boolean } | null;
+  metricModel: boolean;
 }
 const state: State = {
   file: null, dem: null, anchors: null, anchorsLabel: "",
@@ -87,6 +104,7 @@ const state: State = {
   demo: [], references: [],
   viewLayer: "dsm",
   currentHud: null,
+  metricModel: false,
 };
 
 // ──────────────────────────────────────── Helpers
@@ -115,11 +133,11 @@ interface LayerDef {
 }
 const LAYER_DEFS: Record<string, LayerDef> = {
   rgb:      { label: "RGB Input",            art: "input_preview",   desc: "Source image (metric-grid resampled for Mode B).",                                     units: "—",        tier: "—",   modeB: false },
-  depth:    { label: "Model Output",         art: "depth_preview",   desc: "Depth Anything V2 relative inverse depth (normalised). Non-metric. Zero-shot.",          units: "0–1 (rel)",tier: "R",   modeB: false },
+  depth:    { label: "Model Output",         art: "depth_preview",   desc: "Depth Anything V2 relative inverse depth, whole-image pass (normalised). Non-metric. Zero-shot.", units: "0–1 (rel)",tier: "R",   modeB: false },
   rdsm:     { label: "Relative Structure",   art: "rdsm_preview",    desc: "rDSM: relative surface structure derived from depth. No units. No scale. No elevation.", units: "0–1 (rel)",tier: "R",   modeB: false },
-  dsm:      { label: "DSM",                  art: "dsm_preview",     desc: "Digital Surface Model. Terrain layer + object layer. Absolute elevation where calibrated.",units: "metres",   tier: "T/A", modeB: true  },
-  terrain:  { label: "Terrain Layer",        art: "terrain_preview", desc: "DEM-derived terrain reconstruction. Ground-masked. NOT a certified DTM. Absolute.",       units: "metres",   tier: "T",   modeB: true  },
-  ndsm:     { label: "Object Height (nDSM)", art: "ndsm_preview",    desc: "Height above local ground. Metric only when object scale source is available.",           units: "metres",   tier: "T/A", modeB: true  },
+  dsm:      { label: "DSM",                  art: "dsm_preview",     desc: "Digital Surface Model: DEM (≥ 30 m structure, datum-transformed) + calibrated model detail (< 30 m). Absolute elevation.", units: "metres",   tier: "T/A", modeB: true  },
+  terrain:  { label: "Terrain Layer",        art: "terrain_preview", desc: "Ground estimate: ground-weighted DEM reconstruction combined with the morphological ground of the DSM. NOT a certified DTM.", units: "metres",   tier: "T/A", modeB: true  },
+  ndsm:     { label: "Object Height (nDSM)", art: "ndsm_preview",    desc: "DSM − terrain layer: height of buildings / trees above the ground estimate.",           units: "metres",   tier: "T/A", modeB: true  },
   hillshade:{ label: "Hillshade",            art: "hillshade_preview",desc: "Hillshade of the DSM for visual display only. Not a measurement layer.",                 units: "(display)",tier: "—",   modeB: true  },
   slope:    { label: "Slope",                art: "slope_preview",   desc: "Slope in degrees (Horn 3×3 kernel, applied to DSM). Steeper = brighter.",                units: "degrees",  tier: "T",   modeB: true  },
   flags:    { label: "Quality Flags",        art: "flags_preview",   desc: "Per-pixel quality flags: border · raw-DEM fallback · DEM void · nodata · no object scale · low ground support.", units: "(flags)", tier: "—", modeB: true },
@@ -127,6 +145,7 @@ const LAYER_DEFS: Record<string, LayerDef> = {
 
 // ──────────────────────────────────────── System / demo init
 async function initSystem() {
+  initDemo(); // independent of model loading (first /health call loads + hashes the weights)
   const badge = $("system-badge");
   try {
     const h = await api.health();
@@ -134,7 +153,11 @@ async function initSystem() {
     if (m?.available) {
       badge.textContent = `${m.name}@${m.version} · ${m.device}`;
       badge.className = "badge ok";
-      $("m-model").textContent = `Depth Anything V2 Small (${m.name}@${m.version}, ${m.device}) — zero-shot relative depth · no metric head · Tier H unavailable in this build`;
+      const mm = m.metric_model;
+      $("m-model").textContent = mm?.available
+        ? `Depth Anything V2 Small (${m.name}@${m.version}, ${m.device}) for relative depth + fine-tuned metric nDSM model ${mm.name}@${mm.version} for GeoTIFF tiles (tier H heights)`
+        : `Depth Anything V2 Small (${m.name}@${m.version}, ${m.device}) — zero-shot relative depth, whole image + overlapping tiles · no fine-tuned metric model installed (tier H unavailable)`;
+      state.metricModel = !!mm?.available;
     } else {
       badge.textContent = "model weights not installed";
       badge.className = "badge bad";
@@ -146,6 +169,9 @@ async function initSystem() {
     badge.className = "badge bad";
     setStatus("Backend unreachable. Is the server running?", "err");
   }
+}
+
+async function initDemo() {
   try {
     const d = await api.demo();
     state.demo = d.items; state.references = d.references;
@@ -230,13 +256,13 @@ function showInput(file: File) {
     $("m-image").textContent = `${file.name} · ${(file.size / 1024).toFixed(0)} KB · GeoTIFF (preview available after processing)`;
   }
   $("m-mode").textContent = tif
-    ? "B — Georeferenced GeoTIFF → DEM-anchored calibration → terrain + object layers"
+    ? "B if the TIFF carries a CRS (GeoTIFF → DEM + calibrated model detail → metric DSM); otherwise A (relative)"
     : "A — Non-georeferenced → relative surface structure only (no units, no elevation)";
-  $("m-geo").textContent   = tif ? "Expected — read from GeoTIFF tags at ingest" : "No";
-  $("m-metric").textContent = tif ? "Horizontal: yes (GSD from CRS) · Vertical: decided after calibration" : "No — output is unitless relative structure";
-  $("m-tier").textContent  = tif ? "T (DEM terrain) / A (anchors) — determined after calibration" : "R (relative only)";
+  $("m-geo").textContent   = tif ? "Checked at ingest (CRS + geotransform)" : "No";
+  $("m-metric").textContent = tif ? "Horizontal: yes if georeferenced (GSD from CRS) · Vertical: decided after calibration" : "No — output is unitless relative structure";
+  $("m-tier").textContent  = tif ? "T (DEM) / A (anchors) if georeferenced — determined after calibration" : "R (relative only)";
   ($("run-btn") as HTMLButtonElement).disabled = false;
-  $("run-btn").textContent = tif ? "Generate Calibrated Surface (Mode B)" : "Generate Relative Surface (Mode A)";
+  $("run-btn").textContent = tif ? "Generate Surface (GeoTIFF → Mode B)" : "Generate Relative Surface (Mode A)";
   ($("open3d-btn") as HTMLButtonElement).disabled = true;
   ($("validate-btn") as HTMLButtonElement).disabled = true;
   $("result-body").classList.add("hidden"); $("result-empty").classList.remove("hidden");
@@ -259,8 +285,8 @@ async function run() {
     await api.run(job.job_id);
     const stageLabels: Record<string, string> = {
       PREPROCESSING: "ingest / georeference / validate",
-      INFERENCE:     "Depth Anything V2 Small — zero-shot relative depth",
-      CALIBRATION:   "terrain layer · datum · object scale · derivatives",
+      INFERENCE:     "Depth Anything V2 Small — whole image + overlapping tiles (CPU: up to ~1 min)",
+      CALIBRATION:   "DEM · datum · detail fusion · anchors · terrain · derivatives · LoD-1",
       RASTERIZING:   "rDSM + heightfield",
     };
     const done = await pollUntilDone(job.job_id, (j: Job) =>
@@ -277,7 +303,7 @@ async function run() {
     await renderResult(done, res);
     const ms = done.stages_ms;
     const summary = res.mode === "B"
-      ? `Tier ${res.calibration_tier} · ${STATE_DISPLAY[state.resultState].label} · quality ${res.quality} · ${res.vertical_reference}`
+      ? (res.calibration_tier === "R" ? `Tier R · quality ${res.quality} — no absolute elevation (see quality card).` : `Tier ${res.calibration_tier} · ${STATE_DISPLAY[state.resultState].label} · quality ${res.quality} · ${res.vertical_reference}`)
       : "Relative surface structure — no metres.";
     setStatus(
       `READY in ${ms.total_ms} ms (inference ${ms.inference_ms} ms on ${done.model?.device}${ms.calibration_ms ? `, calibration ${ms.calibration_ms} ms` : ""}). ${summary}`,
@@ -311,8 +337,8 @@ async function renderResult(job: Job, res: Result) {
   const g = res.grid;
   const dem = res.dem ? `${res.dem.product} (${res.dem.vertical_crs}, ${res.dem.posting_m} m)` : "none";
   const scaleStr = res.object_scale_source
-    ? `${res.object_scale_source}${res.object_scale_m_per_unit ? ` (${fmt(res.object_scale_m_per_unit, 3)} m/unit)` : ""}`
-    : "none — object heights remain relative";
+    ? `${res.object_scale_source}${res.object_scale_m_per_unit ? ` (median gain ${fmt(res.object_scale_m_per_unit, 2)} m/unit)` : ""}`
+    : "none — DEM relief only";
 
   const fields: [string, string, boolean?][] = res.mode === "B" ? [
     ["Grid",        `${g.width}×${g.height} px`],
@@ -320,13 +346,14 @@ async function renderResult(job: Job, res: Result) {
     ["CRS",         g.crs],
     ["DEM",         dem],
     ["Vertical ref",res.vertical_reference ?? "—"],
-    ["Object scale",scaleStr, !res.object_scale_source],
+    ["Model detail",scaleStr, !res.object_scale_source],
     ["Tier",        res.calibration_tier],
   ] : [
     ["Grid",   `${g.width}×${g.height} px`],
     ["Output", "Unitless relative structure [0–1]"],
     ["Tier",   "R (relative only)"],
     ["Model",  "Depth Anything V2 Small — zero-shot"],
+    ["Detail", res.tile_refinement?.applied ? `whole image + ${res.tile_refinement.n_tiles} native-resolution tiles` : "whole image"],
   ];
 
   $("result-fields").innerHTML = fields.map(([label, val, warn]) =>
@@ -360,13 +387,13 @@ async function renderResult(job: Job, res: Result) {
     <div class="trust-header">Provenance &amp; Trust</div>
     <div class="trust-grid">
       <div class="trust-item"><div class="trust-label">Model</div><div class="trust-value">Depth Anything V2 Small</div></div>
-      <div class="trust-item"><div class="trust-label">Inference</div><div class="trust-value">Zero-shot — no metric head (Tier H unavailable)</div></div>
+      <div class="trust-item"><div class="trust-label">Inference</div><div class="trust-value">${(res.flags ?? []).includes("METRIC_NDSM_MODEL") ? "Fine-tuned metric nDSM model, tiled at ~0.5 m" : "Zero-shot, tiled — no metric model"}</div></div>
       <div class="trust-item"><div class="trust-label">Input type</div><div class="trust-value">${res.mode === "B" ? "GeoTIFF (georeferenced)" : "PNG / JPEG (non-georeferenced)"}</div></div>
       <div class="trust-item"><div class="trust-label">Calibration tier</div><div class="trust-value ${res.calibration_tier === "A" ? "ok" : ""}">${res.calibration_tier}</div></div>
       ${res.mode === "B" ? `
       <div class="trust-item"><div class="trust-label">DEM source</div><div class="trust-value">${esc(dem)}</div></div>
       <div class="trust-item"><div class="trust-label">Vertical ref</div><div class="trust-value">${esc(res.vertical_reference ?? "—")}</div></div>
-      <div class="trust-item"><div class="trust-label">Object scale</div><div class="trust-value ${!res.object_scale_source ? "warn" : "ok"}">${esc(scaleStr)}</div></div>
+      <div class="trust-item"><div class="trust-label">Model detail</div><div class="trust-value ${!res.object_scale_source ? "warn" : "ok"}">${esc(scaleStr)}</div></div>
       ` : ""}
       <div class="trust-item"><div class="trust-label">Quality</div><div class="trust-value ${qClass === "GOOD" ? "ok" : qClass === "INVALID" ? "bad" : "warn"}">${qClass}</div></div>
       <div class="trust-item"><div class="trust-label">Flags</div><div class="trust-value ${flags.length ? "warn" : ""}">${flags.join(", ") || "none"}</div></div>
@@ -399,8 +426,8 @@ async function renderResult(job: Job, res: Result) {
   // ── Downloads
   const dl = $("downloads"); dl.innerHTML = "<b>Download:</b> ";
   const files: [string, string][] = res.mode === "B"
-    ? [["dsm.tif","DSM GeoTIFF"],["terrain.tif","Terrain layer"],["ndsm.tif","nDSM"],["slope.tif","Slope"],["aspect.tif","Aspect"],["flags.tif","Flags"],["relative.tif","Relative structure"],["calib_report.json","Calibration report"],["log.jsonl","Job log"]]
-    : [["rdsm.tif","rDSM (no CRS)"],["relative_depth.npy","Raw model output"],["log.jsonl","Job log"]];
+    ? [["dsm.tif","DSM GeoTIFF"],["terrain.tif","Terrain layer"],["dem.tif","Input DEM (on job grid)"],["ndsm.tif","nDSM"],["slope.tif","Slope"],["aspect.tif","Aspect"],["flags.tif","Flags"],["relative.tif","Relative structure"],["calib_report.json","Calibration report"],["log.jsonl","Job log"]]
+    : [["rdsm.tif","rDSM (no CRS)"],["relative_depth.npy","Raw model output"],["heightfield.f32","Heightfield (float32)"],["log.jsonl","Job log"]];
   const arts = new Set(Object.values(res.artifacts));
   files.filter(([f]) => arts.has(f) || f === "log.jsonl").forEach(([f, l]) => {
     const a = document.createElement("a"); a.href = api.artifactUrl(id, f); a.download = f;
@@ -558,7 +585,7 @@ function metricRow(m: Record<string, any>): string {
 function renderValidation(v: Record<string, any>) {
   $("val-result").classList.remove("hidden");
   const head = `<thead><tr><th>Set</th><th>n</th><th>ME (m)</th><th>RMSE (m)</th><th>MAE (m)</th><th>NMAD (m)</th><th>LE90</th><th>LE95</th><th>r</th><th>ρ</th></tr></thead>`;
-  $("val-verdict-title").textContent = `${v.verdict?.band ?? ""} — ${v.verdict?.text ?? ""}`;
+  $("val-verdict-title").textContent = `${v.verdict?.band ?? ""} — ${v.verdict?.text ?? ""}${v.verdict?.baseline_text ? "  " + v.verdict.baseline_text : ""}`;
   $("val-context").innerHTML = `
     Compared layer: <b>${esc(v.compared_layer)}</b> (${esc(v.reference?.ref_type ?? "")}).
     Reference posting: ${v.reference?.native_posting_m?.[0]} m → reprojected to job grid.
@@ -566,7 +593,8 @@ function renderValidation(v: Record<string, any>) {
     Job tier: ${esc(v.job?.calibration_tier ?? "—")}, quality: ${esc(v.job?.quality ?? "—")}.
   `;
   $("val-overall").innerHTML = `${head}<tbody>
-    <tr><td>Overall (metres)</td>${metricRow(v.metrics_overall)}</tr>
+    <tr><td><b>DepthWizard ${esc(v.compared_layer ?? "")}</b> (metres)</td>${metricRow(v.metrics_overall)}</tr>
+    ${v.metrics_baseline ? `<tr><td>Input DEM alone — baseline, same pixels</td>${metricRow(v.metrics_baseline)}</tr>` : ""}
     <tr><td><i>Oracle affine (diagnostic only)</i> — scale ${fmt(v.oracle_affine?.scale, 3)}, shift ${fmt(v.oracle_affine?.shift, 2)}</td>${metricRow(v.oracle_affine?.metrics_after_alignment ?? {})}</tr>
   </tbody>`;
   const strata = (title: string, obj: Record<string, any>) =>
@@ -688,7 +716,8 @@ async function open3d() {
     // LoD-1 3D Vector Building Blocks
     const lod1Wrap = $("lod1-wrap");
     const lod1Chk = $("lod1-chk") as HTMLInputElement;
-    if (res.artifacts?.buildings_json) {
+    // LoD-1 blocks carry absolute base elevations: only meaningful over absolute surfaces (terrain / DSM)
+    if (res.artifacts?.buildings_json && (isCity || layer === "dsm" || layer === "terrain")) {
       try {
         const bData = await fetch(api.artifactUrl(state.jobId, res.artifacts.buildings_json)).then((r) => r.json());
         state.viewer.loadBuildings(bData, isCity);
@@ -801,13 +830,14 @@ function wire() {
     if (!state.viewer) return;
     const mode = meshSel.value as "regular" | "rtin";
     const tol = Number(tolInput.value);
-    tolVal.textContent = `${tol.toFixed(1)} m`;
+    const unit = state.viewer.isMetric ? "m" : "scene units";
+    tolVal.textContent = `${tol.toFixed(1)} ${unit}`;
     tolWrap.classList.toggle("hidden", mode !== "rtin");
 
     const stats = state.viewer.setMeshMode(mode, tol);
     if (mode === "rtin") {
       redPill.classList.remove("hidden");
-      redPill.textContent = `⚡ RTIN: ${stats.reductionPct}% triangles reduced (${stats.triangles.toLocaleString()} tris, tol ${tol.toFixed(1)}m)`;
+      redPill.textContent = `⚡ RTIN: ${stats.reductionPct}% triangles reduced (${stats.triangles.toLocaleString()} tris, tol ${tol.toFixed(1)} ${unit})`;
     } else {
       redPill.classList.add("hidden");
     }
@@ -822,3 +852,6 @@ function wire() {
 
 wire();
 initSystem();
+
+// Opt-in inspection hook for automated checks (only with ?debug=1 in the URL).
+if (new URLSearchParams(location.search).has("debug")) (window as unknown as Record<string, unknown>).__depthwizard = state;

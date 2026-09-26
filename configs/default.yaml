@@ -1,4 +1,4 @@
-# DepthWizard default configuration (Sprint 1 — Mode A relative pipeline).
+# DepthWizard default configuration (Mode A relative + Mode B DEM-anchored metric DSM).
 # Every scientific parameter lives here; nothing is hard-coded in the pipeline.
 # Override with DW_CONFIG=<path>, environment variables DW_<KEY>, or per-job options.
 
@@ -9,6 +9,12 @@ model:
   device: auto                    # auto | cpu | cuda
   input_size: 518                 # DA-V2 lower-bound side length (multiple of 14)
   size_multiple: 14
+
+model_metric:                     # optional fine-tuned metric nDSM model (tier H) for Mode B tiles
+  enabled: true                   # used only if installed (scripts/install_finetuned_model.py); else zero-shot fallback
+  name: da-v2-small-ndsm
+  version: 1.0.0
+  verify_hash: true
 
 ingest:
   max_image_dim: 4096             # pixels; larger inputs are rejected with IMAGE_TOO_LARGE
@@ -33,15 +39,24 @@ calib:                            # Mode B two-layer calibration (TL-CSM)
   w_min: 0.1                      # below this ground support the raw DEM is used and flagged
   ground_window_m: 60.0           # morphological ground-filter window on the relative structure
   datum_sanity_m: 15.0            # |terrain - DEM| mean offset above this => INVALID (ellipsoid/geoid mix-up)
-  min_object_fraction: 0.3        # DEM cells used for the object-scale fit
-  min_implied_p99_m: 0.5          # minimum plausible p99 object height (m); 0.5 allows modest buildings at 2m GSD
-  max_implied_p99_m: 80.0         # maximum plausible p99 object height (m)
-  min_r: 0.05                     # minimum correlation between DEM residual and relative object layer
   anchor_min_n: 5
   anchor_holdout_fraction: 0.3
   anchor_accept_k: 3.0
   anchor_accept_nmad_m: 5.0       # offset accepted when fit NMAD <= max(k*sigma, this) — terrain-layer scatter dominates, not anchor noise
-  anchor_scale_min_inlier_fraction: 0.6
+
+fusion:                           # tiled inference + DEM-preserving detail fusion (core/calib/fusion.py)
+  enabled: true
+  inference_gsd_m: 0.5            # Mode B imagery is resampled so each tile pixel is ~0.5 m (DA-V2 sees buildings)
+  min_upsample: 0.25
+  max_upsample: 4.0
+  tile_px: 518
+  overlap: 0.25
+  max_tiles: 64                   # CPU budget; inference GSD is coarsened automatically to stay within it
+  max_tile_gain: null             # optional cap on per-tile DEM-band gain (m per relative unit)
+  anchor_gain_max: 4.0            # plausibility bound on the anchor-fitted detail gain
+  mode_a_tiling: true             # Mode A: refine large images with native-resolution tiles
+  metric_composition: highpass    # metric model + DEM: highpass (DSM = DEM + high-pass nDSM) | terrain_plus_ndsm
+  metric_ground_max_m: 1.0        # metric model nDSM below this counts as ground
 
 validation:
   border_px: 4

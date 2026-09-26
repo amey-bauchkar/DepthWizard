@@ -29,7 +29,7 @@ def local_gsd_metres(crs: CRS, transform, width: int, height: int) -> tuple[floa
         return (abs(transform.a) if transform.b == 0 else (transform.a**2 + transform.d**2) ** 0.5,
                 abs(transform.e) if transform.d == 0 else (transform.b**2 + transform.e**2) ** 0.5)
     g = Geod(ellps="WGS84")
-    lon, lat = transform * (width / 2 + 0.5, height / 2 + 0.5)
+    lon, lat = transform @ (width / 2 + 0.5, height / 2 + 0.5)
     _, _, dx = g.inv(lon, lat, lon + abs(transform.a), lat)
     _, _, dy = g.inv(lon, lat, lon, lat + abs(transform.e))
     return (dx, dy)
@@ -61,7 +61,7 @@ def ensure_metric_grid(src_path: str, dst_path: str, *, resampling: Resampling =
         if not crs.is_geographic:
             grid = Grid(src.width, src.height, src.transform, f"EPSG:{crs.to_epsg()}" if crs.to_epsg() else crs.to_wkt(), str(src.dtypes[0]), src.nodata, "metres", True, None, "R")
             return grid, ReprojectionRecord(False, grid.crs or "", grid.crs or "", gsd, gsd, aniso, "none")
-        lon, lat = src.transform * (src.width / 2 + 0.5, src.height / 2 + 0.5)
+        lon, lat = src.transform @ (src.width / 2 + 0.5, src.height / 2 + 0.5)
         dst_epsg = utm_epsg_for(lon, lat)
         dst_crs = CRS.from_epsg(dst_epsg)
         dst_transform, w, h = calculate_default_transform(src.crs, dst_crs.to_wkt(), src.width, src.height, *src.bounds)

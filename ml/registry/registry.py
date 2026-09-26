@@ -59,6 +59,8 @@ class ModelRegistry:
     def resolve(self, name: str, version: str, *, verify_hash: bool = True) -> ModelCard:
         if name == "stub":
             return ModelCard("stub", "0", "brightness-stub (deterministic test model)", None, None, None, "n/a", "relative_brightness", "internal")
+        if name == "stub-metric":
+            return ModelCard("stub-metric", "0", "brightness-stub metric nDSM (deterministic test model)", None, None, None, "n/a", "metric_ndsm_metres", "internal")
         idx = self._index()
         try:
             entry = idx["models"][name][version]

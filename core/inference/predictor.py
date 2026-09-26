@@ -72,10 +72,10 @@ class BasePredictor:
 class Predictor(BasePredictor):
     """Depth Anything V2 wrapper around the vendored model code."""
 
-    def __init__(self, settings: Settings, registry: ModelRegistry | None = None):
+    def __init__(self, settings: Settings, registry: ModelRegistry | None = None, *, name: str | None = None, version: str | None = None, verify_hash: bool | None = None):
         self.settings = settings
         reg = registry or ModelRegistry(settings.models_dir)
-        self.card = reg.resolve(settings.model.name, settings.model.version, verify_hash=settings.model.verify_hash)
+        self.card = reg.resolve(name or settings.model.name, version or settings.model.version, verify_hash=settings.model.verify_hash if verify_hash is None else verify_hash)
         self.device = select_device(settings.model.device)
         t0 = time.perf_counter()
         self.model = self._load(self.card)
@@ -144,9 +144,10 @@ class StubPredictor(BasePredictor):
     """Deterministic test double: relative 'depth' = image brightness (0..1). Preserves geometry exactly,
     so texture/heightfield alignment tests can use a checkerboard and know the answer."""
 
-    def __init__(self, settings: Settings, registry: ModelRegistry | None = None):
+    def __init__(self, settings: Settings, registry: ModelRegistry | None = None, *, metric: bool = False):
         self.settings = settings
-        self.card = (registry or ModelRegistry(settings.models_dir)).resolve("stub", "0")
+        self.metric = metric
+        self.card = (registry or ModelRegistry(settings.models_dir)).resolve("stub-metric" if metric else "stub", "0")
         self.device = "cpu"
         self.load_ms = 0.0
 
@@ -155,10 +156,28 @@ class StubPredictor(BasePredictor):
         s = self.settings
         chw, prep = prepare(rgb, input_size=s.model.input_size, size_multiple=s.model.size_multiple)
         gray = rgb.astype(np.float32).mean(axis=2) / 255.0
-        return Prediction(gray.astype(np.float32), "stub", "0", None, "relative_brightness", "cpu", tuple(chw.shape), gray.shape, {"preprocess_ms": 0.0, "inference_ms": 0.0, "postprocess_ms": 0.0, "total_ms": (time.perf_counter() - t0) * 1000.0, "model_load_ms": 0.0}, prep, {"raw_min": float(gray.min()), "raw_max": float(gray.max()), "raw_mean": float(gray.mean())})  # type: ignore[arg-type]
+        if self.metric:  # test double for a metric nDSM head: height = 20 m x brightness above the darkest level
+            gray = np.clip(gray - 0.3, 0.0, None) * 20.0
+        return Prediction(gray.astype(np.float32), self.card.name, "0", None, self.card.output_quantity, "cpu", tuple(chw.shape), gray.shape, {"preprocess_ms": 0.0, "inference_ms": 0.0, "postprocess_ms": 0.0, "total_ms": (time.perf_counter() - t0) * 1000.0, "model_load_ms": 0.0}, prep, {"raw_min": float(gray.min()), "raw_max": float(gray.max()), "raw_mean": float(gray.mean())})  # type: ignore[arg-type]
+
+
+METRIC_QUANTITY = "metric_ndsm_metres"
 
 
 def build_predictor(settings: Settings) -> BasePredictor:
     if settings.model.name == "stub":
         return StubPredictor(settings)
     return Predictor(settings)
+
+
+def build_metric_predictor(settings: Settings) -> BasePredictor:
+    """The optional fine-tuned metric nDSM model (tier H). Raises ModelUnavailableError if not installed/disabled."""
+    mc = settings.model_metric
+    if not mc.enabled:
+        raise ModelUnavailableError("metric model disabled in configuration (model_metric.enabled=false)")
+    if mc.name == "stub-metric":
+        return StubPredictor(settings, metric=True)
+    p = Predictor(settings, name=mc.name, version=mc.version, verify_hash=mc.verify_hash)
+    if p.card.output_quantity != METRIC_QUANTITY:
+        raise ModelUnavailableError(f"{mc.name}@{mc.version} output is {p.card.output_quantity!r}, not {METRIC_QUANTITY!r}")
+    return p

@@ -1,11 +1,12 @@
-"""Mode B pipeline stages: GeoTIFF -> relative structure -> two-layer calibration -> DSM + derivatives.
+"""Mode B pipeline stages: GeoTIFF -> relative structure -> DEM-anchored fusion -> DSM + derivatives.
 
-Outputs (all on the job grid, COG-style GeoTIFFs with tags):
-  relative.tif       zero-shot relative structure [0,1] (tier R) — also used as the Mode-A style preview
-  object_rel.tif     relative object layer (>=0, unitless) from the morphological ground filter
-  terrain.tif        terrain layer, metres, declared vertical CRS (tier T)   <- NOT a certified DTM
-  ndsm.tif           object layer in metres (only when an object scale exists; scale source recorded)
-  dsm.tif            terrain + ndsm (tier T/A) or terrain only (flagged NO_OBJECT_SCALE)
+Outputs (all on the job grid, GeoTIFFs with provenance tags):
+  relative.tif       zero-shot relative structure [0,1] (tier R), whole-image prediction
+  object_rel.tif     relative object layer (>=0, unitless) from the morphological ground filter (ground mask source)
+  dsm.tif            DEM + model detail below one DEM posting (tier T), anchor-refined gain/offset (tier A);
+                     DEM only when no detail could be calibrated (flagged NO_OBJECT_SCALE)
+  terrain.tif        ground estimate, metres, declared vertical CRS   <- NOT a certified DTM
+  ndsm.tif           dsm - terrain (height above the terrain layer, metres)
   slope.tif/aspect.tif, flags.tif, previews, calib_report.json, result.json
 """
 from __future__ import annotations
@@ -17,22 +18,25 @@ from typing import Any
 
 import numpy as np
 from PIL import Image
+from scipy import ndimage
 
 from backend.config.settings import Settings
 from backend.logging_setup import JobLogger
-from core.calib.anchors import MIN_ANCHORS, ransac_scale, robust_offset, split_holdout
-from core.geo.vertical import transform_heights_xy
+from core.calib.anchors import robust_offset, split_holdout
 from core.calib.dem import discover_dem, grid_bounds, load_dem_on_grid
-from core.calib.terrain import compose_dsm, fit_object_scale_to_dem_residual, object_layer_from_relative, terrain_layer
+from core.calib.fusion import TiledPrediction, default_detail_scales, fit_anchor_gain, fuse_detail, highpass, plan_upsample, stitch_tiles, tiled_relative
+from core.calib.terrain import object_layer_from_relative, terrain_layer
 from core.calib.tier import decide
 from core.dsm.derive import build_flags, elevation_preview, flags_preview, hillshade_preview, slope_layers, slope_preview
 from core.dsm.rdsm import make_rdsm, write_preview
 from core.geo.grid import Grid
 from core.geo.raster_io import write_raster
-from core.geo.vertical import VerticalTransformUnsafeError, register_bundled_grids
+from core.geo.vertical import VerticalTransformUnsafeError, register_bundled_grids, transform_heights_xy
 from core.ingest.geotiff import GeoIngestResult, ingest_geotiff
-from core.inference.predictor import BasePredictor
+from core.inference.predictor import METRIC_QUANTITY, BasePredictor
 from core.terrain.heightfield import build_heightfield, write_heightfield, write_texture
+
+METHOD_VERSION = "tlcsm-1.0 (tiled inference + DEM-preserving detail fusion)"
 
 
 def _dump(path: Path, obj: Any) -> None:
@@ -48,13 +52,27 @@ def stage_ingest_geotiff(job_dir: Path, input_path: Path, settings: Settings, lo
     return res
 
 
+def stage_tiled_inference(job_dir: Path, rgb: np.ndarray, gsd_m: float | None, predictor: BasePredictor, settings: Settings, log: JobLogger) -> TiledPrediction:
+    """Overlapping-tile inference at the configured inference GSD (Mode B) or at native resolution (Mode A)."""
+    f = settings.fusion
+    h, w = rgb.shape[:2]
+    desired = (gsd_m / f.inference_gsd_m) if gsd_m else 1.0
+    desired = float(min(max(desired, f.min_upsample), f.max_upsample))
+    up = plan_upsample(h, w, desired, tile=f.tile_px, overlap=f.overlap, max_tiles=f.max_tiles)
+    tp = tiled_relative(lambda x: predictor.predict(x).relative_depth, rgb, upsample=up, tile=f.tile_px, overlap=f.overlap, inference_gsd_m=(gsd_m / up) if gsd_m else None)
+    tp.quantity = predictor.card.output_quantity
+    _dump(job_dir / "tiled_inference.json", tp.summary())
+    log.event("INFERENCE", "tiled inference complete", **tp.summary())
+    return tp
+
+
 def load_anchors(path: Path) -> list[dict[str, Any]]:
     """CSV with header: id,x,y,z,type[,sigma]. Comment lines: '# crs=EPSG:xxxx' (horizontal CRS of x,y; default = job CRS)
     and '# vcrs=<EGM2008|EGM96|ellipsoidal|EPSG:code>' (vertical reference of z; default = output vertical CRS)."""
     rows: list[dict[str, Any]] = []
     crs = None
     vcrs = None
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -69,12 +87,16 @@ def load_anchors(path: Path) -> list[dict[str, Any]]:
         parts = [p.strip() for p in line.split(",")]
         if len(parts) < 5:
             continue
-        rows.append({"id": parts[0], "x": float(parts[1]), "y": float(parts[2]), "z": float(parts[3]), "type": parts[4].lower(), "sigma": float(parts[5]) if len(parts) > 5 and parts[5] else 1.0, "crs": crs, "vcrs": vcrs})
+        try:
+            rows.append({"id": parts[0], "x": float(parts[1]), "y": float(parts[2]), "z": float(parts[3]), "type": parts[4].lower(), "sigma": float(parts[5]) if len(parts) > 5 and parts[5] else 1.0, "crs": crs, "vcrs": vcrs})
+        except ValueError:
+            continue  # malformed row: skipped (counted as n_total - n_in_grid)
     return rows
 
 
-def _anchor_calibration(job_dir: Path, grid: Grid, terrain: np.ndarray, object_rel: np.ndarray, anchors: list[dict[str, Any]], settings: Settings, log: JobLogger, out_vcrs: str = "EGM2008") -> dict[str, Any]:
-    """Tier A: robust offset from ground anchors, RANSAC object scale from object anchors, hold-out reporting."""
+def _anchor_calibration(job_dir: Path, grid: Grid, terrain: np.ndarray, dem: np.ndarray, detail: np.ndarray | None, anchors: list[dict[str, Any]], settings: Settings, log: JobLogger, out_vcrs: str = "EGM2008") -> dict[str, Any]:
+    """Tier A: robust terrain offset from ground anchors (median, blunder flags, hold-out) and a robust
+    gain/offset refinement of the fused DSM from all anchors (core.calib.fusion.fit_anchor_gain)."""
     from pyproj import Transformer
 
     c = settings.calib
@@ -87,7 +109,8 @@ def _anchor_calibration(job_dir: Path, grid: Grid, terrain: np.ndarray, object_r
         col, row = grid.crs_to_pixel(x, y)
         ci, ri = int(round(col)), int(round(row))
         if 0 <= ci < grid.width and 0 <= ri < grid.height and np.isfinite(terrain[ri, ci]):
-            pts.append({**a, "x_grid": x, "y_grid": y, "col": ci, "row": ri, "terrain": float(terrain[ri, ci]), "obj_rel": float(object_rel[ri, ci]) if np.isfinite(object_rel[ri, ci]) else 0.0})
+            d = float(detail[ri, ci]) if detail is not None and np.isfinite(detail[ri, ci]) else 0.0
+            pts.append({**a, "x_grid": x, "y_grid": y, "col": ci, "row": ri, "terrain": float(terrain[ri, ci]), "dem": float(dem[ri, ci]), "detail": d})
     # anchor heights -> output vertical reference (C-1 guarded transformer; a failure here is a hard error, never silent)
     vcrs_in = anchors[0].get("vcrs") if anchors else None
     datum_note = "anchor heights taken as already in the output vertical reference"
@@ -99,57 +122,41 @@ def _anchor_calibration(job_dir: Path, grid: Grid, terrain: np.ndarray, object_r
         datum_note = f"anchor heights converted {vcrs_in} -> {out_vcrs} ({info.get('pipeline', '')})"
     ground = [p for p in pts if p["type"].startswith("g")]
     objects = [p for p in pts if not p["type"].startswith("g")]
-    rep: dict[str, Any] = {"n_total": len(anchors), "n_in_grid": len(pts), "n_ground": len(ground), "n_object": len(objects), "accepted": False, "offset_m": 0.0, "scale_m_per_unit": None, "datum": datum_note, "input_vcrs": vcrs_in or out_vcrs}
-    if len(ground) < c.anchor_min_n:
+    rep: dict[str, Any] = {"n_total": len(anchors), "n_in_grid": len(pts), "n_ground": len(ground), "n_object": len(objects), "accepted": False, "offset_m": 0.0, "datum": datum_note, "input_vcrs": vcrs_in or out_vcrs}
+    if len(ground) >= c.anchor_min_n:
+        fit_idx, hold_idx = split_holdout(len(ground), c.anchor_holdout_fraction, seed=0)
+        res_all = np.array([p["z"] - p["terrain"] for p in ground])
+        fit = robust_offset(res_all[fit_idx], min_n=min(c.anchor_min_n, len(fit_idx)))
+        sigma = float(np.median([p["sigma"] for p in ground]))
+        tol = max(c.anchor_accept_k * max(sigma, 0.1), c.anchor_accept_nmad_m)
+        accepted = fit.nmad <= tol
+        rep.update({"offset_m": fit.offset, "fit_nmad_m": fit.nmad, "accept_tolerance_m": tol, "blunders": [ground[fit_idx[i]]["id"] for i in fit.blunder_idx], "n_used": int(len(fit_idx)), "anchor_sigma_m": sigma, "accepted": bool(accepted), "reason": "accepted" if accepted else f"offset fit NMAD {fit.nmad:.2f} m > tolerance {tol:.2f} m"})
+        if len(hold_idx):
+            hr = res_all[hold_idx] - fit.offset
+            rep["holdout"] = {"n": int(len(hold_idx)), "ME": float(hr.mean()), "NMAD": float(1.4826 * np.median(np.abs(hr - np.median(hr)))), "RMSE": float(np.sqrt((hr**2).mean()))}
+            rep["holdout_nmad"] = rep["holdout"]["NMAD"]
+        rep["used_ids"] = [ground[i]["id"] for i in fit_idx]
+        rep["holdout_ids"] = [ground[i]["id"] for i in hold_idx]
+    else:
         rep["reason"] = f"need >= {c.anchor_min_n} ground anchors inside the grid (have {len(ground)})"
-        return rep
-    fit_idx, hold_idx = split_holdout(len(ground), c.anchor_holdout_fraction, seed=0)
-    res_all = np.array([p["z"] - p["terrain"] for p in ground])
-    fit = robust_offset(res_all[fit_idx], min_n=min(c.anchor_min_n, len(fit_idx)))
-    sigma = float(np.median([p["sigma"] for p in ground]))
-    tol = max(c.anchor_accept_k * max(sigma, 0.1), c.anchor_accept_nmad_m)
-    accepted = fit.nmad <= tol
-    rep.update({"offset_m": fit.offset, "fit_nmad_m": fit.nmad, "accept_tolerance_m": tol, "blunders": [ground[fit_idx[i]]["id"] for i in fit.blunder_idx], "n_used": int(len(fit_idx)), "anchor_sigma_m": sigma, "accepted": bool(accepted), "reason": "accepted" if accepted else f"offset fit NMAD {fit.nmad:.2f} m > tolerance {tol:.2f} m"})
-    if len(hold_idx):
-        hr = res_all[hold_idx] - fit.offset
-        rep["holdout"] = {"n": int(len(hold_idx)), "ME": float(hr.mean()), "NMAD": float(1.4826 * np.median(np.abs(hr - np.median(hr)))), "RMSE": float(np.sqrt((hr**2).mean()))}
-        rep["holdout_nmad"] = rep["holdout"]["NMAD"]
-    if len(objects) >= MIN_ANCHORS:
-        x = np.array([p["obj_rel"] for p in objects])
-        y = np.array([p["z"] - p["terrain"] - fit.offset for p in objects])
-        try:
-            sf = ransac_scale(x, y, residual_threshold=max(1.5, 2 * sigma))
-            d = sf.to_dict()
-            inl_frac = sf.n_inliers / max(sf.n_total, 1)
-            p99 = float(np.nanquantile(object_rel[np.isfinite(object_rel)], 0.99)) if np.isfinite(object_rel).any() else 0.0
-            implied = sf.scale * p99
-            r_xy = float(np.corrcoef(x, y)[0, 1]) if x.std() > 0 and y.std() > 0 else 0.0
-            ok = (
-                sf.scale > 0
-                and inl_frac >= c.anchor_scale_min_inlier_fraction
-                and sf.n_inliers >= min(c.anchor_min_n, len(objects))
-                and 2.0 <= implied <= 80.0
-                and (r_xy >= 0.2 or inl_frac >= 0.7)
-            )
-            d.update({
-                "inlier_fraction": inl_frac,
-                "implied_p99_object_height_m": implied,
-                "r_object_layer_vs_anchor_height": r_xy,
-                "accepted": bool(ok),
-                "reason": "accepted" if ok else f"rejected: (r={r_xy:.2f}, scale={sf.scale:.2f}, inliers {sf.n_inliers}/{sf.n_total}, implied p99 height {implied:.1f} m)",
-            })
-            rep["scale_m_per_unit"] = sf.scale if ok else None
-            rep["scale_fit"] = d
-        except ValueError as e:
-            rep["scale_fit"] = {"error": str(e), "accepted": False}
-    used = [ground[i]["id"] for i in fit_idx]
-    held = [ground[i]["id"] for i in hold_idx]
-    _dump(job_dir / "anchors_used.json", {"used_ids": used, "holdout_ids": held, "points": pts})
-    log.event("CALIBRATION", "anchor calibration", **{k: v for k, v in rep.items() if k not in ("blunders",)})
+    # DSM refinement from ALL anchors (ground + object): gain on the fused detail, significant offset only
+    if detail is not None and pts:
+        g = fit_anchor_gain(np.array([p["z"] for p in pts]), np.array([p["dem"] for p in pts]), np.array([p["detail"] for p in pts]), min_n=c.anchor_min_n, k_range=(0.0, settings.fusion.anchor_gain_max))
+        rep["gain_fit"] = g
+    _dump(job_dir / "anchors_used.json", {"used_ids": rep.get("used_ids", []), "holdout_ids": rep.get("holdout_ids", []), "points": pts})
+    log.event("CALIBRATION", "anchor calibration", **{k: v for k, v in rep.items() if k not in ("blunders", "used_ids", "holdout_ids", "gain_fit")}, gain_fit_accepted=(rep.get("gain_fit") or {}).get("accepted"))
     return rep
 
 
-def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: np.ndarray, prov: dict[str, Any], settings: Settings, log: JobLogger, *, user_dem: Path | None = None, user_dem_vcrs: str = "EGM2008", anchors_path: Path | None = None) -> dict[str, Any]:
+def _ground_from_surface(dsm: np.ndarray, gsd_m: float, window_m: float) -> np.ndarray:
+    """Morphological ground estimate of a surface: grey opening with a window wider than buildings, smoothed."""
+    w = max(3, int(round(window_m / max(gsd_m, 1e-6))) | 1)
+    fill = float(np.nanmedian(dsm)) if np.isfinite(dsm).any() else 0.0
+    z = np.where(np.isfinite(dsm), dsm, fill)
+    return ndimage.gaussian_filter(ndimage.grey_opening(z, size=(w, w)), w / 4.0).astype(np.float32)
+
+
+def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: np.ndarray, prov: dict[str, Any], settings: Settings, log: JobLogger, *, tiled: TiledPrediction | None = None, user_dem: Path | None = None, user_dem_vcrs: str = "EGM2008", anchors_path: Path | None = None) -> dict[str, Any]:
     t0 = time.perf_counter()
     c = settings.calib
     grid = ing.grid
@@ -163,23 +170,19 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
     write_raster(job_dir / "relative.tif", rel_f, rg, {"MODEL": f"{prov['model_name']}@{prov['model_version']}", "OUTPUT_QUANTITY": "relative_height_normalised"})
     write_preview(job_dir / "rdsm_preview.png", rel, settings.rdsm.nodata, mode="ramp")
     write_preview(job_dir / "depth_preview.png", rel, settings.rdsm.nodata, mode="gray")
-    # --- object layer (relative or direct metric) ---
-    is_metric_head = prov.get("output_quantity") == "metric_ndsm_metres"
+    # --- relative object layer (ground mask for the terrain layer) ---
     obj = object_layer_from_relative(rel_f, valid, gsd_m=gsd_m, ground_window_m=c.ground_window_m)
-    if is_metric_head:
-        # Model outputs direct height in metres (h >= 0.0)
-        obj.object_rel = np.maximum(0.0, np.where(valid, rel_depth, 0.0)).astype(np.float32)
-    write_raster(job_dir / "object_rel.tif", obj.object_rel, rg, {"OUTPUT_QUANTITY": "metric_object_layer" if is_metric_head else "relative_object_layer", "METHOD": "direct_metric_head" if is_metric_head else obj.params["method"]})
+    write_raster(job_dir / "object_rel.tif", obj.object_rel, rg, {"OUTPUT_QUANTITY": "relative_object_layer", "METHOD": obj.params["method"]})
     # --- DEM discovery + datum ---
     register_bundled_grids(settings.proj_grids_dir)
     out_vcrs = c.output_vertical_crs
     bounds = grid_bounds(grid)
     dem_src = discover_dem(bounds, settings.dem_dir, user_dem=user_dem, user_dem_vcrs=user_dem_vcrs)
-    report: dict[str, Any] = {"method_version": "tlcsm-0.3 (metric head)" if is_metric_head else "tlcsm-0.2 (baseline object layer)", "output_vertical_crs": out_vcrs, "gsd_m": gsd_m, "object_layer": obj.params, "relative_stats": rstats.to_dict(), "dem": None, "terrain": None, "scale_fit": None, "anchors": None, "consistency": None}
+    report: dict[str, Any] = {"method_version": METHOD_VERSION, "output_vertical_crs": out_vcrs, "gsd_m": gsd_m, "object_layer": obj.params, "relative_stats": rstats.to_dict(), "dem": None, "terrain": None, "fusion": None, "anchors": None, "consistency": None, "tiled_inference": tiled.summary() if tiled else None}
     datum_ok = True
     dem = dem_valid = None
     terrain_res = None
-    scale_fit = None
+    fusion = None
     anchor_rep = None
     if dem_src is not None:
         try:
@@ -189,50 +192,87 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
             datum_ok = False
             report["dem"] = {"source": dem_src.to_dict(), "error": e.to_dict()}
             log.event("CALIBRATION", "vertical datum transform refused", level=30, code=e.code, detail=e.detail)
+    detail_t = None
+    # fine-tuned metric nDSM model (tier H heights): tiles are already metres above ground -> stitched directly
+    metric = tiled is not None and tiled.quantity == METRIC_QUANTITY
+    ndsm_model = None
+    ground_mask = obj.ground_mask
+    if metric:
+        ndsm_model = np.clip(stitch_tiles(tiled), 0.0, None).astype(np.float32)
+        ndsm_model[~valid] = np.nan
+        ground_mask = np.isfinite(ndsm_model) & (ndsm_model < settings.fusion.metric_ground_max_m)
+        report["metric_model"] = {"tiles": tiled.summary(), "ndsm_p50_p90_p99_m": [float(v) for v in np.nanpercentile(ndsm_model, [50, 90, 99])], "ground_fraction": float(ground_mask[valid].mean()) if valid.any() else 0.0}
     if dem is not None and datum_ok:
         v2 = valid & dem_valid
-        terrain_res = terrain_layer(dem, dem_valid, obj.ground_mask & valid, gsd_m=gsd_m, dem_posting_m=c.dem_posting_m, sigma_cells=c.sigma_cells, w_min=c.w_min)
+        terrain_res = terrain_layer(dem, dem_valid, ground_mask & valid, gsd_m=gsd_m, dem_posting_m=c.dem_posting_m, sigma_cells=c.sigma_cells, w_min=c.w_min)
         report["terrain"] = {**terrain_res.params, **terrain_res.stats}
         # consistency: mean offset between the terrain layer and the DEM where ground
-        d = (terrain_res.terrain - dem)[v2 & obj.ground_mask]
+        d = (terrain_res.terrain - dem)[v2 & ground_mask]
         report["consistency"] = {"ME": float(np.nanmean(d)) if d.size else 0.0, "NMAD": float(1.4826 * np.nanmedian(np.abs(d - np.nanmedian(d)))) if d.size else 0.0, "n": int(d.size)}
+        # --- DEM-preserving detail fusion (tier T object layer) ---
+        if metric:
+            d1, _d2 = default_detail_scales(c.dem_posting_m, gsd_m)
+            detail_t = np.where(dem_valid & valid, highpass(np.nan_to_num(ndsm_model), d1), 0.0).astype(np.float32)
+            n = len(tiled.tiles)
+            report["fusion"] = {"accepted": True, "metric_model": True, "reason": "accepted (metric model: scale known)", "tiles_with_detail": n, "n_tiles": n, "gain_median": 1.0, "composition": settings.fusion.metric_composition, "method": "fine-tuned metric nDSM model; DSM = DEM + high-pass(nDSM) below one DEM posting (gain 1, DEM cell means preserved); terrain = DSM - nDSM" if settings.fusion.metric_composition == "highpass" else "fine-tuned metric nDSM model; DSM = ground-weighted DEM terrain (ground = model nDSM < threshold) + nDSM"}
+        elif tiled is not None and settings.fusion.enabled:
+            d1, d2 = default_detail_scales(c.dem_posting_m, gsd_m)
+            fusion = fuse_detail(np.where(dem_valid, dem, np.nan), tiled, detail_scale_px=d1, band_high_px=d2, max_gain=settings.fusion.max_tile_gain)
+            accepted = fusion.stats["tiles_with_detail"] > 0 and fusion.stats["detail_std"] > 1e-3
+            report["fusion"] = {"accepted": bool(accepted), "reason": "accepted" if accepted else "no tile showed a positive model/DEM agreement in the DEM-resolved band", "params": fusion.params, **fusion.stats, "per_tile_gain": [round(g, 3) for g in fusion.gains], "method": "per-tile least squares of model vs DEM band-pass (1-4 DEM postings); gain applied to model detail below one posting; DEM cell means preserved"}
+            if accepted:
+                detail_t = np.where(dem_valid & valid, fusion.detail, 0.0).astype(np.float32)
         if anchors_path is not None and anchors_path.exists():
-            anchor_rep = _anchor_calibration(job_dir, grid, terrain_res.terrain, obj.object_rel, load_anchors(anchors_path), settings, log, out_vcrs=out_vcrs)
+            anchor_rep = _anchor_calibration(job_dir, grid, terrain_res.terrain, dem, detail_t, load_anchors(anchors_path), settings, log, out_vcrs=out_vcrs)
             report["anchors"] = anchor_rep
-        if not is_metric_head and not (anchor_rep and anchor_rep.get("accepted") and anchor_rep.get("scale_m_per_unit")):
-            scale_fit = fit_object_scale_to_dem_residual(dem, terrain_res.terrain, obj.object_rel, v2, gsd_m=gsd_m, dem_posting_m=c.dem_posting_m, min_object_fraction=c.min_object_fraction, min_implied_p99_m=c.min_implied_p99_m, max_implied_p99_m=c.max_implied_p99_m, min_r=c.min_r)
-            report["scale_fit"] = scale_fit.to_dict()
-    tier = decide(georeferenced=True, dem_found=dem_src is not None, terrain_stats=terrain_res.stats if terrain_res else None, scale_fit=report["scale_fit"], anchor_fit=anchor_rep, out_vcrs=out_vcrs, datum_ok=datum_ok, consistency=report["consistency"], cfg={"datum_sanity_m": c.datum_sanity_m}, is_metric_head=is_metric_head)
+    tier = decide(georeferenced=True, dem_found=dem_src is not None, terrain_stats=terrain_res.stats if terrain_res else None, scale_fit=report["fusion"], anchor_fit=anchor_rep, out_vcrs=out_vcrs, datum_ok=datum_ok, consistency=report["consistency"], cfg={"datum_sanity_m": c.datum_sanity_m}, is_metric=metric)
     report["tier"] = tier.to_dict()
     # --- compose ---
     artifacts: dict[str, str] = {"input_preview": "input_preview.png", "depth_preview": "depth_preview.png", "rdsm_preview": "rdsm_preview.png", "relative_tif": "relative.tif", "object_rel_tif": "object_rel.tif", "meta": "meta.json", "prep": "prep.json", "prediction": "prediction.json", "calib_report": "calib_report.json"}
+    if tiled is not None:
+        artifacts["tiled_inference"] = "tiled_inference.json"
     layers: dict[str, Any] = {"relative": {"units": "relative", "tier": "R", "preview": "rdsm_preview.png"}}
-    
-    # Texture for viewer is always generated once at the start of composition
-    tex_path, tex_size = write_texture(job_dir / "texture.jpg", ing.rgb, max_dim=settings.terrain.max_texture_dim)
+    _tex_path, tex_size = write_texture(job_dir / "texture.jpg", ing.rgb, max_dim=settings.terrain.max_texture_dim)
     artifacts["texture"] = "texture.jpg"
 
     scale = None
     scale_source = None
-    if is_metric_head:
-        scale = 1.0
-        scale_source = "direct_metric_neural_head"
-
     if terrain_res is not None and tier.tier in ("T", "A"):
+        gain_fit = (anchor_rep or {}).get("gain_fit") or {}
+        k, c_off = 1.0, 0.0
+        terr = terrain_res.terrain.astype(np.float32)
         if anchor_rep and anchor_rep.get("accepted"):
-            terrain_res.terrain = terrain_res.terrain + float(anchor_rep["offset_m"])
-            if not is_metric_head and anchor_rep.get("scale_m_per_unit"):
-                scale, scale_source = float(anchor_rep["scale_m_per_unit"]), "anchors_ransac"
-        if scale is None and scale_fit and scale_fit.accepted:
-            scale, scale_source = scale_fit.scale, "dem_residual_fit (unvalidated)"
+            terr = terr + float(anchor_rep["offset_m"])
+        if detail_t is not None:
+            scale_source = "fine-tuned metric nDSM model" if metric else "tiled_dem_band_fusion (unvalidated)"
+            if gain_fit.get("accepted"):
+                k, c_off = float(gain_fit["detail_gain"]), float(gain_fit["offset_m"])
+                scale_source += " + anchor gain"
+            scale = k if metric else (float(fusion.stats["gain_median"]) * k if fusion else None)
+        if metric and settings.fusion.metric_composition == "terrain_plus_ndsm":
+            # terrain from the DEM with the model's ground mask, objects from the model: DSM = terrain + nDSM
+            terrain = terr.copy()
+            dsm = (terrain + np.nan_to_num(ndsm_model)).astype(np.float32)
+        else:
+            dsm = (dem + c_off + (k * detail_t if detail_t is not None else 0.0)).astype(np.float32)
+            if metric:
+                # terrain = surface minus the model's object heights (DEM - low-pass(nDSM) + anchors); never above the DSM
+                terrain = np.fmin(dsm - k * np.nan_to_num(ndsm_model), dsm).astype(np.float32)
+            else:
+                # DEM-based ground layer (anchor offset in tier A) combined with the morphological ground of the
+                # fused DSM; never above the surface itself
+                ground_from_dsm = _ground_from_surface(dsm, gsd_m, c.ground_window_m)
+                terrain = np.fmin(np.fmin(terr, ground_from_dsm), dsm).astype(np.float32)
+        dsm[~(valid & dem_valid)] = np.nan
+        terrain[~(valid & dem_valid)] = np.nan
+        ndsm = np.clip(dsm - terrain, 0.0, None).astype(np.float32)
         tg = Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, out_vcrs, tier.tier)
-        write_raster(job_dir / "terrain.tif", terrain_res.terrain, tg, {"OUTPUT_QUANTITY": "terrain_layer_low_frequency", "NOT_A_DTM": "true", "DEM_SOURCE": dem_src.product if dem_src else ""})
-        lo, hi = float(np.nanpercentile(terrain_res.terrain, 1)), float(np.nanpercentile(terrain_res.terrain, 99))
-        dsm, ndsm = compose_dsm(terrain_res.terrain, obj.object_rel, scale, valid & dem_valid)
-        write_raster(job_dir / "dsm.tif", dsm, tg, {"OUTPUT_QUANTITY": "dsm_surface_elevation" if ndsm is not None else "terrain_only_no_object_scale", "OBJECT_SCALE_SOURCE": scale_source or "none", "MODEL": f"{prov['model_name']}@{prov['model_version']}", "MODEL_SHA256": prov.get("model_sha256") or "n/a"})
+        write_raster(job_dir / "dem.tif", np.where(dem_valid, dem, np.nan), tg, {"OUTPUT_QUANTITY": "input_dem_on_job_grid", "DEM_SOURCE": dem_src.product if dem_src else "", "NOTE": "bilinear resample + datum transform only; baseline for validation"})
+        write_raster(job_dir / "terrain.tif", terrain, tg, {"OUTPUT_QUANTITY": "terrain_ground_estimate", "NOT_A_DTM": "true", "DEM_SOURCE": dem_src.product if dem_src else "", "METHOD": "min(ground-weighted DEM normalized convolution [+ anchor offset], morphological ground of the DSM, DSM)"})
+        write_raster(job_dir / "dsm.tif", dsm, tg, {"OUTPUT_QUANTITY": "dsm_surface_elevation" if detail_t is not None else "dem_only_no_object_detail", "OBJECT_SCALE_SOURCE": scale_source or "none", "DEM_SOURCE": dem_src.product if dem_src else "", "METHOD": METHOD_VERSION, "MODEL": f"{prov['model_name']}@{prov['model_version']}", "MODEL_SHA256": prov.get("model_sha256") or "n/a"})
         dlo, dhi = float(np.nanpercentile(dsm, 1)), float(np.nanpercentile(dsm, 99))
         leg = elevation_preview(job_dir / "dsm_preview.png", dsm, lo=dlo, hi=dhi)
-        elevation_preview(job_dir / "terrain_preview.png", terrain_res.terrain, lo=dlo, hi=dhi)
+        elevation_preview(job_dir / "terrain_preview.png", terrain, lo=dlo, hi=dhi)
         hillshade_preview(job_dir / "hillshade_preview.png", dsm, gsd[0], gsd[1])
         slope, aspect = slope_layers(dsm, gsd[0], gsd[1])
         sg = Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, None, tier.tier)
@@ -240,94 +280,76 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
         write_raster(job_dir / "aspect.tif", aspect, sg, {"OUTPUT_QUANTITY": "aspect_degrees_from_north"})
         sleg = slope_preview(job_dir / "slope_preview.png", slope)
         low_support = terrain_res.support < 0.25
-        flags = build_flags(dsm.shape, valid=np.isfinite(dsm), raw_fallback=terrain_res.raw_fallback, dem_void=~dem_valid, no_object_scale=ndsm is None, low_support=low_support)
+        flags = build_flags(dsm.shape, valid=np.isfinite(dsm), raw_fallback=terrain_res.raw_fallback, dem_void=~dem_valid, no_object_scale=detail_t is None, low_support=low_support)
         write_raster(job_dir / "flags.tif", flags, Grid(grid.width, grid.height, grid.transform, grid.crs, "uint16", 0, "relative", False, None, tier.tier), {"BITS": "BORDER=1,TERRAIN_RAW_DEM=2,DEM_VOID=4,NODATA=8,NO_OBJECT_SCALE=16,LOW_SUPPORT=32"}, dtype="uint16")
         flags_preview(job_dir / "flags_preview.png", flags)
-        artifacts.update({"terrain_tif": "terrain.tif", "dsm_tif": "dsm.tif", "slope_tif": "slope.tif", "aspect_tif": "aspect.tif", "flags_tif": "flags.tif", "dsm_preview": "dsm_preview.png", "terrain_preview": "terrain_preview.png", "hillshade_preview": "hillshade_preview.png", "slope_preview": "slope_preview.png", "flags_preview": "flags_preview.png"})
-        layers.update({"dsm": {"units": "metres", "vertical_crs": out_vcrs, "tier": tier.tier, "preview": "dsm_preview.png", "legend": leg, "label": "ABSOLUTE" if ndsm is not None else "ABSOLUTE (terrain only)"}, "terrain": {"units": "metres", "vertical_crs": out_vcrs, "tier": "T", "preview": "terrain_preview.png", "legend": leg, "label": "ABSOLUTE · DEM-derived low-frequency terrain (not a DTM)"}, "slope": {"units": "degrees", "preview": "slope_preview.png", "legend": sleg}, "hillshade": {"preview": "hillshade_preview.png"}, "flags": {"preview": "flags_preview.png"}})
-        if ndsm is not None:
-            write_raster(job_dir / "ndsm.tif", ndsm, Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, None, tier.tier), {"OUTPUT_QUANTITY": "height_above_local_ground", "SCALE_SOURCE": scale_source or ""})
-            nleg = elevation_preview(job_dir / "ndsm_preview.png", ndsm, lo=0.0, hi=float(np.nanpercentile(ndsm, 99)))
-            artifacts["ndsm_tif"] = "ndsm.tif"
-            artifacts["ndsm_preview"] = "ndsm_preview.png"
-            layers["ndsm"] = {"units": "metres", "tier": tier.tier, "preview": "ndsm_preview.png", "legend": nleg, "label": f"METRIC RELATIVE · height above local ground · scale: {scale_source}"}
-        # heightfields for the viewer: dsm (absolute, metres) and terrain (metres)
-        _smooth = 0.5 if ndsm is not None else 1.5
-        names_to_build = [("dsm", dsm), ("terrain", terrain_res.terrain)]
-        if ndsm is not None:
-            names_to_build.append(("ndsm", ndsm))
-        for name, arr in names_to_build:
-            hf, hv, hmeta = build_heightfield(
+        write_raster(job_dir / "ndsm.tif", ndsm, Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, None, tier.tier), {"OUTPUT_QUANTITY": "height_above_terrain_layer", "SCALE_SOURCE": scale_source or "none (DEM relief only)"})
+        nleg = elevation_preview(job_dir / "ndsm_preview.png", ndsm, lo=0.0, hi=max(1.0, float(np.nanpercentile(ndsm, 99))))
+        artifacts.update({"dem_tif": "dem.tif", "terrain_tif": "terrain.tif", "dsm_tif": "dsm.tif", "ndsm_tif": "ndsm.tif", "slope_tif": "slope.tif", "aspect_tif": "aspect.tif", "flags_tif": "flags.tif", "dsm_preview": "dsm_preview.png", "terrain_preview": "terrain_preview.png", "ndsm_preview": "ndsm_preview.png", "hillshade_preview": "hillshade_preview.png", "slope_preview": "slope_preview.png", "flags_preview": "flags_preview.png"})
+        dsm_label = "ABSOLUTE · DEM + calibrated model detail" if detail_t is not None else "ABSOLUTE · DEM relief only (no model detail calibrated)"
+        layers.update({
+            "dsm": {"units": "metres", "vertical_crs": out_vcrs, "tier": tier.tier, "preview": "dsm_preview.png", "legend": leg, "label": dsm_label},
+            "terrain": {"units": "metres", "vertical_crs": out_vcrs, "tier": tier.tier, "preview": "terrain_preview.png", "legend": leg, "label": "ABSOLUTE · ground estimate (not a certified DTM)"},
+            "ndsm": {"units": "metres", "tier": tier.tier, "preview": "ndsm_preview.png", "legend": nleg, "label": f"METRIC · height above terrain layer · detail: {scale_source or 'none'}"},
+            "slope": {"units": "degrees", "preview": "slope_preview.png", "legend": sleg},
+            "hillshade": {"preview": "hillshade_preview.png"},
+            "flags": {"preview": "flags_preview.png"},
+        })
+        # heightfields for the viewer (display copies; the GeoTIFFs above are never modified)
+        for name, arr in (("dsm", dsm), ("terrain", terrain), ("ndsm", ndsm)):
+            hf, _hv, hmeta = build_heightfield(
                 np.where(np.isfinite(arr), arr, -9999.0),
                 -9999.0,
                 max_mesh_dim=settings.terrain.max_mesh_dim,
                 units="metres",
                 metric=True,
                 tier=tier.tier,
-                vertical_reference=out_vcrs if name != "ndsm" else "height_above_ground",
+                vertical_reference=out_vcrs if name != "ndsm" else "height_above_terrain",
                 texture_size=tex_size,
-                viewer_smooth_sigma=_smooth if name != "ndsm" else 0.0,
-                guide_rgb=ing.rgb if name in ("dsm", "ndsm") else None,
-                edge_sharpen=name in ("dsm", "ndsm"),
+                viewer_smooth_sigma=0.0 if name != "terrain" else 1.0,
+                guide_rgb=ing.rgb if name in ("dsm", "ndsm") and detail_t is not None else None,
+                edge_sharpen=name in ("dsm", "ndsm") and detail_t is not None,
             )
+            if name == "ndsm":  # edge sharpening can overshoot below ground in the display copy; heights are >= 0
+                hf = np.where(np.isfinite(hf), np.maximum(hf, 0.0), hf).astype(np.float32)
+                hmeta.min = max(hmeta.min, 0.0)
             write_heightfield(job_dir / f"heightfield_{name}.f32", hf)
             _dump(job_dir / f"heightfield_{name}.json", hmeta.to_dict())
             layers[name]["heightfield"] = f"heightfield_{name}.f32"
             layers[name]["heightfield_meta"] = f"heightfield_{name}.json"
-
-        # LoD-1 3D vector building extraction (Solution C)
-        # Uses AI-powered RGB segmentation + nDSM height fusion when RGB is available
-        if ndsm is not None:
+        # LoD-1 building blocks (visualisation; heights sampled from ndsm, bases from terrain)
+        if detail_t is not None:
             try:
                 from core.terrain.lod1 import extract_lod1_buildings, save_lod1_buildings
-                buildings_path = job_dir / "buildings.json"
-                # Cache: skip extraction if buildings.json already exists with data
-                if buildings_path.exists():
-                    try:
-                        cached = json.loads(buildings_path.read_text(encoding="utf-8"))
-                        if cached.get("count", 0) > 0:
-                            lod1_data = cached
-                            log.event("LOD1", f"using cached {cached['count']} buildings")
-                        else:
-                            raise ValueError("empty cache")
-                    except Exception:
-                        lod1_data = extract_lod1_buildings(ndsm, terrain_res.terrain, rgb=ing.rgb, gsd_m=gsd_m)
-                        save_lod1_buildings(buildings_path, lod1_data)
-                else:
-                    lod1_data = extract_lod1_buildings(ndsm, terrain_res.terrain, rgb=ing.rgb, gsd_m=gsd_m)
-                    save_lod1_buildings(buildings_path, lod1_data)
+
+                lod1_data = extract_lod1_buildings(ndsm, terrain, rgb=ing.rgb, gsd_m=gsd_m)
+                save_lod1_buildings(job_dir / "buildings.json", lod1_data)
                 artifacts["buildings_json"] = "buildings.json"
-                seg_method = lod1_data.get("segmentation_method", "unknown")
-                log.event("LOD1", f"extracted {lod1_data['count']} LoD-1 building instances ({seg_method})")
-            except Exception as e:  # noqa: BLE001
-                log.event("WARN", f"LoD-1 extraction skipped: {e}")
-    elif tier.tier == "H":
-        # Tier H: metric nDSM directly available from neural head
-        ndsm = np.where(valid, np.maximum(obj.object_rel * 1.0, 0.0), np.nan).astype(np.float32)
-        write_raster(job_dir / "ndsm.tif", ndsm, Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, None, "H"), {"OUTPUT_QUANTITY": "height_above_local_ground", "SCALE_SOURCE": scale_source or "direct_metric_neural_head"})
-        nleg = elevation_preview(job_dir / "ndsm_preview.png", ndsm, lo=0.0, hi=float(np.nanpercentile(ndsm, 99)))
-        artifacts["ndsm_tif"] = "ndsm.tif"
-        artifacts["ndsm_preview"] = "ndsm_preview.png"
-        layers["ndsm"] = {"units": "metres", "tier": "H", "preview": "ndsm_preview.png", "legend": nleg, "label": "METRIC RELATIVE · height above local ground (direct metric neural head)"}
-        hf, hv, hmeta = build_heightfield(
-            np.where(np.isfinite(ndsm), ndsm, -9999.0),
-            -9999.0,
-            max_mesh_dim=settings.terrain.max_mesh_dim,
-            units="metres",
-            metric=True,
-            tier="H",
-            vertical_reference="height_above_ground",
-            texture_size=tex_size,
-            viewer_smooth_sigma=0.0,
-        )
+                log.event("LOD1", f"extracted {lod1_data['count']} LoD-1 building blocks ({lod1_data.get('segmentation_method', 'unknown')})")
+            except Exception as e:  # noqa: BLE001 - visual extra; never fails the job
+                log.event("WARN", f"LoD-1 extraction skipped: {type(e).__name__}: {e}", level=30)
+    if metric and tier.tier == "H":
+        # tier H: fine-tuned model heights above ground in metres; no DEM -> no absolute elevation, no DSM
+        scale_source = "fine-tuned metric nDSM model"
+        ndsm = np.where(valid, np.nan_to_num(ndsm_model), np.nan).astype(np.float32)
+        hg = Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, None, "H")
+        write_raster(job_dir / "ndsm.tif", ndsm, hg, {"OUTPUT_QUANTITY": "height_above_ground", "SCALE_SOURCE": scale_source, "MODEL": tiled.quantity})
+        nleg = elevation_preview(job_dir / "ndsm_preview.png", ndsm, lo=0.0, hi=max(1.0, float(np.nanpercentile(ndsm, 99))))
+        slope, aspect = slope_layers(ndsm, gsd[0], gsd[1])
+        write_raster(job_dir / "slope.tif", slope, hg, {"OUTPUT_QUANTITY": "slope_degrees_of_ndsm"})
+        sleg = slope_preview(job_dir / "slope_preview.png", slope)
+        hillshade_preview(job_dir / "hillshade_preview.png", ndsm, gsd[0], gsd[1])
+        artifacts.update({"ndsm_tif": "ndsm.tif", "ndsm_preview": "ndsm_preview.png", "slope_tif": "slope.tif", "slope_preview": "slope_preview.png", "hillshade_preview": "hillshade_preview.png"})
+        layers.update({"ndsm": {"units": "metres", "tier": "H", "preview": "ndsm_preview.png", "legend": nleg, "label": "METRIC · height above ground (fine-tuned model) · no absolute elevation"}, "slope": {"units": "degrees", "preview": "slope_preview.png", "legend": sleg}, "hillshade": {"preview": "hillshade_preview.png"}})
+        hf, _hv, hmeta = build_heightfield(np.where(np.isfinite(ndsm), ndsm, -9999.0), -9999.0, max_mesh_dim=settings.terrain.max_mesh_dim, units="metres", metric=True, tier="H", vertical_reference="height_above_ground", texture_size=tex_size)
         write_heightfield(job_dir / "heightfield_ndsm.f32", hf)
         _dump(job_dir / "heightfield_ndsm.json", hmeta.to_dict())
         layers["ndsm"]["heightfield"] = "heightfield_ndsm.f32"
         layers["ndsm"]["heightfield_meta"] = "heightfield_ndsm.json"
-    
+        scale = 1.0
     # relative heightfield always available (tier R view)
-    hf, hv, hmeta = build_heightfield(rel, settings.rdsm.nodata, max_mesh_dim=settings.terrain.max_mesh_dim, texture_size=tex_size)
-    write_heightfield(job_dir / "heightfield_relative.f32", hf)
+    _hf, _hv, hmeta = build_heightfield(rel, settings.rdsm.nodata, max_mesh_dim=settings.terrain.max_mesh_dim, texture_size=tex_size)
+    write_heightfield(job_dir / "heightfield_relative.f32", _hf)
     _dump(job_dir / "heightfield_relative.json", hmeta.to_dict())
     layers["relative"].update({"heightfield": "heightfield_relative.f32", "heightfield_meta": "heightfield_relative.json"})
     _dump(job_dir / "calib_report.json", report)
@@ -342,18 +364,19 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
         "quality_triggers": tier.triggers,
         "flags": tier.flags,
         "notes": tier.notes,
-        "units": "metres" if tier.tier in ("T", "A") else "relative",
+        "units": "metres" if tier.tier in ("T", "A", "H") else "relative",
         "vertical_reference": out_vcrs if tier.tier in ("T", "A") else None,
         "object_scale_source": scale_source,
         "object_scale_m_per_unit": scale,
+        "method_version": METHOD_VERSION,
         "grid": grid.to_dict(),
         "gsd_m": gsd_m,
         "dem": report["dem"]["source"] if report.get("dem") and "source" in report["dem"] else None,
         "layers": layers,
         "artifacts": artifacts,
-        "heightfield": json.loads((job_dir / ("heightfield_dsm.json" if "dsm" in layers and "heightfield" in layers["dsm"] else "heightfield_relative.json")).read_text()),
+        "heightfield": json.loads((job_dir / ("heightfield_dsm.json" if "dsm" in layers and "heightfield" in layers["dsm"] else "heightfield_ndsm.json" if "ndsm" in layers and "heightfield" in layers["ndsm"] else "heightfield_relative.json")).read_text(encoding="utf-8")),
         "timings_ms": {"calibration_ms": (time.perf_counter() - t0) * 1000.0},
     }
     _dump(job_dir / "result.json", result)
-    log.event("CALIBRATION", "two-layer calibration complete", tier=tier.tier, quality=tier.quality, scale_source=scale_source, ms=round((time.perf_counter() - t0) * 1000, 1))
+    log.event("CALIBRATION", "calibration complete", tier=tier.tier, quality=tier.quality, scale_source=scale_source, ms=round((time.perf_counter() - t0) * 1000, 1))
     return result

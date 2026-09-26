@@ -1,5 +1,6 @@
-"""Mode A pipeline stages (Sprint 1). Each stage is a pure function over the job directory and returns the
-artefacts it wrote plus timings. Stages: PREPROCESSING -> INFERENCE -> RASTERIZING (rDSM + heightfield)."""
+"""Mode A pipeline stages. Each stage is a pure function over the job directory and returns the artefacts it
+wrote plus timings. Stages: PREPROCESSING -> INFERENCE (whole image + optional native-resolution tiles) ->
+RASTERIZING (rDSM + heightfield). Output is relative (unitless) by construction."""
 from __future__ import annotations
 
 import json
@@ -12,6 +13,7 @@ from PIL import Image
 
 from backend.config.settings import Settings
 from backend.logging_setup import JobLogger
+from core.calib.fusion import TiledPrediction, fuse_detail, mode_a_scales
 from core.dsm.rdsm import make_rdsm, write_preview, write_raster
 from core.ingest.ingest import IngestResult, ingest_image
 from core.inference.predictor import BasePredictor
@@ -42,9 +44,23 @@ def stage_inference(job_dir: Path, ing: IngestResult, predictor: BasePredictor, 
     return pred.relative_depth, prov
 
 
-def stage_rasterize(job_dir: Path, ing: IngestResult, rel_depth: np.ndarray, prov: dict[str, Any], settings: Settings, log: JobLogger) -> dict[str, Any]:
+def refine_with_tiles(rel_depth: np.ndarray, tiled: TiledPrediction, model_input: int) -> tuple[np.ndarray, dict[str, Any]]:
+    """Mode A: add native-resolution tile detail to the whole-image prediction. The whole-image prediction fixes
+    the low frequencies (one consistent affine frame); each tile's detail is scaled to it in their shared band."""
+    h, w = rel_depth.shape
+    lo, hi = np.nanpercentile(rel_depth, [1, 99])
+    base = (rel_depth - lo) / max(float(hi - lo), 1e-6)
+    d1, d2 = mode_a_scales(h, w, model_input)
+    fr = fuse_detail(base, tiled, detail_scale_px=d1, band_high_px=d2)
+    return (base + fr.detail).astype(np.float32), {"applied": True, **tiled.summary(), **fr.stats, "params": fr.params}
+
+
+def stage_rasterize(job_dir: Path, ing: IngestResult, rel_depth: np.ndarray, prov: dict[str, Any], settings: Settings, log: JobLogger, tiled: TiledPrediction | None = None) -> dict[str, Any]:
     t0 = time.perf_counter()
     rc = settings.rdsm
+    refinement: dict[str, Any] = {"applied": False}
+    if tiled is not None:
+        rel_depth, refinement = refine_with_tiles(rel_depth, tiled, settings.model.input_size)
     rel, grid, stats = make_rdsm(rel_depth, ing.valid_mask, method=rc.method, percentiles=tuple(rc.percentiles), nodata=rc.nodata, orientation=rc.orientation)  # type: ignore[arg-type]
     tags = {"MODEL": f"{prov['model_name']}@{prov['model_version']}", "MODEL_SHA256": prov.get("model_sha256") or "n/a", "INPUT_SHA256": ing.meta.sha256, "OUTPUT_QUANTITY": "relative_height_normalised", "SOURCE_QUANTITY": prov.get("output_quantity", "")}
     write_raster(job_dir / "rdsm.tif", rel, grid, tags)
@@ -66,6 +82,7 @@ def stage_rasterize(job_dir: Path, ing: IngestResult, rel_depth: np.ndarray, pro
         "vertical_reference": None,
         "grid": grid.to_dict(),
         "rdsm_stats": stats.to_dict(),
+        "tile_refinement": refinement,
         "heightfield": hmeta.to_dict(),
         "artifacts": {
             "input_preview": "input_preview.png",

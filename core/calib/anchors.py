@@ -4,7 +4,8 @@ Evidence (results/l0_05_anchors.json): with 40 % gross outliers the Huber estima
 truth) while the median recovered the offset within 0.05 m; RANSAC recovered a 1.2x scale within 1 % for N >= 5.
 Therefore: median offset, RANSAC scale, N >= 5 minimum, 3-sigma (NMAD) blunder flagging, hold-out reporting.
 
-Not wired into the Sprint 1 pipeline (Mode A has no anchors); provided with tests so Sprint 2/3 build on it.
+Used by Mode B tier A (backend/jobs/pipeline_b.py) for the terrain offset from ground anchors; the DSM detail gain
+is fitted by core.calib.fusion.fit_anchor_gain.
 """
 from __future__ import annotations
 

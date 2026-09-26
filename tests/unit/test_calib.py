@@ -1,11 +1,12 @@
-"""Unit tests for the Mode B calibration core: terrain layer, object layer, scale-fit gates, tier decision, DEM discovery."""
+"""Unit tests for the Mode B calibration core: terrain layer, object layer, detail fusion, anchor gain, tier decision, DEM discovery."""
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from core.calib.dem import _cop_tile_bounds, discover_dem
-from core.calib.terrain import compose_dsm, fit_object_scale_to_dem_residual, object_layer_from_relative, terrain_layer
+from core.calib.fusion import fit_anchor_gain, fuse_detail, plan_upsample, tiled_relative
+from core.calib.terrain import object_layer_from_relative, terrain_layer
 from core.calib.tier import decide
 
 GSD = 2.0
@@ -63,34 +64,68 @@ def test_object_layer_nonnegative_and_ground_fraction():
     assert 0.2 < o.params["ground_fraction"] <= 1.0
 
 
-def test_scale_fit_recovers_scale_and_gates_reject_garbage():
-    rng = np.random.default_rng(2)
-    h = w = 20 * F
-    terrain = _plane(h, w)
-    obj = np.clip(rng.random((h, w)) - 0.5, 0, None) * 0.4  # ~50% object pixels, values 0..0.2
-    true_scale = 25.0
-    dem = terrain + true_scale * obj + rng.normal(0, 0.3, (h, w))
-    valid = np.ones((h, w), bool)
-    fit = fit_object_scale_to_dem_residual(dem, terrain, obj, valid, gsd_m=GSD)
-    assert fit.accepted, fit.reason
-    assert abs(fit.scale - true_scale) / true_scale < 0.15
-    # garbage: residual unrelated to the object layer -> rejected (r gate) or implausible implied heights
-    dem2 = terrain + rng.normal(0, 3.0, (h, w))
-    fit2 = fit_object_scale_to_dem_residual(dem2, terrain, obj, valid, gsd_m=GSD)
-    assert not fit2.accepted and fit2.scale is None
-    # implausible: residual tracks the object layer but implies 300 m objects -> rejected by the height gate
-    dem3 = terrain + 1500.0 * obj
-    fit3 = fit_object_scale_to_dem_residual(dem3, terrain, obj, valid, gsd_m=GSD)
-    assert not fit3.accepted and "implied p99" in fit3.reason
+def _city(h=400, w=400, seed=3):
+    """Sloped ground + buildings of several footprints (6-24 m) and heights; DEM = 30 m block mean of the truth."""
+    rng = np.random.default_rng(seed)
+    truth = _plane(h, w)
+    for _ in range(70):
+        s_ = int(rng.integers(3, 13))  # 6..24 m footprints at 2 m GSD
+        r, c = int(rng.integers(0, h - s_)), int(rng.integers(0, w - s_))
+        truth[r : r + s_, c : c + s_] += float(rng.uniform(6, 25))
+    hh, ww = h // F, w // F
+    blocks = truth[: hh * F, : ww * F].reshape(hh, F, ww, F).mean(axis=(1, 3))
+    from scipy import ndimage
+
+    dem = ndimage.zoom(blocks, (h / hh, w / ww), order=1)[:h, :w]
+    return truth, dem
 
 
-def test_compose_dsm_without_scale_is_terrain_only():
-    terrain = _plane(60, 60)
-    obj = np.full_like(terrain, 0.5)
-    dsm, ndsm = compose_dsm(terrain, obj, None, np.ones_like(terrain, bool))
-    assert ndsm is None and np.allclose(dsm, terrain)
-    dsm2, ndsm2 = compose_dsm(terrain, obj, 10.0, np.ones_like(terrain, bool))
-    assert np.allclose(ndsm2, 5.0) and np.allclose(dsm2 - terrain, 5.0)
+def _rgb_of(z):
+    g = ((z - z.min()) / (z.max() - z.min()) * 255).astype(np.uint8)
+    return np.dstack([g, g, g])
+
+
+def test_fusion_adds_calibrated_detail_and_preserves_dem_cell_means():
+    """Model = affine map of the true surface per tile (the relative-depth ambiguity). The fused DSM must be
+    closer to the truth than the DEM, and its 30 m block means must equal the DEM's."""
+    truth, dem = _city()
+    predict = lambda x: 0.37 * x.astype(np.float64).mean(axis=2) / 255.0 + 5.0  # noqa: E731
+    tp = tiled_relative(predict, _rgb_of(truth), upsample=plan_upsample(400, 400, 1.0, tile=128, overlap=0.25, max_tiles=64), tile=128, overlap=0.25)
+    fr = fuse_detail(dem, tp, detail_scale_px=F, band_high_px=4 * F)
+    fused = dem + fr.detail
+    inner = (slice(20, -20), slice(20, -20))
+    rmse = lambda a: float(np.sqrt(np.mean((a - truth)[inner] ** 2)))  # noqa: E731
+    assert rmse(fused) < 0.85 * rmse(dem), (rmse(fused), rmse(dem))
+    assert fr.stats["tiles_with_detail"] >= 0.75 * fr.stats["n_tiles"] and fr.stats["gain_median"] > 0
+    from scipy import ndimage
+
+    assert float(np.abs(ndimage.gaussian_filter(fr.detail, F))[inner].mean()) < 0.35  # detail is zero-mean at DEM scale
+
+
+def test_fusion_does_not_degrade_dem_with_uninformative_model():
+    truth, dem = _city(seed=4)
+    rng = np.random.default_rng(9)
+    predict = lambda x: rng.random(x.shape[:2])  # noqa: E731  (noise: no relation to heights)
+    tp = tiled_relative(predict, _rgb_of(truth), upsample=1.0, tile=128, overlap=0.25)
+    fr = fuse_detail(dem, tp, detail_scale_px=F, band_high_px=4 * F)
+    inner = (slice(20, -20), slice(20, -20))
+    rmse = lambda a: float(np.sqrt(np.mean((a - truth)[inner] ** 2)))  # noqa: E731
+    assert rmse(dem + fr.detail) < 1.03 * rmse(dem)
+
+
+def test_anchor_gain_fit_gain_only_and_significant_offset():
+    rng = np.random.default_rng(5)
+    det = rng.normal(0, 3.0, 40)
+    base = rng.normal(400, 5, 40)
+    z = base + 2.0 * det + rng.normal(0, 1.5, 40)  # true gain 2, no datum offset
+    g = fit_anchor_gain(z, base, det)
+    assert g["accepted"] and abs(g["detail_gain"] - 2.0) < 0.3 and abs(g["offset_m"]) < 0.8
+    z2 = z + 3.0  # a real datum shift is significant and kept
+    g2 = fit_anchor_gain(z2, base, det)
+    assert g2["accepted"] and abs(g2["offset_m"] - 3.0) < 0.8 and g2["offset_significant"]
+    g3 = fit_anchor_gain(base + det + rng.normal(0, 8.0, 40), base, det)  # tier T already optimal -> gain near 1 or rejected
+    assert (not g3["accepted"]) or abs(g3["detail_gain"] - 1.0) < 1.0
+    assert not fit_anchor_gain(z[:3], base[:3], det[:3])["accepted"]
 
 
 @pytest.mark.parametrize(
@@ -100,10 +135,11 @@ def test_compose_dsm_without_scale_is_terrain_only():
         (dict(dem_found=False), "R", "WARNING", "NO_DEM"),
         (dict(datum_ok=False), "R", "INVALID", "DATUM_UNSAFE"),
         (dict(consistency={"ME": 40.0}), "R", "INVALID", "DATUM_SUSPECT"),
-        (dict(scale_fit={"accepted": True, "n_cells": 100, "residual_nmad_m": 1.0}), "T", "LIMITED", "OBJECT_SCALE_DEM_FIT"),
+        (dict(scale_fit={"accepted": True, "tiles_with_detail": 7, "n_tiles": 9, "gain_median": 3.0}), "T", "LIMITED", "OBJECT_SCALE_DEM_FIT"),
         (dict(), "T", "WARNING", "NO_OBJECT_SCALE"),
-        (dict(anchor_fit={"accepted": True, "n_used": 8, "offset_m": -1.0, "holdout_nmad": 0.5, "scale_fit": {"accepted": False, "reason": "r too low"}}), "A", "WARNING", "NO_OBJECT_SCALE"),
-        (dict(anchor_fit={"accepted": True, "n_used": 8, "offset_m": -1.0, "holdout_nmad": 0.5, "scale_fit": {"accepted": True, "n_inliers": 9, "n_total": 10}}), "A", "GOOD", "OBJECT_SCALE_ANCHORS"),
+        (dict(anchor_fit={"accepted": True, "n_used": 8, "offset_m": -1.0, "holdout_nmad": 0.5, "gain_fit": {"accepted": False, "reason": "no detail"}}), "A", "WARNING", "NO_OBJECT_SCALE"),
+        (dict(scale_fit={"accepted": True, "tiles_with_detail": 7, "n_tiles": 9, "gain_median": 3.0}, anchor_fit={"accepted": True, "n_used": 8, "offset_m": -1.0, "holdout_nmad": 0.5, "gain_fit": {"accepted": True, "detail_gain": 1.6, "offset_m": 0.0, "loo_rmse_m": 5.0, "tier_t_rmse_m": 6.0}}), "A", "GOOD", "OBJECT_SCALE_ANCHORS"),
+        (dict(scale_fit={"accepted": True, "tiles_with_detail": 7, "n_tiles": 9, "gain_median": 3.0}, anchor_fit={"accepted": False, "gain_fit": {"accepted": False, "reason": "rejected: leave-one-out"}}), "T", "LIMITED", "OBJECT_SCALE_DEM_FIT"),
     ],
 )
 def test_tier_decision(kw, tier, quality, flag):
@@ -126,3 +162,15 @@ def test_copernicus_tile_bounds_and_discovery(tmp_path: Path):
     user = tmp_path / "mydem.tif"; user.write_bytes(b"")
     u = discover_dem((10.0, 10.0, 10.1, 10.1), tmp_path, user_dem=user, user_dem_vcrs="EGM96")
     assert u is not None and u.vertical_crs == "EGM96" and u.name == "user"
+
+
+def test_tier_metric_model_ground_anchor_offset_alone_is_not_tier_a():
+    """With a metric model, terrain = DSM - model heights; a ground-anchor terrain offset alone is not applied, so it
+    must not upgrade the result to tier A (only an accepted anchor fit on the DSM does)."""
+    base = dict(georeferenced=True, dem_found=True, terrain_stats={"support_mean": 0.7, "raw_fallback_fraction": 0.0, "dem_void_fraction": 0.0}, scale_fit={"accepted": True, "tiles_with_detail": 9, "n_tiles": 9, "gain_median": 1.0}, out_vcrs="EGM2008", datum_ok=True, consistency={"ME": 0.1}, cfg={"datum_sanity_m": 15.0}, is_metric=True)
+    d = decide(anchor_fit={"accepted": True, "n_used": 8, "offset_m": -6.0, "gain_fit": {"accepted": False, "reason": "rejected: leave-one-out"}}, **base)
+    assert d.tier == "T" and "METRIC_NDSM_MODEL" in d.flags and any("anchors supplied but not used" in t for t in d.triggers)
+    d2 = decide(anchor_fit={"accepted": True, "n_used": 8, "offset_m": -6.0, "gain_fit": {"accepted": True, "detail_gain": 1.2, "offset_m": 0.0, "loo_rmse_m": 4.0, "tier_t_rmse_m": 5.0}}, **base)
+    assert d2.tier == "A" and "OBJECT_SCALE_ANCHORS" in d2.flags
+    d3 = decide(anchor_fit=None, **{**base, "dem_found": False})
+    assert d3.tier == "H" and d3.absolute_elevation is False

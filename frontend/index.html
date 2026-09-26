@@ -30,7 +30,7 @@
         <div id="dropzone" class="dropzone">
           <div class="dropzone-icon">🛰️</div>
           <p class="dropzone-prompt"><strong>Drop an Aerial Photograph or GeoTIFF here</strong></p>
-          <p class="dropzone-sub">PNG / JPG (Mode A relative surface) or GeoTIFF (Mode B metric calibrated DSM)</p>
+          <p class="dropzone-sub">PNG / JPG / plain TIFF (Mode A relative surface) or GeoTIFF (Mode B metric calibrated DSM)</p>
           <input id="file-input" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,image/png,image/jpeg,image/tiff" />
           <button type="button" class="btn-browse" onclick="document.getElementById('file-input').click()">Browse Image</button>
         </div>
@@ -343,9 +343,9 @@
     <footer class="foot">
       <b>Calibration tiers:</b>
       <b>R</b> relative (no units, no scale) ·
-      <b>T</b> terrain-absolute via DEM (object scale from residual fit — unvalidated unless anchors present) ·
-      <b>A</b> anchor-refined (ground control applied) ·
-      <b>H</b> metric head (fine-tuned model — <i>not available in this build</i>).
+      <b>T</b> absolute DSM = DEM + tiled model detail scaled against the DEM (unvalidated unless anchors / reference) ·
+      <b>A</b> anchor-refined (terrain datum + detail gain from ground control) ·
+      <b>H</b> metric heights above ground from the fine-tuned nDSM model (when installed; no absolute elevation without a DEM).
       &emsp;Vertical reference of absolute outputs: EGM2008 unless stated.
       &emsp;Measurements are always sampled server-side from DSM rasters — never from the rendered mesh.
       &emsp;The 3D viewer is a visual representation only.

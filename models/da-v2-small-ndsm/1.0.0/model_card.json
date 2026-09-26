@@ -1,0 +1,81 @@
+{
+  "name": "da-v2-small-ndsm",
+  "version": "1.0.0",
+  "role": "Fine-tuned metric nDSM model (tier H): height above ground in metres from 0.5 m RGB tiles; used for Mode B tiled inference.",
+  "architecture": "Depth Anything V2 Small: DINOv2 ViT-S/14 encoder, DPT decoder, features=64, out_channels=[48,96,192,384]",
+  "parameters_millions": 24.8,
+  "base_model": "depth-anything/Depth-Anything-V2-Small (Apache-2.0)",
+  "training_data": "swisstopo SWISSIMAGE (RGB, 0.5 m from 0.1 m COG overviews) + swissSURFACE3D raster - swissALTI3D (0.5 m) = nDSM; (c) swisstopo OGD",
+  "training_gsd_m": 0.5,
+  "training_tiles": {
+    "train": 108,
+    "val": 16,
+    "test": 20
+  },
+  "excluded": "DepthWizard validation tiles [[2682, 1247], [2621, 1202]] and everything within 5.0 km",
+  "output_quantity": "metric_ndsm_metres",
+  "metric": true,
+  "calibration_tier": "H",
+  "validation": {
+    "protocol": "held-out REGIONS (spatially separate from training), full-tile 518 px sliding window at 0.5 m vs swisstopo LiDAR nDSM",
+    "test_regions": [
+      "basel",
+      "davos",
+      "jura_ajoie",
+      "lugano",
+      "thurgau"
+    ],
+    "finetuned": {
+      "n": 80000000,
+      "ME": -0.103,
+      "RMSE": 3.859,
+      "MAE": 1.903,
+      "NMAD": 0.474,
+      "r": 0.875,
+      "RMSE_objects_ge2.5m": 5.515,
+      "ME_objects_ge2.5m": -1.457,
+      "RMSE_ground_lt2.5m": 2.474,
+      "ME_ground_lt2.5m": 0.662
+    },
+    "zeroshot_with_oracle_affine": {
+      "n": 80000000,
+      "ME": 0.0,
+      "RMSE": 6.74,
+      "MAE": 4.854,
+      "NMAD": 3.741,
+      "r": 0.528,
+      "RMSE_objects_ge2.5m": 9.452,
+      "ME_objects_ge2.5m": -5.875,
+      "RMSE_ground_lt2.5m": 4.541,
+      "ME_ground_lt2.5m": 3.319
+    }
+  },
+  "known_limitations": [
+    "Trained on Switzerland only (swisstopo); accuracy on Indian imagery/sensors is unmeasured.",
+    "First-surface model: sees canopy and roof tops; ground under dense canopy is inferred.",
+    "Trained at 0.5 m nadir orthophotos; very different GSD or strongly off-nadir imagery degrade it.",
+    "RGB and LiDAR acquisitions differ by up to max_year_gap years (construction/tree growth = label noise)."
+  ],
+  "licence": "Apache-2.0 (Depth Anything V2 Small derivative); training data (c) swisstopo OGD",
+  "weights_sha256": "34be1b624c88a718ffeabf7fe1770d951ddf28645c336dea2f70e9d3ec290902",
+  "trained": {
+    "created": "2026-09-26T18:30:08.969504Z",
+    "gpu": "Tesla T4",
+    "torch": "2.11.0+cu128",
+    "iters": 8000
+  },
+  "preprocess": {
+    "input_size": 518,
+    "size_multiple": 14,
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ]
+  }
+}

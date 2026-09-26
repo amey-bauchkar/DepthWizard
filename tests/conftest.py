@@ -51,6 +51,7 @@ def rgba_bytes(checkerboard) -> bytes:
 @pytest.fixture()
 def stub_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("DW_MODEL_NAME", "stub")
+    monkeypatch.setenv("DW_MODEL_METRIC_ENABLED", "false")  # deterministic: never pick up an installed fine-tuned model
     monkeypatch.setenv("DW_DATA_DIR", str(tmp_path / "data"))
     from backend.config.settings import load_settings
 

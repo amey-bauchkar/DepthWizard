@@ -223,10 +223,11 @@ export class HeightfieldViewer {
     this.raycaster.setFromCamera(nd, this.camera);
     const hit = this.raycaster.intersectObject(this.mesh, false)[0];
     if (!hit) return;
+    // vertex i sits at the centre of source block i -> continuous source coordinate (i + 0.5) * factor
     const col = (hit.point.x + this.extentX / 2) / this.spacing;
     const row = (this.extentY / 2 - hit.point.y) / this.spacing;
     this.placeMarker(hit.point);
-    this.pickHandler(col * this.factor, row * this.factor);
+    this.pickHandler((col + 0.5) * this.factor, (row + 0.5) * this.factor);
   }
 
   private placeMarker(p: THREE.Vector3) {
@@ -265,8 +266,35 @@ export class HeightfieldViewer {
     } else {
       this.controls.update();
     }
+    if ((this.frame++ & 7) === 0) this.updateDynamicHud();
     this.renderer.render(this.scene, this.camera);
   };
+
+  private frame = 0;
+
+  /** North arrow follows the camera heading; the scale bar is measured at the orbit target (metric mode only). */
+  private updateDynamicHud() {
+    const dir = new THREE.Vector3();
+    this.camera.getWorldDirection(dir);
+    const arrow = this.hudBR.querySelector(".hud-north") as HTMLElement | null;
+    if (arrow) {
+      // heading of the view projected on the ground plane; top-down views use the camera "up" vector instead
+      const horiz = Math.hypot(dir.x, dir.y) > 0.15 ? dir : new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+      const heading = Math.atan2(horiz.x, horiz.y); // 0 = looking north (+Y)
+      arrow.style.transform = `rotate(${(-heading * 180) / Math.PI}deg)`;
+    }
+    const bar = this.hudBR.querySelector(".hud-scalebar-bar") as HTMLElement | null;
+    const label = this.hudBR.querySelector(".hud-scalebar-label") as HTMLElement | null;
+    if (!bar || !label || !this.metric) return;
+    const h = this.renderer.domElement.clientHeight || 1;
+    const dist = this.cameraMode === "walk" ? 20 : Math.max(0.5, this.camera.position.distanceTo(this.controls.target));
+    const mPerPx = (2 * dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2)) / h;
+    const target = mPerPx * 110; // aim for a ~110 px bar
+    const nice = [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+    const d = nice.find((v) => v >= target * 0.6) ?? nice[nice.length - 1];
+    bar.style.width = `${Math.max(12, Math.min(220, d / mPerPx)).toFixed(0)}px`;
+    label.textContent = d >= 1000 ? `${d / 1000} km` : `${d} m`;
+  }
 
   private updateFlythrough() {
     this.flythroughAngle += this.flythroughSpeed;
@@ -351,8 +379,15 @@ export class HeightfieldViewer {
     this.walkVelocity.x += (vx - this.walkVelocity.x) * damp;
     this.walkVelocity.y += (vy - this.walkVelocity.y) * damp;
 
-    this.camera.position.x += this.walkVelocity.x * dt;
-    this.camera.position.y += this.walkVelocity.y * dt;
+    // move axis by axis so the walker slides along building walls instead of passing through them
+    // (a walker that starts inside a footprint may always move, so it can never get stuck)
+    const free = this.insideBuilding(this.camera.position.x, this.camera.position.y);
+    const nx = this.camera.position.x + this.walkVelocity.x * dt;
+    if (free || !this.insideBuilding(nx, this.camera.position.y)) this.camera.position.x = nx;
+    else this.walkVelocity.x = 0;
+    const ny = this.camera.position.y + this.walkVelocity.y * dt;
+    if (free || !this.insideBuilding(this.camera.position.x, ny)) this.camera.position.y = ny;
+    else this.walkVelocity.y = 0;
 
     // Bounds clamping
     const pad = Math.max(2, this.spacing);
@@ -473,13 +508,15 @@ export class HeightfieldViewer {
       };
     } else {
       // RTIN mode
+      // tolerance is given in displayed units (metres, or scene units for relative layers) -> raw height units
+      const rawTol = this.metric ? this.rtinTolerance : this.rtinTolerance / Math.max(1e-6, this.zScale * Math.max(this.extentX, this.extentY));
       const rtinResult = buildRTINGeometry(
         this.baseZ,
         this.W,
         this.H,
         this.extentX,
         this.extentY,
-        this.rtinTolerance,
+        rawTol,
         this.exaggeration,
         this.metric,
         this.zMin,
@@ -742,18 +779,11 @@ export class HeightfieldViewer {
     // Bottom-right: scale bar + north indicator
     this.hudBR.innerHTML = "";
     if (this.metric && this.extentX > 0) {
-      // Approximate scale bar: target ~15% of viewport width → compute real distance
-      const targetFrac = 0.15;
-      const sceneWidth = this.extentX;
-      const rawDist = sceneWidth * targetFrac;
-      const niceValues = [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
-      const niceDist = niceValues.find(v => v >= rawDist) ?? rawDist;
-      const barWidthPx = Math.round((niceDist / sceneWidth) * 200);
-      const label = niceDist >= 1000 ? `${(niceDist / 1000).toFixed(niceDist >= 1000 ? 0 : 1)} km` : `${niceDist} m`;
+      // sized every few frames by updateDynamicHud() from the camera distance (valid at the view centre)
       this.hudBR.innerHTML += `
-        <div class="hud-scalebar">
-          <div class="hud-scalebar-label">${label}</div>
-          <div class="hud-scalebar-bar" style="width:${barWidthPx}px"></div>
+        <div class="hud-scalebar" title="Horizontal scale at the view centre (perspective view: approximate elsewhere)">
+          <div class="hud-scalebar-label">—</div>
+          <div class="hud-scalebar-bar" style="width:0px"></div>
         </div>
       `;
     }
@@ -791,6 +821,7 @@ export class HeightfieldViewer {
     this.zScale = s;
     if (!this.metric) {
       this.applyZ();
+      this.rebuildPedestal();
       // Update exag pill in TR
       const pill = this.hudTR.querySelector(".hud-tier") as HTMLElement;
       if (pill) pill.textContent = `display scale ${this.zScale.toFixed(2)} — not a measurement`;
@@ -812,25 +843,28 @@ export class HeightfieldViewer {
         this.shaderUniforms.uContourInterval.value = Math.max(2.0, ((this.zMax - this.zMin) * this.exaggeration) / 25.0);
       }
     }
-    if (this.pedestalMesh && this.baseZ) {
-      this.pedestalMesh.geometry.dispose();
-      this.pedestalMesh.geometry = buildPedestalGeometry(
-        this.baseZ,
-        this.W,
-        this.H,
-        this.extentX,
-        this.extentY,
-        this.spacing,
-        this.zMin,
-        this.exaggeration,
-        this.metric,
-        this.zScale,
-        { zBottom: -12.0 }
-      );
-    }
+    this.rebuildPedestal();
     if (this.buildingsData) {
       this.loadBuildings(this.buildingsData, this.cityMode);
     }
+  }
+
+  private rebuildPedestal() {
+    if (!this.pedestalMesh || !this.baseZ) return;
+    this.pedestalMesh.geometry.dispose();
+    this.pedestalMesh.geometry = buildPedestalGeometry(
+      this.baseZ,
+      this.W,
+      this.H,
+      this.extentX,
+      this.extentY,
+      this.spacing,
+      this.zMin,
+      this.exaggeration,
+      this.metric,
+      this.zScale,
+      { zBottom: -12.0 }
+    );
   }
 
   setFlythrough(active: boolean) {
@@ -890,6 +924,7 @@ export class HeightfieldViewer {
 
   loadBuildings(data: LoD1Data | null, cityMode = false) {
     this.buildingsData = data;
+    this.footprints = [];
     this.cityMode = cityMode;
     if (this.buildingsGroup) {
       this.scene.remove(this.buildingsGroup);
@@ -910,6 +945,37 @@ export class HeightfieldViewer {
     });
     this.buildingsGroup.visible = this.lod1Visible;
     this.scene.add(this.buildingsGroup);
+    this.buildFootprints(data);
+  }
+
+  /** True when (x, y) is inside a visible LoD-1 footprint whose roof is above the walker's eye. */
+  private insideBuilding(x: number, y: number): boolean {
+    if (!this.lod1Visible || !this.buildingsGroup || !this.footprints.length) return false;
+    const r = 0.4; // walker radius (m)
+    const eye = this.camera.position.z;
+    for (const f of this.footprints) {
+      if (x < f.minX - r || x > f.maxX + r || y < f.minY - r || y > f.maxY + r || eye > f.top) continue;
+      let inside = false;
+      const p = f.pts;
+      for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+        if ((p[i][1] > y) !== (p[j][1] > y) && x < ((p[j][0] - p[i][0]) * (y - p[i][1])) / (p[j][1] - p[i][1] + 1e-12) + p[i][0]) inside = !inside;
+      }
+      if (inside) return true;
+    }
+    return false;
+  }
+
+  private footprints: { minX: number; maxX: number; minY: number; maxY: number; top: number; pts: [number, number][] }[] = [];
+
+  private buildFootprints(data: LoD1Data | null) {
+    this.footprints = [];
+    if (!data?.buildings || !this.metric) return;
+    for (const b of data.buildings) {
+      if (!b.coords || b.coords.length < 3) continue;
+      const xs = b.coords.map((c) => c[0]), ys = b.coords.map((c) => c[1]);
+      const base = Math.max(0, (b.base_elev_m - this.zMin) * this.exaggeration);
+      this.footprints.push({ minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys), top: base + Math.max(3, b.height_m * this.exaggeration), pts: b.coords });
+    }
   }
 
   setBuildingsVisible(visible: boolean) {
@@ -957,6 +1023,7 @@ export class HeightfieldViewer {
       this.buildingsGroup = null;
     }
     this.buildingsData = null;
+    this.footprints = [];
     if (this.gridHelper) { this.scene.remove(this.gridHelper); this.gridHelper = null; }
     if (this.marker) this.marker.visible = false;
     this.hudTL.innerHTML = "";

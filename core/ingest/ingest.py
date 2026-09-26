@@ -1,8 +1,9 @@
-"""Image ingestion for Mode A (PNG/JPEG). GeoTIFF ingestion arrives in Sprint 2.
+"""Image ingestion for Mode A (PNG / JPEG / non-georeferenced TIFF). Georeferenced GeoTIFFs go to Mode B
+(core.ingest.geotiff).
 
 Validates existence, extension, magic bytes, decodability, dimensions, channels; returns an RGB uint8 array,
-an optional validity mask (from alpha), and an InputMeta that explicitly declares MODE_A / non-georeferenced /
-relative-output-only. Nothing here ever claims a CRS or metric scale for PNG/JPEG.
+an optional validity mask (from alpha / nodata), and an InputMeta that explicitly declares MODE_A /
+non-georeferenced / relative-output-only. Nothing here ever claims a CRS or metric scale.
 """
 from __future__ import annotations
 
@@ -19,8 +20,36 @@ from backend.errors import EmptyInputError, ImageTooLargeError, InvalidFileError
 MAGIC = {
     b"\x89PNG\r\n\x1a\n": "PNG",
     b"\xff\xd8\xff": "JPEG",
+    b"II*\x00": "TIFF",
+    b"MM\x00*": "TIFF",
+    b"II+\x00": "TIFF",  # BigTIFF
+    b"MM\x00+": "TIFF",
 }
-EXT_TO_FORMAT = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG"}
+EXT_TO_FORMAT = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".tif": "TIFF", ".tiff": "TIFF"}
+
+
+def _read_tiff_rgb(p: Path, max_dim: int) -> tuple[np.ndarray, np.ndarray | None, int]:
+    """Read any TIFF (8/16-bit, float, 1-4+ bands) as RGB uint8 via rasterio, percentile-stretching non-uint8 data."""
+    import warnings
+
+    import rasterio
+    from rasterio.errors import NotGeoreferencedWarning
+
+    from core.geo.raster_io import _to_uint8
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", NotGeoreferencedWarning)
+        with rasterio.open(p) as ds:
+            if ds.width < 8 or ds.height < 8:
+                raise InvalidFileError(f"image too small: {ds.width}x{ds.height}")
+            if max(ds.width, ds.height) > max_dim:
+                raise ImageTooLargeError(f"{ds.width}x{ds.height} exceeds max_image_dim={max_dim}")
+            bands = [ds.read(1)] * 3 if ds.count < 3 else [ds.read(b) for b in (1, 2, 3)]
+            u8, masks = zip(*[_to_uint8(b, ds.nodata) for b in bands])
+            valid = masks[0] & masks[1] & masks[2]
+            if ds.count >= 4 and any(str(ci).lower().endswith("alpha") for ci in ds.colorinterp):
+                valid &= ds.read(ds.count) > 0
+            return np.dstack(u8), (None if valid.all() else valid), int(ds.count)
 
 
 @dataclass
@@ -58,7 +87,7 @@ def sniff_format(head: bytes) -> str | None:
     return None
 
 
-def ingest_image(path: str | Path, *, max_dim: int = 4096, allowed_extensions: tuple[str, ...] = (".png", ".jpg", ".jpeg")) -> IngestResult:
+def ingest_image(path: str | Path, *, max_dim: int = 4096, allowed_extensions: tuple[str, ...] = (".png", ".jpg", ".jpeg", ".tif", ".tiff")) -> IngestResult:
     p = Path(path)
     if not p.exists() or not p.is_file():
         raise InvalidFileError(f"file not found: {p}")
@@ -75,6 +104,17 @@ def ingest_image(path: str | Path, *, max_dim: int = 4096, allowed_extensions: t
         raise InvalidFileError(f"file signature does not match PNG/JPEG/TIFF: {head[:8]!r}")
     if EXT_TO_FORMAT[ext] != fmt:
         raise InvalidFileError(f"extension {ext} does not match signature {fmt}")
+    if fmt == "TIFF":
+        try:
+            rgb, valid_mask, channels_in = _read_tiff_rgb(p, max_dim)
+        except (ImageTooLargeError, InvalidFileError):
+            raise
+        except Exception as e:  # noqa: BLE001
+            raise InvalidFileError(f"undecodable TIFF: {e}") from e
+        return IngestResult(rgb=rgb, valid_mask=valid_mask, meta=InputMeta(
+            mode="A", mode_label="MODE_A / NON_GEOREFERENCED / RELATIVE_OUTPUT_ONLY", filename=p.name, format=fmt,
+            width=int(rgb.shape[1]), height=int(rgb.shape[0]), channels=channels_in, dtype="uint8", has_alpha=valid_mask is not None,
+            has_georeferencing=False, crs=None, gsd_m=None, sha256=hashlib.sha256(p.read_bytes()).hexdigest(), size_bytes=int(size)))
     try:
         with Image.open(p) as im:
             im.load()  # forces full decode -> raises on truncated/corrupt data

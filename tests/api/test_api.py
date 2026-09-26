@@ -130,30 +130,74 @@ def test_real_model_on_demo_tile(tmp_path, monkeypatch):
 
 
 @pytest.mark.slow
-def test_real_metric_model_on_demo_tile(tmp_path, monkeypatch):
-    """Runs the fine-tuned Depth Anything V2 Small metric head weights."""
+def test_real_model_mode_b_demo_geotiff_beats_nothing_it_should_not(tmp_path, monkeypatch):
+    """Real weights, bundled Zürich GeoTIFF + Copernicus DEM: tiled inference runs, tier T with calibrated detail,
+    the fused DSM keeps the DEM's 30 m cell means (the fusion never shifts the DEM at its own resolution)."""
     from pathlib import Path
+
+    import rasterio
 
     from backend.config.settings import load_settings
 
-    monkeypatch.setenv("DW_MODEL_NAME", "da-v2-small-metric")
+    monkeypatch.setenv("DW_MODEL_NAME", "da-v2-small-baseline")
     monkeypatch.setenv("DW_DATA_DIR", str(tmp_path / "data"))
     s = load_settings()
-    if not (s.models_dir / "da-v2-small-metric" / "1.0.0" / "depth_anything_v2_metric_s.pth").exists():
-        pytest.skip("metric weights not installed")
+    tif = Path("assets/demo/swissimage_2019_2682-1247_2m.tif")
+    if not (s.models_dir / "da-v2-small-baseline" / "1.0.0" / "depth_anything_v2_vits.pth").exists() or not tif.exists():
+        pytest.skip("weights or demo assets not installed")
     from fastapi.testclient import TestClient
 
     from backend.main import create_app
 
     c = TestClient(create_app(s))
-    data = Path("assets/demo/sample_urban.jpg").read_bytes()
-    jid = c.post("/api/jobs", files={"file": ("sample_urban.jpg", data, "image/jpeg")}).json()["job_id"]
+    jid = c.post("/api/jobs", files={"file": (tif.name, tif.read_bytes(), "image/tiff")}).json()["job_id"]
     c.post(f"/api/jobs/{jid}/run")
-    done = wait_done(c, jid, timeout=300)
+    done = wait_done(c, jid, timeout=600)
     assert done["status"] == "READY", done.get("error")
-    assert done["model"]["name"] == "da-v2-small-metric" and done["model"]["sha256"].startswith("fd6d317c")
+    assert done["mode"] == "B" and done["stages_ms"]["tiled_inference_ms"] > 0
     res = c.get(f"/api/jobs/{jid}/result").json()
-    assert res["metric"] is False and res["calibration_tier"] == "R"
-    arr = np.frombuffer(c.get(f"/api/jobs/{jid}/artifact/heightfield.f32").content, "<f4")
-    assert np.isfinite(arr).all() and arr.min() >= 0 and arr.max() <= 1 and arr.std() > 0.05
+    metric = bool(c.get("/health").json()["model"]["metric_model"]["available"])  # fine-tuned model installed?
+    assert res["calibration_tier"] == "T" and res["vertical_reference"] == "EGM2008"
+    assert ("METRIC_NDSM_MODEL" if metric else "OBJECT_SCALE_DEM_FIT") in res["flags"]
+    rep = c.get(f"/api/jobs/{jid}/metadata").json()["calib_report"]
+    assert rep["fusion"]["accepted"] and rep["tiled_inference"]["n_tiles"] >= 4
+    assert rep["tiled_inference"]["quantity"] == ("metric_ndsm_metres" if metric else "relative_inverse_depth")
+    d = Path(s.jobs_dir) / jid
+    with rasterio.open(d / "dsm.tif") as a, rasterio.open(d / "terrain.tif") as t, rasterio.open(d / "ndsm.tif") as n:
+        dsm, terr, ndsm = a.read(1, masked=True).filled(np.nan), t.read(1, masked=True).filled(np.nan), n.read(1, masked=True).filled(np.nan)
+    ok = np.isfinite(dsm) & np.isfinite(terr)
+    assert (terr[ok] <= dsm[ok] + 1e-3).all() and np.allclose((dsm - terr)[ok], ndsm[ok], atol=1e-3)
 
+
+def test_non_georeferenced_tiff_runs_in_mode_a(client):
+    """PS: PNG, JPG or TIFF input. A TIFF without CRS (16-bit here) is Mode A (relative), not rejected."""
+    import io
+    import warnings
+
+    import rasterio
+    from rasterio.errors import NotGeoreferencedWarning
+
+    rng = np.random.default_rng(0)
+    arr = (rng.random((3, 64, 80)) * 4000).astype("uint16")
+    mem = rasterio.MemoryFile()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", NotGeoreferencedWarning)
+        with mem.open(driver="GTiff", width=80, height=64, count=3, dtype="uint16") as ds:
+            ds.write(arr)
+    r = client.post("/api/jobs", files={"file": ("plain.tif", mem.read(), "image/tiff")})
+    assert r.status_code == 201
+    jid = r.json()["job_id"]
+    client.post(f"/api/jobs/{jid}/run")
+    done = wait_done(client, jid)
+    assert done["status"] == "READY", done.get("error")
+    res = client.get(f"/api/jobs/{jid}/result").json()
+    assert res["mode"] == "A" and res["calibration_tier"] == "R" and res["grid"]["width"] == 80
+
+
+def test_delete_job(client, png_bytes):
+    jid = client.post("/api/jobs", files={"file": ("chk.png", png_bytes, "image/png")}).json()["job_id"]
+    client.post(f"/api/jobs/{jid}/run")
+    wait_done(client, jid)
+    r = client.delete(f"/api/jobs/{jid}")
+    assert r.status_code == 204 and r.content == b""
+    assert client.get(f"/api/jobs/{jid}").status_code == 404
