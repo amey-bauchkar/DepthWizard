@@ -35,7 +35,9 @@ md(r"""
 6. Exports `depthwizard_ndsm_model_v2.zip` (weights + `training_report.json` with the measured numbers and the uncertainty calibration).
 
 **Before running:** Runtime → Change runtime type → **T4 GPU** (or better). Then Runtime → Run all.
-If the session disconnects: reconnect and Runtime → Run all. Checkpoints live in Google Drive (`USE_DRIVE = True`, the default), the dataset is re-downloaded automatically and training resumes where it stopped. Never run a single cell after a reset: each cell checks this and tells you.
+If the session disconnects: reconnect and Runtime → Run all. Checkpoints live in Google Drive (`USE_DRIVE = True`, the default), the dataset is re-downloaded automatically and training resumes where it stopped. Never run a single cell after a reset: each cell checks this and tells you. Once training is complete, a new runtime downloads only the validation + test tiles and goes straight to evaluation and export.
+
+**Memory:** every step fits a free Colab runtime (12.7 GB RAM): downloads read only the 1 km window they need, evaluation streams one tile at a time (running sums + a 1 cm residual histogram), and each heavy cell prints its RAM use.
 
 **Optional warm start:** upload v1 `depth_anything_v2_ndsm_s.pth` (from `models/da-v2-small-ndsm/1.0.0/` in DepthWizard) to `/content/` before running.
 
@@ -118,8 +120,27 @@ RUN = f"{ROOT}/{CFG['run_name']}"                # checkpoints (~0.4 GB) + tile 
 CKPT = f"{RUN}/ckpt"
 os.makedirs(DATA, exist_ok=True); os.makedirs(CKPT, exist_ok=True)
 print("run dir:", RUN, "| dataset:", DATA, "| regions:", len(REGIONS))
-if os.path.exists(f"{CKPT}/last.pt"):
+
+def ram():
+    try:
+        import psutil
+        v = psutil.virtual_memory(); return f"RAM {v.used / 1e9:.1f} / {v.total / 1e9:.1f} GB"
+    except Exception:
+        return "RAM ?"
+
+# A finished run (all iterations done) only needs the validation + test tiles for evaluation and export:
+# no training tiles are downloaded again after a disconnect.
+TRAINING_DONE = os.path.exists(f"{CKPT}/done.json")
+if not TRAINING_DONE and os.path.exists(f"{CKPT}/last.pt"):
+    _ck = torch.load(f"{CKPT}/last.pt", map_location="cpu")
+    TRAINING_DONE = _ck.get("it", -1) + 1 >= CFG["iters"]
+    del _ck
+NEED_SPLITS = ("val", "test") if TRAINING_DONE else ("train", "val", "test")
+if TRAINING_DONE:
+    print(f"Training of run '{CFG['run_name']}' is COMPLETE: only validation + test tiles are downloaded, then evaluation and export.")
+elif os.path.exists(f"{CKPT}/last.pt"):
     print(f"NOTE: a checkpoint of run '{CFG['run_name']}' exists and training will RESUME from it. For a fresh run, change CFG['run_name'].")
+print(ram())
 """)
 
 code(r"""
@@ -258,7 +279,7 @@ def download_all(fn, tiles, tag, passes=3):
             print(f"{len(failed)} {tag} tiles failed - retrying them in 60 s"); time.sleep(60)
     print(f"{tag}: {len(tiles) - len(failed) if failed else len(tiles)} / {len(tiles)} tiles ready or skipped as nodata")
 
-download_all(prepare, TILES, "CH")
+download_all(prepare, [t for t in TILES if t["split"] in NEED_SPLITS], "CH")
 READY = [t for t in TILES if os.path.exists(f"{DATA}/{t['key']}_ndsm.npy")]
 SPLIT = {s: [t for t in READY if t["split"] == s] for s in ("train", "val", "test")}
 print({s: len(v) for s, v in SPLIT.items()})
@@ -392,20 +413,23 @@ def prepare_us(t):
     except Exception as e:
         return t["key"], f"FAILED {type(e).__name__}: {e}"
 
-download_all(prepare_us, US_TILES, "US")
+download_all(prepare_us, [t for t in US_TILES if t["split"] in NEED_SPLITS], "US")
 for t in TILES:
     t.setdefault("source", "swiss"); t["sharp"] = True
 for t in US_TILES:
     t["source"] = "us"; t["sharp"] = False   # 2 m LiDAR target upsampled to 0.5 m: no edge (gradient) loss
 READY = [t for t in TILES + US_TILES if os.path.exists(f"{DATA}/{t['key']}_ndsm.npy")]
 SPLIT = {s: [t for t in READY if t["split"] == s] for s in ("train", "val", "test")}
-print({s: (len([t for t in v if t["source"] == "swiss"]), len([t for t in v if t["source"] == "us"])) for s, v in SPLIT.items()}, "(swiss, us)")
-_n_sw = sum(t["source"] == "swiss" for t in SPLIT["train"])
-assert _n_sw >= 60, (f"only {_n_sw} Swiss training tiles are on disk in {DATA} (after a disconnect the local disk is empty): re-run cell 5 and check its output for FAILED lines "
-                     "before training - the Swiss 0.5 m LiDAR is the core of the training set")
-_n_us = sum(t["source"] == "us" for t in SPLIT["train"])
-assert not CFG["use_us"] or _n_us >= 30, (f"only {_n_us} US training tiles on disk: the US download failed (see FAILED lines above). "
-                     "Re-run cell 5b (after 10-15 min if Planetary Computer was rate-limiting) - training without them would silently differ from the resumed run")
+print({s: (len([t for t in v if t["source"] == "swiss"]), len([t for t in v if t["source"] == "us"])) for s, v in SPLIT.items()}, "(swiss, us) |", ram())
+if TRAINING_DONE:
+    assert len(SPLIT["test"]) >= 10 and len(SPLIT["val"]) >= 5, f"only {len(SPLIT['val'])} val / {len(SPLIT['test'])} test tiles on disk: re-run cells 5 and 5b (check FAILED lines)"
+else:
+    _n_sw = sum(t["source"] == "swiss" for t in SPLIT["train"])
+    assert _n_sw >= 60, (f"only {_n_sw} Swiss training tiles are on disk in {DATA} (after a disconnect the local disk is empty): re-run cell 5 and check its output for FAILED lines "
+                         "before training - the Swiss 0.5 m LiDAR is the core of the training set")
+    _n_us = sum(t["source"] == "us" for t in SPLIT["train"])
+    assert not CFG["use_us"] or _n_us >= 30, (f"only {_n_us} US training tiles on disk: the US download failed (see FAILED lines above). "
+                         "Re-run cell 5b (after 10-15 min if Planetary Computer was rate-limiting) - training without them would silently differ from the resumed run")
 """)
 
 code(r"""
@@ -413,7 +437,7 @@ code(r"""
 _missing = [n for n in ("SPLIT",) if n not in globals()]
 assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 import matplotlib.pyplot as plt
-t = SPLIT["train"][0]
+t = (SPLIT["train"] or SPLIT["val"] or SPLIT["test"])[0]
 rgb = np.load(f"{DATA}/{t['key']}_rgb.npy", mmap_mode="r"); h = np.load(f"{DATA}/{t['key']}_ndsm.npy", mmap_mode="r")
 fig, ax = plt.subplots(1, 2, figsize=(12, 6))
 ax[0].imshow(rgb[::4, ::4]); ax[0].set_title(f"{t['region']} {t['key']} RGB 0.5 m")
@@ -468,8 +492,13 @@ class Crops(Dataset):
         y = np.ascontiguousarray(y)
         return to_input(np.ascontiguousarray(x)), torch.from_numpy(np.nan_to_num(y)), torch.from_numpy(np.isfinite(y)), torch.tensor(bool(t.get("sharp", True)))
 
-train_dl = DataLoader(Crops(SPLIT["train"], CFG["iters"] * CFG["batch"]), batch_size=CFG["batch"], num_workers=2, pin_memory=True, drop_last=True)
-xb, yb, mb, sb = next(iter(train_dl)); print(xb.shape, yb.shape, float(yb[mb].mean()), "m mean target", "sharp", sb.tolist())
+if TRAINING_DONE:
+    train_dl = None
+    print("training complete: no training data loader needed")
+else:
+    train_dl = DataLoader(Crops(SPLIT["train"], CFG["iters"] * CFG["batch"]), batch_size=CFG["batch"], num_workers=2, pin_memory=True, drop_last=True)
+    xb, yb, mb, sb = next(iter(train_dl)); print(xb.shape, yb.shape, float(yb[mb].mean()), "m mean target", "sharp", sb.tolist())
+    del xb, yb, mb, sb
 """)
 
 code(r"""
@@ -523,7 +552,9 @@ print("params (M):", round(sum(p.numel() for p in model.parameters()) / 1e6, 1))
 """)
 
 code(r"""
-# 9. Full-tile inference exactly like DepthWizard (518 px tiles, 25 % overlap, Hann feathering) + metrics
+# 9. Full-tile inference exactly like DepthWizard (518 px tiles, 25 % overlap, Hann feathering) + STREAMING metrics
+#    One tile in memory at a time: exact running sums + a 1 cm residual histogram (median / NMAD exact to 0.5 cm),
+#    so evaluating 100 tiles uses the same RAM as evaluating one.
 _missing = [n for n in ("model",) if n not in globals()]
 assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 @torch.no_grad()
@@ -551,24 +582,64 @@ def predict_tile_tta(net, rgb):
     st = np.stack(outs)
     return st.mean(0).astype(np.float32), st.std(0).astype(np.float32)
 
-def metrics(pred, gt):
-    m = np.isfinite(gt) & np.isfinite(pred); d = (pred - gt)[m]; g = gt[m]
-    out = dict(n=int(m.sum()), ME=float(d.mean()), RMSE=float(np.sqrt((d ** 2).mean())), MAE=float(np.abs(d).mean()),
-               NMAD=float(1.4826 * np.median(np.abs(d - np.median(d)))), r=float(np.corrcoef(pred[m], g)[0, 1]))
-    for name, sel in (("objects_ge2.5m", g >= 2.5), ("ground_lt2.5m", g < 2.5)):
-        if sel.sum() > 100:
-            out[f"RMSE_{name}"] = float(np.sqrt((d[sel] ** 2).mean())); out[f"ME_{name}"] = float(d[sel].mean())
-    return out
+import gc
+EDGES = np.linspace(-150.0, 150.0, 30001)   # 1 cm residual bins (|residual| <= 120 m since nDSM is clipped to [0, 120])
+CENTRES = 0.5 * (EDGES[1:] + EDGES[:-1])
 
-def evaluate(net, tiles, center=None):
-    res = []
+class Stats:
+    # streaming nDSM error statistics: ME, RMSE, MAE, NMAD, Pearson r, and RMSE / ME for objects (>= 2.5 m) and ground
+    def __init__(self):
+        self.n = 0
+        self.sums = np.zeros(8)                      # d, d^2, |d|, p, g, p^2, g^2, p*g   (float64)
+        self.hist = np.zeros(len(CENTRES), np.int64)
+        self.sub = {"objects_ge2.5m": np.zeros(3), "ground_lt2.5m": np.zeros(3)}   # n, sum d, sum d^2
+    def add(self, pred, gt):
+        m = np.isfinite(gt) & np.isfinite(pred)
+        p = pred[m].astype(np.float64); g = gt[m].astype(np.float64); d = p - g
+        self.n += d.size
+        self.sums += (d.sum(), (d * d).sum(), np.abs(d).sum(), p.sum(), g.sum(), (p * p).sum(), (g * g).sum(), (p * g).sum())
+        self.hist += np.histogram(np.clip(d, -149.995, 149.995), bins=EDGES)[0]
+        for k, sel in (("objects_ge2.5m", g >= 2.5), ("ground_lt2.5m", g < 2.5)):
+            dd = d[sel]; self.sub[k] += (dd.size, dd.sum(), (dd * dd).sum())
+        return self
+    def metrics(self):
+        n = self.n
+        if n == 0:
+            return {"n": 0}
+        sd, sd2, sad, sp, sg, spp, sgg, spg = self.sums
+        med = CENTRES[np.searchsorted(np.cumsum(self.hist), n / 2)]
+        dev = np.abs(CENTRES - med); o = np.argsort(dev, kind="stable")
+        mad = dev[o][np.searchsorted(np.cumsum(self.hist[o]), n / 2)]
+        r = (n * spg - sp * sg) / math.sqrt(max(1e-30, (n * spp - sp * sp) * (n * sgg - sg * sg)))
+        out = dict(n=int(n), ME=float(sd / n), RMSE=float(math.sqrt(sd2 / n)), MAE=float(sad / n), NMAD=float(1.4826 * mad), r=float(r))
+        for k, (nn, s1, s2) in self.sub.items():
+            if nn > 100:
+                out[f"RMSE_{k}"] = float(math.sqrt(s2 / nn)); out[f"ME_{k}"] = float(s1 / nn)
+        return out
+
+def metrics(pred, gt):
+    return Stats().add(pred, gt).metrics()
+
+def evaluate(net, tiles, center=None, keep_first=False, affine=False):
+    # streams over tiles; returns ({"all" | "source:<s>" | "region:<r>": Stats}, first (t, pred, gt) if keep_first).
+    # affine=True fits pred -> LiDAR per tile first (the zero-shot baseline's oracle best case)
+    groups, first = {}, None
     for t in tiles:
         rgb = np.load(f"{DATA}/{t['key']}_rgb.npy"); gt = np.load(f"{DATA}/{t['key']}_ndsm.npy").astype(np.float32)
         if center:
             H = rgb.shape[0]; a = (H - center) // 2; rgb, gt = rgb[a:a + center, a:a + center], gt[a:a + center, a:a + center]
-        res.append((t, predict_tile(net, rgb), gt))
-    allp = np.concatenate([p.ravel() for _, p, _ in res]); allg = np.concatenate([g.ravel() for _, _, g in res])
-    return metrics(allp, allg), res
+        p = predict_tile(net, rgb)
+        if affine:
+            m = np.isfinite(gt)
+            coef = np.linalg.lstsq(np.stack([p[m], np.ones(int(m.sum()), np.float32)], 1), gt[m], rcond=None)[0]
+            p = (p * coef[0] + coef[1]).astype(np.float32)
+        for k in ("all", f"source:{t.get('source', 'swiss')}", f"region:{t['region']}"):
+            groups.setdefault(k, Stats()).add(p, gt)
+        if keep_first and first is None:
+            first = (t, p, gt)
+        del rgb, p, gt
+    gc.collect()
+    return groups, first
 """)
 
 code(r"""
@@ -580,17 +651,23 @@ LAST, BEST = f"{CKPT}/last.pt", f"{CKPT}/best.pth"
 start, best = 0, float("inf"); history = []
 if os.path.exists(LAST):
     ck = torch.load(LAST, map_location="cpu")
-    model.load_state_dict(ck["model"]); opt.load_state_dict(ck["opt"]); sched.load_state_dict(ck["sched"]); scaler.load_state_dict(ck["scaler"])
-    start, best, history = ck["it"] + 1, ck["best"], ck["history"]; print("resumed at iteration", start)
+    start, best, history = ck["it"] + 1, ck["best"], ck["history"]
     KEYS = ("iters", "batch", "tiles_per_region", "use_us", "us_sample_prob", "building_weight", "lr_encoder", "lr_head", "model_version")
     diff = {k: (ck.get("cfg", {}).get(k), CFG[k]) for k in KEYS if ck.get("cfg", {}).get(k) != CFG[k]}
     assert not diff, f"checkpoint was written with different settings {diff}: use a new CFG['run_name'] for a fresh run"
+    if start < CFG["iters"]:
+        model.load_state_dict(ck["model"]); opt.load_state_dict(ck["opt"]); sched.load_state_dict(ck["sched"]); scaler.load_state_dict(ck["scaler"])
+        print("resumed at iteration", start)
+    else:
+        print(f"training already complete ({start} iterations, best val RMSE {best:.3f} m): going straight to evaluation")
+    del ck; gc.collect()
 if start == 0:
-    vm0, _ = evaluate(model, SPLIT["val"], center=1036)
+    json.dump({s: [t["key"] for t in v] for s, v in SPLIT.items()}, open(f"{CKPT}/split.json", "w"))   # the tiles this run trains on
+    vm0 = evaluate(model, SPLIT["val"], center=1036)[0]["all"].metrics()
     history.append(dict(it=0, loss=None, **{f"val_{k}": v for k, v in vm0.items()}))
     print(f"  VAL before training (warm-start weights): RMSE {vm0['RMSE']:.2f} m  MAE {vm0['MAE']:.2f}  r {vm0['r']:.3f}  <- training must beat this")
 it = start; t0 = time.time(); run = 0.0
-loader = iter(train_dl)
+loader = iter(train_dl) if start < CFG["iters"] else None
 while it < CFG["iters"]:
     x, y, m, sh = next(loader)
     x, y, m, sh = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True), m.to(dev, non_blocking=True), sh.to(dev)
@@ -604,43 +681,52 @@ while it < CFG["iters"]:
     if it % 50 == 0:
         print(f"it {it:5d}  loss {run:.3f}  lr {sched.get_last_lr()[1]:.2e}  {(time.time() - t0) / max(1, it - start + 1):.2f}s/it")
     if (it + 1) % CFG["val_every"] == 0 or it + 1 == CFG["iters"]:
-        vm, _ = evaluate(model, SPLIT["val"], center=1036)
+        vm = evaluate(model, SPLIT["val"], center=1036)[0]["all"].metrics()
         history.append(dict(it=it + 1, loss=run, **{f"val_{k}": v for k, v in vm.items()}))
         print(f"  VAL it {it + 1}: RMSE {vm['RMSE']:.2f} m  MAE {vm['MAE']:.2f}  ME {vm['ME']:+.2f}  r {vm['r']:.3f}")
         if vm["RMSE"] < best:
             best = vm["RMSE"]; torch.save(model.state_dict(), BEST); print("  -> new best, saved")
         torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), sched=sched.state_dict(), scaler=scaler.state_dict(), it=it, best=best, history=history, cfg=CFG), LAST)
+    if it % 1000 == 0:
+        print("  ", ram())
     it += 1
-print("done. best val RMSE:", round(best, 3))
+del loader; gc.collect()   # stops the data-loader worker processes and frees their memory
+json.dump({"iters": CFG["iters"], "best_val_rmse": best}, open(f"{CKPT}/done.json", "w"))
+print("done. best val RMSE:", round(best, 3), "|", ram())
 """)
 
 code(r"""
-# 11. Test on held-out REGIONS: fine-tuned vs zero-shot baseline (baseline gets an oracle per-tile affine fit = its best case)
+# 11. Test on held-out REGIONS: fine-tuned v2 vs v1 vs zero-shot baseline (the baseline gets an oracle per-tile affine fit = its best case)
+#     Streaming evaluation: one tile and one model in memory at a time (fits a free Colab runtime however many tiles).
 _missing = [n for n in ("BEST", "evaluate",) if n not in globals()]
 assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 import matplotlib.pyplot as plt
-ft = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384]); ft.load_state_dict(torch.load(BEST, map_location="cpu")); ft.to(dev)
-base = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384]); base.load_state_dict(torch.load(BASE_W, map_location="cpu")); base.to(dev)
-test_ft, res_ft = evaluate(ft, SPLIT["test"])
-by_source = {}
-for src in ("swiss", "us"):
-    rs = [(t, p, g) for t, p, g in res_ft if t.get("source", "swiss") == src]
-    if rs:
-        by_source[src] = metrics(np.concatenate([p.ravel() for _, p, _ in rs]), np.concatenate([g.ravel() for _, _, g in rs]))
-print("by source:", {k: round(v["RMSE"], 2) for k, v in by_source.items()})
+for _n in ("model", "opt", "sched", "scaler", "train_dl", "loader"):   # training objects are not needed any more
+    globals().pop(_n, None)
+gc.collect(); torch.cuda.empty_cache()
+
+def load_net(path):
+    net = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384])
+    net.load_state_dict(torch.load(path, map_location="cpu")); return net.to(dev).eval()
+
+def free(net):
+    del net; gc.collect(); torch.cuda.empty_cache()
+
+ft = load_net(BEST)
+G_ft, FIRST = evaluate(ft, SPLIT["test"], keep_first=True)
+test_ft = G_ft["all"].metrics()
+by_source = {k.split(":", 1)[1]: v.metrics() for k, v in G_ft.items() if k.startswith("source:")}
+per_region = {k.split(":", 1)[1]: v.metrics() for k, v in G_ft.items() if k.startswith("region:")}
+print("by source:", {k: round(v["RMSE"], 2) for k, v in by_source.items()}, "|", ram())
 V1_COMPARE = None
 if INIT and os.path.exists(INIT):
-    v1 = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384]); v1.load_state_dict(torch.load(INIT, map_location="cpu")); v1.to(dev)
-    _, res_v1 = evaluate(v1, SPLIT["test"])
+    v1 = load_net(INIT); G_v1, _ = evaluate(v1, SPLIT["test"]); free(v1)
     V1_COMPARE = {}
     for src in ("swiss", "us"):
-        a = [(p, g) for (t, p, g) in res_ft if t.get("source", "swiss") == src]
-        b = [(p, g) for (t, p, g) in res_v1 if t.get("source", "swiss") == src]
-        if a:
-            ma = metrics(np.concatenate([p.ravel() for p, _ in a]), np.concatenate([g.ravel() for _, g in a]))
-            mb = metrics(np.concatenate([p.ravel() for p, _ in b]), np.concatenate([g.ravel() for _, g in b]))
+        a, b = G_ft.get(f"source:{src}"), G_v1.get(f"source:{src}")
+        if a is not None and b is not None:
+            ma, mb = a.metrics(), b.metrics()
             V1_COMPARE[src] = {"v2_RMSE": ma["RMSE"], "v1_RMSE": mb["RMSE"], "v2_objects_RMSE": ma.get("RMSE_objects_ge2.5m"), "v1_objects_RMSE": mb.get("RMSE_objects_ge2.5m")}
-    del v1
     print("v2 vs v1 on held-out test tiles:", {k: {kk: round(vv, 2) for kk, vv in v.items() if vv is not None} for k, v in V1_COMPARE.items()})
     sw = V1_COMPARE.get("swiss")
     if sw and sw["v2_RMSE"] > sw["v1_RMSE"]:
@@ -648,48 +734,47 @@ if INIT and os.path.exists(INIT):
     elif sw:
         print("VERDICT: v2 beats v1 on Swiss held-out LiDAR - download and install it; DepthWizard re-validation on its own test tiles decides the final switch.")
 
-# Uncertainty: calibrate |error| quantiles per TTA-spread bin on VALIDATION tiles, check coverage on TEST tiles
-def tta_errors(tiles, center=1036):
-    S, E, P = [], [], []
+# Uncertainty: calibrate |error| quantiles per TTA-spread bin on VALIDATION tiles, check coverage on TEST tiles.
+# Every 2nd pixel in each direction (millions of samples, a quarter of the memory).
+def tta_errors(tiles, center=1036, step=2):
+    S, E = [], []
     for t in tiles:
         rgb = np.load(f"{DATA}/{t['key']}_rgb.npy"); gt = np.load(f"{DATA}/{t['key']}_ndsm.npy").astype(np.float32)
         a = (rgb.shape[0] - center) // 2; rgb, gt = rgb[a:a + center, a:a + center], gt[a:a + center, a:a + center]
-        mu, sd = predict_tile_tta(ft, rgb); m = np.isfinite(gt)
-        S.append(sd[m]); E.append(np.abs(mu - gt)[m]); P.append(mu[m])
-    return np.concatenate(S), np.concatenate(E), np.concatenate(P)
-s_val, e_val, p_val = tta_errors(SPLIT["val"])
+        mu, sd = predict_tile_tta(ft, rgb)
+        mu, sd, gt = mu[::step, ::step], sd[::step, ::step], gt[::step, ::step]; m = np.isfinite(gt)
+        S.append(sd[m].astype(np.float32)); E.append(np.abs(mu - gt)[m].astype(np.float32))
+        del rgb, mu, sd, gt
+    return np.concatenate(S), np.concatenate(E)
+s_val, e_val = tta_errors(SPLIT["val"])
 edges = np.unique(np.quantile(s_val, np.linspace(0, 1, 9)))
 QS = (0.5, 0.8, 0.9)
 bins_q = []
 for i in range(len(edges) - 1):
     sel = (s_val >= edges[i]) & (s_val <= edges[i + 1])
     bins_q.append([float(np.quantile(e_val[sel], q)) if sel.any() else float("nan") for q in QS])
-s_te, e_te, p_te = tta_errors(SPLIT["test"])
+del s_val, e_val; gc.collect()
+s_te, e_te = tta_errors(SPLIT["test"])
 bi = np.clip(np.searchsorted(edges, s_te, side="right") - 1, 0, len(bins_q) - 1)
 coverage = {f"{int(q * 100)}%": float(np.mean(e_te <= np.array([b[j] for b in bins_q])[bi])) for j, q in enumerate(QS)}
 err_spread_corr = float(np.corrcoef(s_te, e_te)[0, 1])
+del s_te, e_te, bi; gc.collect()
 UNC = {"method": "4-way test-time augmentation (identity, h-flip, v-flip, rot180); per-pixel spread binned by validation-set quantiles; |error| quantiles per bin", "spread_bin_edges_m": [float(v) for v in edges], "abs_error_quantiles_m": {f"{int(q * 100)}%": [b[j] for b in bins_q] for j, q in enumerate(QS)}, "test_coverage": coverage, "test_spread_error_correlation": err_spread_corr}
-print("uncertainty: test coverage", {k: round(v, 3) for k, v in coverage.items()}, "| spread-error corr", round(err_spread_corr, 3))
-_, res_b = evaluate(base, SPLIT["test"])
-aligned = []
-for (t, p, g) in res_b:
-    m = np.isfinite(g); A = np.stack([p[m], np.ones(m.sum())], 1); coef = np.linalg.lstsq(A, g[m], rcond=None)[0]
-    aligned.append(p * coef[0] + coef[1])
-test_b = metrics(np.concatenate([a.ravel() for a in aligned]), np.concatenate([g.ravel() for _, _, g in res_b]))
-per_region = {}
-for (t, p, g) in res_ft:
-    per_region.setdefault(t["region"], []).append((p, g))
-per_region = {k: metrics(np.concatenate([p.ravel() for p, _ in v]), np.concatenate([g.ravel() for _, g in v])) for k, v in per_region.items()}
+print("uncertainty: test coverage", {k: round(v, 3) for k, v in coverage.items()}, "| spread-error corr", round(err_spread_corr, 3), "|", ram())
+base = load_net(BASE_W); G_b, _ = evaluate(base, SPLIT["test"], affine=True); free(base)
+test_b = G_b["all"].metrics()
 print("TEST (held-out regions) nDSM vs LiDAR, metres")
 print(" fine-tuned          :", {k: round(v, 3) for k, v in test_ft.items()})
 print(" zero-shot + oracle  :", {k: round(v, 3) for k, v in test_b.items()})
 for k, v in per_region.items():
     print(f"  {k:12s} RMSE {v['RMSE']:.2f}  MAE {v['MAE']:.2f}  ME {v['ME']:+.2f}  objects RMSE {v.get('RMSE_objects_ge2.5m', float('nan')):.2f}")
-t, p, g = res_ft[0]; rgb = np.load(f"{DATA}/{t['key']}_rgb.npy")
+print(ram())
+t, p, g = FIRST; rgb = np.load(f"{DATA}/{t['key']}_rgb.npy")
 fig, ax = plt.subplots(1, 3, figsize=(18, 6))
 ax[0].imshow(rgb[::4, ::4]); ax[0].set_title(f"test {t['region']} {t['key']}")
 ax[1].imshow(p[::4, ::4], vmin=0, vmax=30); ax[1].set_title("predicted nDSM (m)")
 ax[2].imshow(g[::4, ::4], vmin=0, vmax=30); ax[2].set_title("LiDAR nDSM (m)"); plt.show()
+del rgb, p, g, FIRST; gc.collect()
 """)
 
 code(r"""
@@ -707,7 +792,9 @@ report = dict(
     output_quantity="metric_ndsm_metres", training_gsd_m=CFG["gsd"], input_size=CFG["crop"], config=CFG,
     data="swisstopo SWISSIMAGE (RGB, 0.5 m from 0.1 m COG overviews) + swissSURFACE3D raster - swissALTI3D (0.5 m) = nDSM; (c) swisstopo OGD" + ("; USA: NAIP RGB (resampled to 0.5 m) + USGS 3DEP LiDAR DSM - DTM (2 m, bilinear to 0.5 m) via Microsoft Planetary Computer (public domain)" if US_TILES else ""),
     excluded_validation_tiles=DW_VALIDATION_TILES, exclusion_km=CFG["exclusion_km"],
-    tiles={s: [t["key"] + " (" + t["region"] + ")" for t in v] for s, v in SPLIT.items()},
+    tiles=(json.load(open(f"{CKPT}/split.json")) if os.path.exists(f"{CKPT}/split.json")
+           else {s: [t["key"] + " (" + t["region"] + ")" for t in TILES + US_TILES if t["split"] == s] for s in ("train", "val", "test")}),
+    tiles_note="split.json = the tiles this run trained / validated on" if os.path.exists(f"{CKPT}/split.json") else "planned split from the cached tile lists (tiles that failed to download were not used)",
     history=history, test_metrics_finetuned=test_ft, test_metrics_zeroshot_oracle_affine=test_b, test_metrics_by_region=per_region,
     gpu=torch.cuda.get_device_name(0), torch=torch.__version__,
 )
