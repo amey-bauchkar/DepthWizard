@@ -1,10 +1,118 @@
 {
   "items": [
-    {"id": "urban_geotiff_hd", "label": "Zürich (urban) · Ultra-Clear HD 0.5 m · Mode B", "file": "swissimage_2019_2682-1247_0.5m.tif", "mode": "B", "anchors": "anchors_urban_simulated.csv", "reference_dsm": "swisssurface3d_urban_2682-1247_dsm_0.5m.tif", "reference_dtm": "swissalti3d_urban_2682-1247_dtm_0.5m.tif", "reference_vertical_crs": "EPSG:5728", "source": "swisstopo SWISSIMAGE 10 cm (0.5 m GSD high-res, 2000×2000 px); references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"},
-    {"id": "urban_geotiff", "label": "Zürich (urban) · GeoTIFF 2 m · Mode B", "file": "swissimage_2019_2682-1247_2m.tif", "mode": "B", "anchors": "anchors_urban_simulated.csv", "reference_dsm": "swisssurface3d_urban_2682-1247_dsm_0.5m.tif", "reference_dtm": "swissalti3d_urban_2682-1247_dtm_0.5m.tif", "reference_vertical_crs": "EPSG:5728", "source": "swisstopo SWISSIMAGE 10 cm (resampled 2 m) tile 2682-1247, 2019; references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"},
-    {"id": "rural_geotiff", "label": "Emmental (rural, hilly, forest) · GeoTIFF 2 m · Mode B", "file": "swissimage_2021_2621-1202_2m.tif", "mode": "B", "anchors": "anchors_rural_simulated.csv", "reference_dsm": "swisssurface3d_rural_2621-1202_dsm_0.5m.tif", "reference_dtm": "swissalti3d_rural_2621-1202_dtm_0.5m.tif", "reference_vertical_crs": "EPSG:5728", "source": "swisstopo SWISSIMAGE tile 2621-1202, 2021; references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"},
-    {"id": "urban_jpg_hd", "label": "Zürich (urban) · Ultra-Clear HD JPEG · Mode A", "file": "sample_urban_hd.jpg", "mode": "A", "source": "swisstopo SWISSIMAGE 2000×2000 px crystal clear aerial photo"},
-    {"id": "urban_jpg", "label": "Zürich (urban) · JPEG · Mode A", "file": "sample_urban.jpg", "mode": "A", "source": "same tile exported without georeferencing"},
-    {"id": "rural_jpg", "label": "Emmental (rural) · JPEG · Mode A", "file": "sample_rural.jpg", "mode": "A", "source": "same tile exported without georeferencing"}
+    {
+      "id": "urban_geotiff_hd",
+      "label": "Zürich (urban) · Ultra-Clear HD 0.5 m · Mode B",
+      "file": "swissimage_2019_2682-1247_0.5m.tif",
+      "mode": "B",
+      "anchors": "anchors_urban_simulated.csv",
+      "reference_dsm": "swisssurface3d_urban_2682-1247_dsm_0.5m.tif",
+      "reference_dtm": "swissalti3d_urban_2682-1247_dtm_0.5m.tif",
+      "reference_vertical_crs": "EPSG:5728",
+      "source": "swisstopo SWISSIMAGE 10 cm (0.5 m GSD high-res, 2000×2000 px); references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"
+    },
+    {
+      "id": "urban_geotiff",
+      "label": "Zürich (urban) · GeoTIFF 2 m · Mode B",
+      "file": "swissimage_2019_2682-1247_2m.tif",
+      "mode": "B",
+      "anchors": "anchors_urban_simulated.csv",
+      "reference_dsm": "swisssurface3d_urban_2682-1247_dsm_0.5m.tif",
+      "reference_dtm": "swissalti3d_urban_2682-1247_dtm_0.5m.tif",
+      "reference_vertical_crs": "EPSG:5728",
+      "source": "swisstopo SWISSIMAGE 10 cm (resampled 2 m) tile 2682-1247, 2019; references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"
+    },
+    {
+      "id": "rural_geotiff",
+      "label": "Emmental (rural, hilly, forest) · GeoTIFF 2 m · Mode B",
+      "file": "swissimage_2021_2621-1202_2m.tif",
+      "mode": "B",
+      "anchors": "anchors_rural_simulated.csv",
+      "reference_dsm": "swisssurface3d_rural_2621-1202_dsm_0.5m.tif",
+      "reference_dtm": "swissalti3d_rural_2621-1202_dtm_0.5m.tif",
+      "reference_vertical_crs": "EPSG:5728",
+      "source": "swisstopo SWISSIMAGE tile 2621-1202, 2021; references swissSURFACE3D / swissALTI3D 0.5 m (LN02)"
+    },
+    {
+      "id": "urban_jpg_hd",
+      "label": "Zürich (urban) · Ultra-Clear HD JPEG · Mode A",
+      "file": "sample_urban_hd.jpg",
+      "mode": "A",
+      "source": "swisstopo SWISSIMAGE 2000×2000 px crystal clear aerial photo"
+    },
+    {
+      "id": "urban_jpg",
+      "label": "Zürich (urban) · JPEG · Mode A",
+      "file": "sample_urban.jpg",
+      "mode": "A",
+      "source": "same tile exported without georeferencing"
+    },
+    {
+      "id": "rural_jpg",
+      "label": "Emmental (rural) · JPEG · Mode A",
+      "file": "sample_rural.jpg",
+      "mode": "A",
+      "source": "same tile exported without georeferencing"
+    },
+    {
+      "id": "india_namchi",
+      "label": "Namchi, South Sikkim (hill town) · Maxar WorldView 2022-03-14 · 0.5 m · Mode B",
+      "file": "india/namchi_rgb_0.5m.tif",
+      "mode": "B",
+      "country": "IN",
+      "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 1040010073381800; Dense hill town on steep slopes; district HQ of Namchi (South Sikkim).",
+      "reference_points": "india/namchi_icesat2.csv",
+      "reference_points_vertical_crs": "ellipsoidal"
+    },
+    {
+      "id": "india_chungthang",
+      "label": "Chungthang, North Sikkim (valley town, forest) · Maxar WorldView 2022-03-07 · 0.5 m · Mode B",
+      "file": "india/chungthang_rgb_0.5m.tif",
+      "mode": "B",
+      "country": "IN",
+      "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 10300100CE8D0400; Steep forested valley and town at the Lachen-Lachung confluence; Teesta-III dam area hit by the Oct-2023 GLOF.",
+      "reference_points": "india/chungthang_icesat2.csv",
+      "reference_points_vertical_crs": "ellipsoidal"
+    },
+    {
+      "id": "india_teesta_east",
+      "label": "Teesta valley east, South Sikkim (hill villages) · Maxar WorldView 2022-03-14 · 0.5 m · Mode B",
+      "file": "india/teesta_east_rgb_0.5m.tif",
+      "mode": "B",
+      "country": "IN",
+      "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 1040010073381800; Terraced slopes and scattered villages east of Namchi.",
+      "reference_points": "india/teesta_east_icesat2.csv",
+      "reference_points_vertical_crs": "ellipsoidal"
+    },
+    {
+      "id": "india_teesta_west",
+      "label": "Teesta valley west, South Sikkim (rural slopes) · Maxar WorldView 2022-03-14 · 0.5 m · Mode B",
+      "file": "india/teesta_west_rgb_0.5m.tif",
+      "mode": "B",
+      "country": "IN",
+      "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 1040010073381800; Rural terraced hillsides and forest patches west of Namchi.",
+      "reference_points": "india/teesta_west_icesat2.csv",
+      "reference_points_vertical_crs": "ellipsoidal"
+    },
+    {
+      "id": "india_chungthang_west",
+      "label": "Chungthang west, North Sikkim (forested slopes) · Maxar WorldView 2022-03-07 · 0.5 m · Mode B",
+      "file": "india/chungthang_west_rgb_0.5m.tif",
+      "mode": "B",
+      "country": "IN",
+      "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 10300100CE8D0400; Steep forested mountainside above the Lachen valley.",
+      "reference_points": "india/chungthang_west_icesat2.csv",
+      "reference_points_vertical_crs": "ellipsoidal"
+    },
+    {
+      "id": "india_north_sikkim_alpine",
+      "label": "North Sikkim alpine (barren / glacial) · Maxar WorldView 2022-03-07 · 0.5 m · Mode B",
+      "file": "india/north_sikkim_alpine_rgb_0.5m.tif",
+      "mode": "B",
+      "country": "IN",
+      "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 10300100CF621C00; High-altitude barren and glacial terrain in the South Lhonak region (near-nadir image, off-nadir 2 deg).",
+      "reference_points": "india/north_sikkim_alpine_icesat2.csv",
+      "reference_points_vertical_crs": "ellipsoidal"
+    }
   ]
 }

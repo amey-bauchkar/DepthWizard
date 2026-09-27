@@ -174,3 +174,42 @@ def test_tier_metric_model_ground_anchor_offset_alone_is_not_tier_a():
     assert d2.tier == "A" and "OBJECT_SCALE_ANCHORS" in d2.flags
     d3 = decide(anchor_fit=None, **{**base, "dem_found": False})
     assert d3.tier == "H" and d3.absolute_elevation is False
+
+
+@pytest.mark.parametrize("offset_kind,expected", [("geoid", "EGM96"), ("ellipsoidal", "ellipsoidal"), ("garbage", None)])
+def test_cartodem_selection_and_datum_autocheck(tmp_path: Path, offset_kind, expected):
+    """CartoDEM tiles (any file name) in <dem_dir>/cartodem are preferred; their vertical datum is decided by comparison
+    with Copernicus (EGM2008): same heights -> geoid; heights shifted by the geoid undulation N -> ellipsoidal; else refused."""
+    import rasterio
+    from rasterio.transform import from_origin
+
+    from core.calib.dem import select_dem
+    from core.geo.grid import Grid
+    from core.geo.raster_io import grid_bounds_wgs84
+    from core.geo.vertical import register_bundled_grids, transform_heights
+
+    register_bundled_grids()
+    grid = Grid(200, 200, from_origin(300000.0, 3160000.0, 2.0, 2.0), "EPSG:32643", "float32", -9999.0, "metres", True, None, "R")
+    w, s, e, n = grid_bounds_wgs84(grid)
+    lon0, lat0 = int(np.floor(w)), int(np.floor(s))
+
+    def write(path, add):
+        tr = from_origin(w - 0.01, n + 0.01, 0.0003, 0.0003)
+        nx, ny = int((e - w + 0.02) / 0.0003) + 1, int((n - s + 0.02) / 0.0003) + 1
+        yy, xx = np.mgrid[0:ny, 0:nx]
+        z = (250.0 + 0.5 * xx * 0.01 + add).astype("float32")
+        with rasterio.open(path, "w", driver="GTiff", width=nx, height=ny, count=1, dtype="float32", crs="EPSG:4326", transform=tr) as ds:
+            ds.write(z, 1)
+
+    write(tmp_path / f"Copernicus_DSM_COG_10_N{lat0:02d}_00_E{lon0:03d}_00_DEM.tif", 0.0)
+    (tmp_path / "cartodem").mkdir()
+    und = -float(transform_heights(np.array([(w + e) / 2]), np.array([(s + n) / 2]), np.array([0.0]), "ellipsoidal", "EGM2008")[0])
+    write(tmp_path / "cartodem" / "cdnh43e_v3r1_anyname.tif", {"geoid": 0.4, "ellipsoidal": und, "garbage": 200.0}[offset_kind])
+    src, rep = select_dem((w, s, e, n), tmp_path, grid)
+    if expected is None:
+        assert src is not None and src.name == "bundled" and rep["cartodem_datum_check"]["decision"] == "rejected"
+    else:
+        assert src is not None and src.name == "cartodem" and src.vertical_crs == expected, rep
+    # CartoDEM absent -> Copernicus
+    src2, _ = select_dem((w, s, e, n), tmp_path, grid, priority=("copernicus",))
+    assert src2 is not None and src2.name == "bundled"

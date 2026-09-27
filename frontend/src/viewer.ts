@@ -216,11 +216,55 @@ export class HeightfieldViewer {
 
   onPick(h: PickHandler | null) { this.pickHandler = h; }
 
+  private buildingPickHandler: ((id: number) => void) | null = null;
+  private highlighted: { mesh: THREE.Mesh; mats: THREE.Material | THREE.Material[] } | null = null;
+  onBuildingPick(h: ((id: number) => void) | null) { this.buildingPickHandler = h; }
+
+  private buildingMesh(id: number): THREE.Mesh | null {
+    let found: THREE.Mesh | null = null;
+    this.buildingsGroup?.traverse((o) => { if (!found && o instanceof THREE.Mesh && o.userData.buildingId === id) found = o; });
+    return found;
+  }
+
+  /** Highlight one LoD-1 block (amber) and restore the previous one. */
+  highlightBuilding(id: number | null) {
+    if (this.highlighted) { this.highlighted.mesh.material = this.highlighted.mats; this.highlighted = null; }
+    if (id === null) return;
+    const m = this.buildingMesh(id);
+    if (!m) return;
+    const hi = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0x7c2d12, emissiveIntensity: 0.6, roughness: 0.5 });
+    this.highlighted = { mesh: m, mats: m.material };
+    m.material = [hi, hi];
+  }
+
+  /** Orbit camera to a building (scene coordinates are metres, centred on the scene). */
+  focusBuilding(id: number) {
+    const m = this.buildingMesh(id);
+    if (!m) return;
+    if (this.flythroughActive) this.setFlythrough(false);
+    if (this.cameraMode === "walk") this.setCameraMode("orbit");
+    const box = new THREE.Box3().setFromObject(m);
+    const c = box.getCenter(new THREE.Vector3());
+    const size = Math.max(40, box.getSize(new THREE.Vector3()).length() * 3);
+    this.controls.target.copy(c);
+    this.camera.up.set(0, 0, 1);
+    this.camera.position.set(c.x + size * 0.6, c.y - size * 0.8, c.z + size * 0.7);
+    this.controls.update();
+    this.highlightBuilding(id);
+  }
+
   private pick(e: PointerEvent) {
     if (this.cameraMode === "walk" || !this.mesh || !this.pickHandler) return;
     const r = this.renderer.domElement.getBoundingClientRect();
     const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     this.raycaster.setFromCamera(nd, this.camera);
+    if (this.buildingsGroup?.visible && this.buildingPickHandler) {
+      const bh = this.raycaster.intersectObject(this.buildingsGroup, true)[0];
+      if (bh && bh.object.userData.buildingId !== undefined) {
+        this.highlightBuilding(bh.object.userData.buildingId as number);
+        this.buildingPickHandler(bh.object.userData.buildingId as number);
+      }
+    }
     const hit = this.raycaster.intersectObject(this.mesh, false)[0];
     if (!hit) return;
     // vertex i sits at the centre of source block i -> continuous source coordinate (i + 0.5) * factor
@@ -923,6 +967,7 @@ export class HeightfieldViewer {
   }
 
   loadBuildings(data: LoD1Data | null, cityMode = false) {
+    this.highlighted = null;
     this.buildingsData = data;
     this.footprints = [];
     this.cityMode = cityMode;

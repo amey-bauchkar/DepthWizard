@@ -1,0 +1,2 @@
+# Optional: fetch Indian demo checkpoints (ICESat-2 via the public SlideRule service). Not needed to run the app.
+sliderule

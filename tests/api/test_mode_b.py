@@ -209,3 +209,47 @@ def test_metric_model_without_dem_is_tier_h(metric_client, synthetic_scene, monk
     assert res["layers"]["ndsm"]["heightfield"] == "heightfield_ndsm.f32"
     s = c.get(f"/api/jobs/{jid}/sample", params={"x": 60, "y": 60}).json()
     assert s["values"]["ndsm"]["units"] == "m" and s["values"]["ndsm"]["value"] > 8.0
+
+
+def test_point_checkpoint_validation(client, synthetic_scene):
+    """Sparse checkpoints (ICESat-2-style CSV) on the synthetic ground plane: terrain error ~0 away from objects."""
+    from pyproj import Transformer
+
+    jid, _ = _run(client, {"file": ("scene.tif", synthetic_scene["image"], "image/tiff"), "dem": ("dem.tif", synthetic_scene["dem"], "image/tiff")})
+    tr, g = synthetic_scene["transform"], synthetic_scene["ground"]
+    to_ll = Transformer.from_crs(CRS, "EPSG:4326", always_xy=True)
+    lines = ["# vcrs=EGM2008", "id,lon,lat,h_ground,h_canopy,gnd_photons"]
+    for i, (r, c) in enumerate([(r, c) for r in range(20, 230, 15) for c in (200, 215, 225)]):  # open ground, away from the blocks
+        x, y = tr @ (c + 0.5, r + 0.5)
+        lon, lat = to_ll.transform(x, y)
+        lines.append(f"P{i},{lon:.8f},{lat:.8f},{g[r, c]:.3f},0.0,20")
+    lines.append("LOW,0,0,0,0,1")  # outside the scene and too few photons: filtered
+    r = client.post(f"/api/jobs/{jid}/validate_points", files={"points": ("pts.csv", "\n".join(lines).encode(), "text/csv")})
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert v["kind"] == "points" and v["n_in_grid"] == 42 and v["n_checkpoints"] == 43
+    assert v["metrics"]["terrain_vs_ground"]["RMSE"] < 0.5 and v["metrics"]["input_dem_vs_ground"]["RMSE"] < 0.5
+    assert "ndsm_vs_canopy_height" in v["metrics"]
+    assert client.get(f"/api/jobs/{jid}/validation").json()["latest_points"]["kind"] == "points"
+    assert client.post(f"/api/jobs/{jid}/validate_points", data={"bundled": "../../secret.csv"}).status_code == 404
+    assert client.post(f"/api/jobs/{jid}/validate_points").status_code == 400
+
+
+def test_building_table_and_exports(metric_client, synthetic_scene):
+    c = metric_client
+    jid, _ = _run(c, {"file": ("scene.tif", synthetic_scene["image"], "image/tiff"), "dem": ("dem.tif", synthetic_scene["dem"], "image/tiff")})
+    r = c.get(f"/api/jobs/{jid}/buildings", params={"min_height": 5})
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert j["summary"]["count_filtered"] >= 2 and j["buildings"][0]["height_m"] >= 8
+    b = j["buildings"][0]
+    assert b["floors_range"][0] <= b["floors_range"][1] and b["volume_m3"] > 0 and b["lat"] is not None
+    assert b["roof_elev_m"] > b["ground_elev_m"] and "height_error" in j["summary"]
+    assert c.get(f"/api/jobs/{jid}/buildings", params={"min_height": 200}).json()["summary"]["count_filtered"] == 0
+    g = c.get(f"/api/jobs/{jid}/buildings.geojson", params={"min_height": 5})
+    assert g.status_code == 200 and g.headers["content-type"].startswith("application/geo+json")
+    fc = g.json()
+    ring = fc["features"][0]["geometry"]["coordinates"][0]
+    assert ring[0] == ring[-1] and -180 < ring[0][0] < 180 and 0 < ring[0][1] < 60  # WGS84 lon/lat near the scene (UTM 43N)
+    csv = c.get(f"/api/jobs/{jid}/buildings.csv").text.splitlines()
+    assert csv[0].startswith("id,lon,lat,height_m") and len(csv) >= 3

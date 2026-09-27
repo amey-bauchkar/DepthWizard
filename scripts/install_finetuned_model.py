@@ -36,7 +36,7 @@ def sha256(p: Path) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("zip", type=Path)
-    ap.add_argument("--version", default="1.0.0")
+    ap.add_argument("--version", default=None, help="default: model_version from training_report.json, else 1.0.0")
     ap.add_argument("--models-dir", type=Path, default=ROOT / "models")
     a = ap.parse_args()
     with tempfile.TemporaryDirectory() as td:
@@ -47,6 +47,7 @@ def main() -> int:
             print(f"ERROR: zip must contain {WEIGHTS} and training_report.json", file=sys.stderr)
             return 1
         rep = json.loads(rep_p.read_text(encoding="utf-8"))
+        a.version = a.version or rep.get("model_version") or "1.0.0"
         got = sha256(w)
         if got != rep.get("sha256"):
             print(f"ERROR: sha256 mismatch {got} != report {rep.get('sha256')}", file=sys.stderr)
@@ -89,7 +90,9 @@ def main() -> int:
             "test_regions": sorted({s.split("(")[-1].rstrip(")") for s in rep.get("tiles", {}).get("test", [])}),
             "finetuned": {k: round(v, 3) if isinstance(v, float) else v for k, v in t.items()},
             "zeroshot_with_oracle_affine": {k: round(v, 3) if isinstance(v, float) else v for k, v in b.items()},
+            "by_source": rep.get("test_metrics_by_source"),
         },
+        "uncertainty_calibration": rep.get("uncertainty_calibration"),
         "known_limitations": [
             "Trained on Switzerland only (swisstopo); accuracy on Indian imagery/sensors is unmeasured.",
             "First-surface model: sees canopy and roof tops; ground under dense canopy is inferred.",

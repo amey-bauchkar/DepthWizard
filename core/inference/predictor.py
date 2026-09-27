@@ -177,7 +177,8 @@ def build_metric_predictor(settings: Settings) -> BasePredictor:
         raise ModelUnavailableError("metric model disabled in configuration (model_metric.enabled=false)")
     if mc.name == "stub-metric":
         return StubPredictor(settings, metric=True)
-    p = Predictor(settings, name=mc.name, version=mc.version, verify_hash=mc.verify_hash)
+    version = ModelRegistry(settings.models_dir).latest_version(mc.name) if mc.version == "latest" else mc.version
+    p = Predictor(settings, name=mc.name, version=version, verify_hash=mc.verify_hash)
     if p.card.output_quantity != METRIC_QUANTITY:
         raise ModelUnavailableError(f"{mc.name}@{mc.version} output is {p.card.output_quantity!r}, not {METRIC_QUANTITY!r}")
     return p

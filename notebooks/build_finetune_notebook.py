@@ -1,4 +1,7 @@
-"""Generates notebooks/DepthWizard_FineTune_nDSM_Colab.ipynb (keeps the notebook reviewable as plain Python).
+"""Generates notebooks/DepthWizard_FineTune_nDSM_v2_Colab.ipynb (keeps the notebook reviewable as plain Python).
+
+v2 (2026-09-27): Swiss + US (USGS 3DEP LiDAR height-above-ground + NAIP) data, building-weighted loss, warm start from
+v1, TTA-based calibrated uncertainty intervals. v1 (Swiss only) is kept as DepthWizard_FineTune_nDSM_Colab.ipynb.
 
 Run:  python notebooks/build_finetune_notebook.py
 """
@@ -19,22 +22,27 @@ def code(s: str) -> None:
 
 
 md(r"""
-# DepthWizard — fine-tune Depth Anything V2 Small to metric height above ground (nDSM)
+# DepthWizard — model v2: metric height above ground (nDSM) from Swiss + US LiDAR, with calibrated uncertainty
 
-**What this does (end to end, ~2–3 h on a free T4):**
-1. Builds a training set from swisstopo open data: SWISSIMAGE RGB at **0.5 m** + target **nDSM = swissSURFACE3D − swissALTI3D** (airborne LiDAR, metres), for ~150 one-km tiles in 36 regions (cities, farmland, forest, Jura, Alps).
-2. Splits **by region** into train / val / test. The two DepthWizard validation tiles (Zürich 2682-1247, Emmental 2621-1202) and everything within 5 km of them are **never downloaded**.
-3. Fine-tunes Depth Anything V2 Small (Apache-2.0) to output metres, with the same 518 px / 0.5 m tiling DepthWizard uses at inference.
-4. Evaluates on the held-out **test regions** against LiDAR and against the zero-shot baseline (given an *oracle* per-tile affine fit, i.e. its best case).
-5. Exports `depth_anything_v2_ndsm_s.pth` + `training_report.json` (measured numbers, tile lists, config) as `depthwizard_ndsm_model.zip`.
+**What this does (end to end, ~4–6 h on a free T4; resumable):**
+1. Training data, all open and login-free:
+   * **Switzerland (swisstopo)**: SWISSIMAGE RGB at 0.5 m + nDSM = swissSURFACE3D − swissALTI3D (0.5 m LiDAR), ~6 tiles in each of 36 regions.
+   * **USA**: NAIP aerial RGB (0.3–1 m, resampled to 0.5 m) + USGS 3DEP LiDAR nDSM = DSM − DTM (2 m), via Microsoft Planetary Computer (anonymous access), 20 regions. They include hot/arid cities, forests, the Gulf coast and Puerto Rico (dense tropical low-rise housing, the closest open analogue to Indian towns).
+2. Splits **by region** into train / val / test for both countries. The DepthWizard test tiles (Zürich 2682-1247, Emmental 2621-1202) and everything within 5 km of them are **never downloaded**, and no Indian data is used.
+3. Fine-tunes Depth Anything V2 Small (Apache-2.0), **warm-starting from v1** if you upload `depth_anything_v2_ndsm_s.pth`. Buildings and trees are weighted ×2 in the loss, and the edge (gradient) term applies only to sharp 0.5 m Swiss targets.
+4. **Uncertainty**: each prediction is repeated under 4 rotations/flips. The spread is calibrated on the validation regions into 50 / 80 / 90 % error intervals, and their coverage is checked on the test regions.
+5. Evaluates on the held-out test regions (Swiss and US separately) against the zero-shot baseline (with an oracle per-tile affine fit).
+6. Exports `depthwizard_ndsm_model_v2.zip` (weights + `training_report.json` with the measured numbers and the uncertainty calibration).
 
 **Before running:** Runtime → Change runtime type → **T4 GPU** (or better). Then Runtime → Run all.
 If the session disconnects, set `USE_DRIVE = True` (checkpoints + dataset survive in Google Drive) and re-run: finished steps are skipped.
 
-**After it finishes:** copy `depthwizard_ndsm_model.zip` into the DepthWizard folder and run
-`python scripts/install_finetuned_model.py depthwizard_ndsm_model.zip`.
+**Optional warm start:** upload v1 `depth_anything_v2_ndsm_s.pth` (from `models/da-v2-small-ndsm/1.0.0/` in DepthWizard) to `/content/` before running.
 
-Data © swisstopo (Open Government Data, attribution required). Model: Depth Anything V2 Small, Apache-2.0.
+**After it finishes:** copy `depthwizard_ndsm_model_v2.zip` into the DepthWizard folder and run
+`python scripts/install_finetuned_model.py depthwizard_ndsm_model_v2.zip` (it installs as version 2.0.0; the app uses the newest version).
+
+Data: © swisstopo (Open Government Data, attribution required); NAIP and USGS 3DEP are US public domain (served by Microsoft Planetary Computer). Model: Depth Anything V2 Small, Apache-2.0.
 """)
 
 code(r"""
@@ -43,27 +51,34 @@ import subprocess, sys, torch
 print("torch", torch.__version__, "| CUDA:", torch.cuda.is_available())
 assert torch.cuda.is_available(), "No GPU: Runtime -> Change runtime type -> T4 GPU, then run again."
 print("GPU:", torch.cuda.get_device_name(0), "| VRAM GB:", round(torch.cuda.get_device_properties(0).total_memory / 1e9, 1))
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "rasterio", "pyproj", "huggingface_hub"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "rasterio", "pyproj", "huggingface_hub", "requests"], check=True)
 """)
 
 code(r"""
 # 2. Settings (edit here)
-USE_DRIVE = False          # True: keep dataset + checkpoints in Google Drive (survives disconnects)
+USE_DRIVE = False          # True: keep checkpoints in Google Drive (needs ~1 GB free) so training resumes after a disconnect
 CFG = dict(
     gsd=0.5,               # training GSD (m/px) = DepthWizard Mode B inference GSD
     crop=518,              # DA-V2 native tile size (multiple of 14)
     batch=6,
-    iters=8000,            # ~1-1.5 h on a T4; more helps (e.g. 15000 on A100/L4)
+    iters=20000,           # ~3-4 h on a T4 (resumable); validation RMSE was still falling at 8000 in v1
     warmup=300,
     lr_encoder=5e-6,       # DA-V2 metric fine-tuning recipe: small LR for the ViT, 10x for the DPT head
     lr_head=5e-5,
     weight_decay=0.01,
     grad_weight=0.5,       # multi-scale gradient-matching term (sharp roof / canopy edges)
-    val_every=500,
+    val_every=1000,
     max_height_m=120.0,    # nDSM clipped to [0, 120] m (tallest Swiss structures/trees are below)
     max_year_gap=3,        # RGB and LiDAR acquisitions at most 3 years apart
     exclusion_km=5.0,      # no tile within 5 km of a DepthWizard validation tile
-    tiles_per_region=4,
+    tiles_per_region=6,
+    use_us=True,           # add USGS 3DEP LiDAR + NAIP regions (Planetary Computer, anonymous)
+    us_tiles_per_region=5,
+    us_sample_prob=0.35,   # fraction of training crops drawn from US tiles
+    building_weight=2.0,   # loss weight for pixels with target height >= 2.5 m (buildings / trees)
+    init_from="/content/depth_anything_v2_ndsm_s.pth",  # v1 weights for a warm start (skipped if the file is absent)
+    model_version="2.0.0",
+    run_name="v2b",        # checkpoints and cached tile lists live under this name: a NEW name = a fresh run
     workers=8,
     seed=0,
 )
@@ -98,9 +113,13 @@ ROOT = "/content/drive/MyDrive/depthwizard_ft" if USE_DRIVE else "/content/depth
 if USE_DRIVE:
     from google.colab import drive
     drive.mount("/content/drive")
-DATA, CKPT = f"{ROOT}/tiles", f"{ROOT}/ckpt"
+DATA = "/content/tiles"                          # dataset (~6 GB) on local disk (rebuilt after a disconnect)
+RUN = f"{ROOT}/{CFG['run_name']}"                # checkpoints (~0.4 GB) + tile lists of THIS run (Drive when USE_DRIVE)
+CKPT = f"{RUN}/ckpt"
 os.makedirs(DATA, exist_ok=True); os.makedirs(CKPT, exist_ok=True)
-print("working dir:", ROOT, "| regions:", len(REGIONS))
+print("run dir:", RUN, "| dataset:", DATA, "| regions:", len(REGIONS))
+if os.path.exists(f"{CKPT}/last.pt"):
+    print(f"NOTE: a checkpoint of run '{CFG['run_name']}' exists and training will RESUME from it. For a fresh run, change CFG['run_name'].")
 """)
 
 code(r"""
@@ -140,7 +159,7 @@ def asset(item, suffix):
 def near_validation(e, n):
     return any(math.hypot(e - ve, n - vn) <= CFG["exclusion_km"] for ve, vn in DW_VALIDATION_TILES)
 
-TILES_JSON = f"{ROOT}/tiles.json"
+TILES_JSON = f"{RUN}/tiles.json"
 if os.path.exists(TILES_JSON):
     TILES = json.load(open(TILES_JSON))
 else:
@@ -223,6 +242,129 @@ print({s: len(v) for s, v in SPLIT.items()})
 """)
 
 code(r"""
+# 5b. USA: NAIP RGB + USGS 3DEP LiDAR nDSM = DSM - DTM (2 m) via Microsoft Planetary Computer (anonymous SAS tokens)
+# Regions with USGS 3DEP LiDAR (2017+) height-above-ground on Planetary Computer and matching NAIP (surveyed 2026-09-27)
+US_REGIONS = {
+    # train
+    "houston": (-95.370, 29.760, "train"), "san_antonio": (-98.490, 29.420, "train"), "new_orleans": (-90.070, 29.950, "train"),
+    "el_paso": (-106.440, 31.760, "train"), "san_juan_pr": (-66.060, 18.400, "train"), "charlotte": (-80.840, 35.230, "train"),
+    "nashville": (-86.780, 36.160, "train"), "smoky_mountains": (-83.500, 35.650, "train"), "baton_rouge": (-91.150, 30.450, "train"),
+    "dallas": (-96.800, 32.780, "train"), "austin": (-97.740, 30.270, "train"), "las_vegas": (-115.140, 36.170, "train"),
+    "memphis": (-90.050, 35.150, "train"), "richmond": (-77.440, 37.540, "train"), "mayaguez_pr": (-67.140, 18.200, "train"),
+    # validation (also calibrates the uncertainty intervals)
+    "tucson": (-110.970, 32.220, "val"), "pittsburgh": (-79.990, 40.440, "val"),
+    # test
+    "sacramento": (-121.490, 38.580, "test"), "ponce_pr": (-66.610, 18.010, "test"), "st_louis": (-90.200, 38.630, "test"),
+}
+import rasterio, requests
+from rasterio.warp import reproject, Resampling
+from rasterio.transform import from_origin
+from pyproj import Transformer
+PC = "https://planetarycomputer.microsoft.com/api"
+_tok = {}
+def sign(href, coll):
+    if coll not in _tok:
+        _tok[coll] = requests.get(f"{PC}/sas/v1/token/{coll}", timeout=60).json()["token"]
+    return f"{href}?{_tok[coll]}"
+def pc_search(coll, bbox, limit=20):
+    r = requests.post(f"{PC}/stac/v1/search", json={"collections": [coll], "bbox": bbox, "limit": limit}, timeout=120)
+    r.raise_for_status(); return r.json()["features"]
+def year(it):
+    p = it["properties"]; return int((p.get("datetime") or p.get("start_datetime") or "2000")[:4])
+
+US_TILES = []
+US_JSON = f"{RUN}/us_tiles.json"
+if CFG["use_us"]:
+    if os.path.exists(US_JSON):
+        US_TILES = json.load(open(US_JSON))
+    else:
+        from pyproj import CRS as _CRS
+        for name, (lon, lat, split) in US_REGIONS.items():
+            try:
+                bbox = [lon - 0.05, lat - 0.05, lon + 0.05, lat + 0.05]
+                hag = [h for h in pc_search("3dep-lidar-hag", bbox, 100) if year(h) >= 2017]
+                naip = pc_search("naip", bbox, 100)
+                if not hag or not naip:
+                    print(f"{name:16s} no recent LiDAR / NAIP coverage"); continue
+                n_ok = 0
+                for h_it in sorted(hag, key=year, reverse=True):
+                    with rasterio.open(sign(h_it["assets"]["data"]["href"], "3dep-lidar-hag")) as ds:
+                        c = _CRS.from_wkt(ds.crs.to_wkt()); hc = c.sub_crs_list[0] if c.is_compound else c
+                        crs = f"EPSG:{hc.to_epsg()}" if hc.to_epsg() else hc.to_wkt(); b = ds.bounds
+                    cx, cy = Transformer.from_crs("EPSG:4326", crs, always_xy=True).transform(lon, lat)
+                    cx, cy = min(max(cx, b.left + 600), b.right - 600), min(max(cy, b.bottom + 600), b.top - 600)  # keep inside this LiDAR tile
+                    to_ll = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+                    for k, (dx, dy) in enumerate([(0, 0), (1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (-1, -1), (1, -1), (-1, 1)]):
+                        left, top = cx - 500 + dx * 1000, cy + 500 + dy * 1000
+                        if left < b.left or left + 1000 > b.right or top > b.top or top - 1000 < b.bottom:
+                            continue
+                        (w, s_), (e, n_) = to_ll.transform(left, top - 1000), to_ll.transform(left + 1000, top)
+                        cover = [x for x in naip if x["bbox"][0] <= w and x["bbox"][1] <= s_ and x["bbox"][2] >= e and x["bbox"][3] >= n_]
+                        cover = sorted(cover or [x for x in naip if not (x["bbox"][2] < w or x["bbox"][0] > e or x["bbox"][3] < s_ or x["bbox"][1] > n_)], key=lambda x: abs(year(x) - year(h_it)))
+                        if not cover or abs(year(cover[0]) - year(h_it)) > 4:
+                            continue
+                        US_TILES.append(dict(key=f"us_{name}_{n_ok}", region=name, split=split, crs=crs, left=left, top=top, hag=h_it["assets"]["data"]["href"], naip=[x["assets"]["image"]["href"] for x in cover[:4]], years=[year(cover[0]), year(h_it)]))
+                        n_ok += 1
+                        if n_ok >= CFG["us_tiles_per_region"]:
+                            break
+                    if n_ok >= CFG["us_tiles_per_region"]:
+                        break
+                print(f"{name:16s} {split:5s} tiles: {n_ok}")
+            except Exception as e:
+                print(f"{name:16s} skipped: {type(e).__name__}: {e}")
+        json.dump(US_TILES, open(US_JSON, "w"), indent=1)
+
+def prepare_us(t):
+    out_rgb, out_h = f"{DATA}/{t['key']}_rgb.npy", f"{DATA}/{t['key']}_ndsm.npy"
+    if os.path.exists(out_rgb) and os.path.exists(out_h):
+        return t["key"], "cached"
+    try:
+        tr = from_origin(t["left"], t["top"], CFG["gsd"], CFG["gsd"])
+        # target = LiDAR DSM - DTM (same 3DEP project). The Planetary Computer "hag" raster was checked and rejected:
+        # it puts open desert ground at ~3 m (median), while DSM - DTM gives ~0.5 m there.
+        hs = []
+        for kind in ("dsm", "dtm"):
+            a = np.full((N, N), np.nan, np.float32)
+            href = t["hag"].replace("/hag/", f"/{kind}/").replace("-hag-", f"-{kind}-")
+            with rasterio.open(sign(href, f"3dep-lidar-{kind}")) as ds:
+                reproject(rasterio.band(ds, 1), a, src_transform=ds.transform, src_crs=ds.crs, dst_transform=tr, dst_crs=t["crs"], resampling=Resampling.bilinear, src_nodata=ds.nodata, dst_nodata=np.nan)
+            hs.append(a)
+        h = hs[0] - hs[1]
+        rgb = np.zeros((3, N, N), np.uint8); got = np.zeros((N, N), bool)
+        for href in t["naip"]:
+            tmp = np.zeros((3, N, N), np.uint8)
+            with rasterio.open(sign(href, "naip")) as ds:
+                for i in range(3):
+                    reproject(rasterio.band(ds, i + 1), tmp[i], src_transform=ds.transform, src_crs=ds.crs, dst_transform=tr, dst_crs=t["crs"], resampling=Resampling.average, src_nodata=0, dst_nodata=0)
+            m = (tmp.max(axis=0) > 0) & ~got; rgb[:, m] = tmp[:, m]; got |= m
+            if got.mean() > 0.99:
+                break
+        ndsm = np.clip(h, 0.0, CFG["max_height_m"]); ndsm[~np.isfinite(h) | ~got] = np.nan
+        if np.isfinite(ndsm).mean() < 0.8:
+            return t["key"], "skipped (coverage)"
+        np.save(out_rgb, np.ascontiguousarray(rgb.transpose(1, 2, 0))); np.save(out_h, ndsm.astype(np.float16))
+        return t["key"], "ok"
+    except Exception as e:
+        return t["key"], f"FAILED {type(e).__name__}: {e}"
+
+t0 = time.time()
+with ThreadPoolExecutor(CFG["workers"]) as ex:
+    for i, (k, st) in enumerate(ex.map(prepare_us, US_TILES)):
+        if st != "cached" or i % 20 == 0:
+            print(f"[US {i + 1}/{len(US_TILES)}] {k}: {st}  ({time.time() - t0:.0f}s)")
+for t in TILES:
+    t.setdefault("source", "swiss"); t["sharp"] = True
+for t in US_TILES:
+    t["source"] = "us"; t["sharp"] = False   # 2 m LiDAR target upsampled to 0.5 m: no edge (gradient) loss
+READY = [t for t in TILES + US_TILES if os.path.exists(f"{DATA}/{t['key']}_ndsm.npy")]
+SPLIT = {s: [t for t in READY if t["split"] == s] for s in ("train", "val", "test")}
+print({s: (len([t for t in v if t["source"] == "swiss"]), len([t for t in v if t["source"] == "us"])) for s, v in SPLIT.items()}, "(swiss, us)")
+_n_sw = sum(t["source"] == "swiss" for t in SPLIT["train"])
+assert _n_sw >= 60, (f"only {_n_sw} Swiss training tiles are on disk in {DATA} (after a disconnect the local disk is empty): re-run cell 5 and check its output for FAILED lines "
+                     "before training - the Swiss 0.5 m LiDAR is the core of the training set")
+""")
+
+code(r"""
 # 6. Quick look at one training pair
 import matplotlib.pyplot as plt
 t = SPLIT["train"][0]
@@ -246,11 +388,14 @@ def to_input(rgb_u8):
 class Crops(Dataset):
     def __init__(self, tiles, n, train=True):
         self.tiles, self.n, self.train = tiles, n, train
+        self.sw = [t for t in tiles if t.get("source", "swiss") == "swiss"]
+        self.us = [t for t in tiles if t.get("source") == "us"]
     def __len__(self):
         return self.n
     def __getitem__(self, i):
         rng = np.random.default_rng(None if self.train else i)
-        t = self.tiles[rng.integers(len(self.tiles))]
+        pool = self.us if (self.us and self.sw and rng.random() < CFG["us_sample_prob"]) else (self.sw or self.us)
+        t = pool[rng.integers(len(pool))]
         rgb = np.load(f"{DATA}/{t['key']}_rgb.npy", mmap_mode="r"); h = np.load(f"{DATA}/{t['key']}_ndsm.npy", mmap_mode="r")
         C = CFG["crop"]
         s = rng.uniform(0.8, 1.25) if self.train else 1.0      # GSD jitter 0.4-0.63 m: robustness to other sensors
@@ -273,10 +418,10 @@ class Crops(Dataset):
             elif rng.random() < 0.2:
                 x = cv2.GaussianBlur(x, (0, 0), rng.uniform(0.5, 1.2))
         y = np.ascontiguousarray(y)
-        return to_input(np.ascontiguousarray(x)), torch.from_numpy(np.nan_to_num(y)), torch.from_numpy(np.isfinite(y))
+        return to_input(np.ascontiguousarray(x)), torch.from_numpy(np.nan_to_num(y)), torch.from_numpy(np.isfinite(y)), torch.tensor(bool(t.get("sharp", True)))
 
 train_dl = DataLoader(Crops(SPLIT["train"], CFG["iters"] * CFG["batch"]), batch_size=CFG["batch"], num_workers=2, pin_memory=True, drop_last=True)
-xb, yb, mb = next(iter(train_dl)); print(xb.shape, yb.shape, float(yb[mb].mean()), "m mean target")
+xb, yb, mb, sb = next(iter(train_dl)); print(xb.shape, yb.shape, float(yb[mb].mean()), "m mean target", "sharp", sb.tolist())
 """)
 
 code(r"""
@@ -285,6 +430,11 @@ from depth_anything_v2.dpt import DepthAnythingV2
 dev = "cuda"
 model = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384])
 model.load_state_dict(torch.load(BASE_W, map_location="cpu"), strict=True)
+INIT = CFG.get("init_from") or ""
+if INIT and os.path.exists(INIT):
+    model.load_state_dict(torch.load(INIT, map_location="cpu"), strict=True); print("warm start from", INIT)
+else:
+    print("no v1 weights found at", INIT or "(unset)", "- starting from the zero-shot baseline")
 model.to(dev)
 
 def grad_loss(p, y, m):
@@ -301,8 +451,12 @@ def grad_loss(p, y, m):
             tot = tot + (d[:, :, 1:] - d[:, :, :-1]).abs()[mx].mean() + (d[:, 1:, :] - d[:, :-1, :]).abs()[my].mean()
     return tot / 3
 
-def loss_fn(p, y, m):
-    return F.smooth_l1_loss(p[m], y[m], beta=1.0) + CFG["grad_weight"] * grad_loss(p, y, m)
+def loss_fn(p, y, m, sharp):
+    w = 1.0 + (CFG["building_weight"] - 1.0) * (y >= 2.5).float()      # buildings / trees count more than ground
+    l = (F.smooth_l1_loss(p, y, beta=1.0, reduction="none") * w)[m].sum() / w[m].sum().clamp_min(1.0)
+    if sharp.any():                                                      # edge term only on sharp (0.5 m LiDAR) targets
+        l = l + CFG["grad_weight"] * grad_loss(p[sharp], y[sharp], m[sharp])
+    return l
 
 opt = torch.optim.AdamW([
     {"params": model.pretrained.parameters(), "lr": CFG["lr_encoder"]},
@@ -336,6 +490,15 @@ def predict_tile(net, rgb, tile=518, overlap=0.25):
             acc[r:r + tile, c:c + tile] += win * o; ws[r:r + tile, c:c + tile] += win
     return (acc / ws).astype(np.float32)
 
+@torch.no_grad()
+def predict_tile_tta(net, rgb):
+    # mean and spread (std) of 4 orientation variants: identity, h-flip, v-flip, rot180 (all exact inverses)
+    outs = []
+    for f in (lambda a: a, lambda a: a[:, ::-1], lambda a: a[::-1, :], lambda a: a[::-1, ::-1]):
+        outs.append(f(predict_tile(net, np.ascontiguousarray(f(rgb)))))
+    st = np.stack(outs)
+    return st.mean(0).astype(np.float32), st.std(0).astype(np.float32)
+
 def metrics(pred, gt):
     m = np.isfinite(gt) & np.isfinite(pred); d = (pred - gt)[m]; g = gt[m]
     out = dict(n=int(m.sum()), ME=float(d.mean()), RMSE=float(np.sqrt((d ** 2).mean())), MAE=float(np.abs(d).mean()),
@@ -365,15 +528,22 @@ if os.path.exists(LAST):
     ck = torch.load(LAST, map_location="cpu")
     model.load_state_dict(ck["model"]); opt.load_state_dict(ck["opt"]); sched.load_state_dict(ck["sched"]); scaler.load_state_dict(ck["scaler"])
     start, best, history = ck["it"] + 1, ck["best"], ck["history"]; print("resumed at iteration", start)
+    KEYS = ("iters", "batch", "tiles_per_region", "use_us", "us_sample_prob", "building_weight", "lr_encoder", "lr_head", "model_version")
+    diff = {k: (ck.get("cfg", {}).get(k), CFG[k]) for k in KEYS if ck.get("cfg", {}).get(k) != CFG[k]}
+    assert not diff, f"checkpoint was written with different settings {diff}: use a new CFG['run_name'] for a fresh run"
+if start == 0:
+    vm0, _ = evaluate(model, SPLIT["val"], center=1036)
+    history.append(dict(it=0, loss=None, **{f"val_{k}": v for k, v in vm0.items()}))
+    print(f"  VAL before training (warm-start weights): RMSE {vm0['RMSE']:.2f} m  MAE {vm0['MAE']:.2f}  r {vm0['r']:.3f}  <- training must beat this")
 it = start; t0 = time.time(); run = 0.0
 loader = iter(train_dl)
 while it < CFG["iters"]:
-    x, y, m = next(loader)
-    x, y, m = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True), m.to(dev, non_blocking=True)
+    x, y, m, sh = next(loader)
+    x, y, m, sh = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True), m.to(dev, non_blocking=True), sh.to(dev)
     model.train()
     with torch.autocast("cuda", dtype=torch.float16):
         p = model(x)
-    loss = loss_fn(p.float(), y, m)
+    loss = loss_fn(p.float(), y, m, sh)
     opt.zero_grad(set_to_none=True); scaler.scale(loss).backward(); scaler.unscale_(opt)
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0); scaler.step(opt); scaler.update(); sched.step()
     run = 0.98 * run + 0.02 * loss.item() if it > start else loss.item()
@@ -385,7 +555,7 @@ while it < CFG["iters"]:
         print(f"  VAL it {it + 1}: RMSE {vm['RMSE']:.2f} m  MAE {vm['MAE']:.2f}  ME {vm['ME']:+.2f}  r {vm['r']:.3f}")
         if vm["RMSE"] < best:
             best = vm["RMSE"]; torch.save(model.state_dict(), BEST); print("  -> new best, saved")
-        torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), sched=sched.state_dict(), scaler=scaler.state_dict(), it=it, best=best, history=history), LAST)
+        torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), sched=sched.state_dict(), scaler=scaler.state_dict(), it=it, best=best, history=history, cfg=CFG), LAST)
     it += 1
 print("done. best val RMSE:", round(best, 3))
 """)
@@ -396,6 +566,54 @@ import matplotlib.pyplot as plt
 ft = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384]); ft.load_state_dict(torch.load(BEST, map_location="cpu")); ft.to(dev)
 base = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384]); base.load_state_dict(torch.load(BASE_W, map_location="cpu")); base.to(dev)
 test_ft, res_ft = evaluate(ft, SPLIT["test"])
+by_source = {}
+for src in ("swiss", "us"):
+    rs = [(t, p, g) for t, p, g in res_ft if t.get("source", "swiss") == src]
+    if rs:
+        by_source[src] = metrics(np.concatenate([p.ravel() for _, p, _ in rs]), np.concatenate([g.ravel() for _, _, g in rs]))
+print("by source:", {k: round(v["RMSE"], 2) for k, v in by_source.items()})
+V1_COMPARE = None
+if INIT and os.path.exists(INIT):
+    v1 = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384]); v1.load_state_dict(torch.load(INIT, map_location="cpu")); v1.to(dev)
+    _, res_v1 = evaluate(v1, SPLIT["test"])
+    V1_COMPARE = {}
+    for src in ("swiss", "us"):
+        a = [(p, g) for (t, p, g) in res_ft if t.get("source", "swiss") == src]
+        b = [(p, g) for (t, p, g) in res_v1 if t.get("source", "swiss") == src]
+        if a:
+            ma = metrics(np.concatenate([p.ravel() for p, _ in a]), np.concatenate([g.ravel() for _, g in a]))
+            mb = metrics(np.concatenate([p.ravel() for p, _ in b]), np.concatenate([g.ravel() for _, g in b]))
+            V1_COMPARE[src] = {"v2_RMSE": ma["RMSE"], "v1_RMSE": mb["RMSE"], "v2_objects_RMSE": ma.get("RMSE_objects_ge2.5m"), "v1_objects_RMSE": mb.get("RMSE_objects_ge2.5m")}
+    del v1
+    print("v2 vs v1 on held-out test tiles:", {k: {kk: round(vv, 2) for kk, vv in v.items() if vv is not None} for k, v in V1_COMPARE.items()})
+    sw = V1_COMPARE.get("swiss")
+    if sw and sw["v2_RMSE"] > sw["v1_RMSE"]:
+        print("VERDICT: v2 is WORSE than v1 on Swiss held-out LiDAR - do not install it; keep v1.")
+    elif sw:
+        print("VERDICT: v2 beats v1 on Swiss held-out LiDAR - download and install it; DepthWizard re-validation on its own test tiles decides the final switch.")
+
+# Uncertainty: calibrate |error| quantiles per TTA-spread bin on VALIDATION tiles, check coverage on TEST tiles
+def tta_errors(tiles, center=1036):
+    S, E, P = [], [], []
+    for t in tiles:
+        rgb = np.load(f"{DATA}/{t['key']}_rgb.npy"); gt = np.load(f"{DATA}/{t['key']}_ndsm.npy").astype(np.float32)
+        a = (rgb.shape[0] - center) // 2; rgb, gt = rgb[a:a + center, a:a + center], gt[a:a + center, a:a + center]
+        mu, sd = predict_tile_tta(ft, rgb); m = np.isfinite(gt)
+        S.append(sd[m]); E.append(np.abs(mu - gt)[m]); P.append(mu[m])
+    return np.concatenate(S), np.concatenate(E), np.concatenate(P)
+s_val, e_val, p_val = tta_errors(SPLIT["val"])
+edges = np.unique(np.quantile(s_val, np.linspace(0, 1, 9)))
+QS = (0.5, 0.8, 0.9)
+bins_q = []
+for i in range(len(edges) - 1):
+    sel = (s_val >= edges[i]) & (s_val <= edges[i + 1])
+    bins_q.append([float(np.quantile(e_val[sel], q)) if sel.any() else float("nan") for q in QS])
+s_te, e_te, p_te = tta_errors(SPLIT["test"])
+bi = np.clip(np.searchsorted(edges, s_te, side="right") - 1, 0, len(bins_q) - 1)
+coverage = {f"{int(q * 100)}%": float(np.mean(e_te <= np.array([b[j] for b in bins_q])[bi])) for j, q in enumerate(QS)}
+err_spread_corr = float(np.corrcoef(s_te, e_te)[0, 1])
+UNC = {"method": "4-way test-time augmentation (identity, h-flip, v-flip, rot180); per-pixel spread binned by validation-set quantiles; |error| quantiles per bin", "spread_bin_edges_m": [float(v) for v in edges], "abs_error_quantiles_m": {f"{int(q * 100)}%": [b[j] for b in bins_q] for j, q in enumerate(QS)}, "test_coverage": coverage, "test_spread_error_correlation": err_spread_corr}
+print("uncertainty: test coverage", {k: round(v, 3) for k, v in coverage.items()}, "| spread-error corr", round(err_spread_corr, 3))
 _, res_b = evaluate(base, SPLIT["test"])
 aligned = []
 for (t, p, g) in res_b:
@@ -421,21 +639,22 @@ ax[2].imshow(g[::4, ::4], vmin=0, vmax=30); ax[2].set_title("LiDAR nDSM (m)"); p
 code(r"""
 # 12. Export weights + measured report and download
 import zipfile, hashlib, datetime
-W = f"{ROOT}/depth_anything_v2_ndsm_s.pth"
+W = f"{ROOT}/depth_anything_v2_ndsm_s_v2.pth"
 torch.save({k: v.detach().cpu() for k, v in ft.state_dict().items()}, W)
 sha = hashlib.sha256(open(W, "rb").read()).hexdigest()
 report = dict(
-    created=datetime.datetime.utcnow().isoformat() + "Z", weights_file="depth_anything_v2_ndsm_s.pth", sha256=sha,
+    created=datetime.datetime.utcnow().isoformat() + "Z", weights_file="depth_anything_v2_ndsm_s.pth", sha256=sha, model_version=CFG["model_version"],
+    warm_start=bool(INIT and os.path.exists(INIT)), test_metrics_by_source=by_source, uncertainty_calibration=UNC, v1_comparison=V1_COMPARE, run_name=CFG["run_name"],
     base_model="depth-anything/Depth-Anything-V2-Small (Apache-2.0)", upstream_commit="a561b849ebae10a6f5ef49e26c83cbbcd36c71bf",
     output_quantity="metric_ndsm_metres", training_gsd_m=CFG["gsd"], input_size=CFG["crop"], config=CFG,
-    data="swisstopo SWISSIMAGE (RGB, 0.5 m from 0.1 m COG overviews) + swissSURFACE3D raster - swissALTI3D (0.5 m) = nDSM; (c) swisstopo OGD",
+    data="swisstopo SWISSIMAGE (RGB, 0.5 m from 0.1 m COG overviews) + swissSURFACE3D raster - swissALTI3D (0.5 m) = nDSM; (c) swisstopo OGD" + ("; USA: NAIP RGB (resampled to 0.5 m) + USGS 3DEP LiDAR DSM - DTM (2 m, bilinear to 0.5 m) via Microsoft Planetary Computer (public domain)" if US_TILES else ""),
     excluded_validation_tiles=DW_VALIDATION_TILES, exclusion_km=CFG["exclusion_km"],
     tiles={s: [t["key"] + " (" + t["region"] + ")" for t in v] for s, v in SPLIT.items()},
     history=history, test_metrics_finetuned=test_ft, test_metrics_zeroshot_oracle_affine=test_b, test_metrics_by_region=per_region,
     gpu=torch.cuda.get_device_name(0), torch=torch.__version__,
 )
 json.dump(report, open(f"{ROOT}/training_report.json", "w"), indent=1)
-Z = "/content/depthwizard_ndsm_model.zip"
+Z = "/content/depthwizard_ndsm_model_v2.zip"
 with zipfile.ZipFile(Z, "w") as z:
     z.write(W, "depth_anything_v2_ndsm_s.pth"); z.write(f"{ROOT}/training_report.json", "training_report.json")
 print("sha256", sha, "| zip MB", round(os.path.getsize(Z) / 1e6, 1))
@@ -458,7 +677,7 @@ def main() -> None:
         if kind == "code":
             cell.update({"execution_count": None, "outputs": []})
         nb["cells"].append(cell)
-    out = Path(__file__).with_name("DepthWizard_FineTune_nDSM_Colab.ipynb")
+    out = Path(__file__).with_name("DepthWizard_FineTune_nDSM_v2_Colab.ipynb")
     out.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     print("wrote", out, len(CELLS), "cells")
 

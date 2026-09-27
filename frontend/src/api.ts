@@ -22,14 +22,20 @@ export interface Result {
   tile_refinement?: { applied: boolean; n_tiles?: number } & Record<string, unknown>; method_version?: string;
   layers?: Record<string, LayerInfo>; heightfield: HeightfieldMeta; artifacts: Record<string, string>; timings_ms: Record<string, number>;
 }
-export interface SampleValue { value: number | null; valid: boolean; quantity: string; units: string; metric?: boolean; absolute?: boolean; tier?: string; vertical_reference?: string; scale_source?: string }
+export interface SampleValue { value: number | null; valid: boolean; quantity: string; units: string; metric?: boolean; absolute?: boolean; tier?: string; vertical_reference?: string; scale_source?: string; uncertainty_m?: number; uncertainty_note?: string }
 export interface Sample {
   mode: string; calibration_tier: string; quality?: string; vertical_reference?: string | null; in_bounds?: boolean;
   pixel?: { col: number; row: number }; position?: { x: number; y: number; crs: string; lon?: number; lat?: number };
   values: Record<string, SampleValue>; flags?: string[];
 }
+export interface InputCheck {
+  filename: string; mode: "A" | "B"; expected_tier: string; verdict: "ok" | "warn" | "bad";
+  checks: { level: "ok" | "warn" | "bad"; title: string; detail: string }[];
+  gsd_m?: number | null; inference_gsd_m?: number; extent_km?: number[] | null; width?: number; height?: number; dem?: string | null;
+  expected_accuracy?: { height_above_ground?: { objects_m: number; ground_m: number; source: string }; terrain_m?: number; dsm_m?: number; elevation_source?: string } | null;
+}
 export interface Measure { mode: string; calibration_tier: string; points: Sample[]; segments: Record<string, any>[]; authority: string }
-export interface DemoItem { id: string; label: string; file: string; mode: string; anchors?: string; reference_dsm?: string; reference_dtm?: string; reference_vertical_crs?: string; source?: string }
+export interface DemoItem { id: string; label: string; file: string; mode: string; anchors?: string; reference_dsm?: string; reference_dtm?: string; reference_vertical_crs?: string; reference_points?: string; country?: string; source?: string }
 
 export class ApiFailure extends Error {
   constructor(public status: number, public err: ApiError) { super(err.message); }
@@ -54,6 +60,11 @@ export const api = {
     if (opts.anchors) fd.append("anchors", opts.anchors, opts.anchors.name);
     return handle<Job>(await fetch("/api/jobs", { method: "POST", body: fd }));
   },
+  inspect: async (file: File, hasDem: boolean, hasAnchors: boolean) => {
+    const fd = new FormData(); fd.append("file", file, file.name);
+    fd.append("has_dem", String(hasDem)); fd.append("has_anchors", String(hasAnchors));
+    return handle<InputCheck>(await fetch("/api/inspect", { method: "POST", body: fd }));
+  },
   run: async (id: string) => handle<Job>(await fetch(`/api/jobs/${id}/run`, { method: "POST" })),
   job: async (id: string) => handle<Job>(await fetch(`/api/jobs/${id}`)),
   result: async (id: string) => handle<Result>(await fetch(`/api/jobs/${id}/result`)),
@@ -69,6 +80,14 @@ export const api = {
     fd.append("ref_type", opts.refType); fd.append("vertical_crs", opts.verticalCrs); fd.append("source_note", opts.sourceNote ?? "");
     return handle<Record<string, any>>(await fetch(`/api/jobs/${id}/validate`, { method: "POST", body: fd }));
   },
+  validatePoints: async (id: string, opts: { points?: File | null; bundled?: string | null }) => {
+    const fd = new FormData();
+    if (opts.points) fd.append("points", opts.points, opts.points.name);
+    if (opts.bundled) fd.append("bundled", opts.bundled);
+    return handle<Record<string, any>>(await fetch(`/api/jobs/${id}/validate_points`, { method: "POST", body: fd }));
+  },
+  buildings: async (id: string, minHeight = 0, minArea = 0, limit = 500) =>
+    handle<{ summary: Record<string, any>; buildings: Record<string, any>[] }>(await fetch(`/api/jobs/${id}/buildings?min_height=${minHeight}&min_area=${minArea}&limit=${limit}`)),
   validation: async (id: string) => handle<{ runs: Record<string, any>[]; latest: Record<string, any> | null }>(await fetch(`/api/jobs/${id}/validation`)),
   heightfield: async (id: string, name = "heightfield.f32"): Promise<Float32Array> => {
     const r = await fetch(`/api/jobs/${id}/artifact/${name}`);

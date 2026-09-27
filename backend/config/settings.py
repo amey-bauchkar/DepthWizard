@@ -30,7 +30,7 @@ class MetricModelCfg(BaseModel):
     Install with scripts/install_finetuned_model.py; if missing, Mode B falls back to the zero-shot model."""
     enabled: bool = True
     name: str = "da-v2-small-ndsm"
-    version: str = "1.0.0"
+    version: str = "latest"  # newest installed version, or pin e.g. "1.0.0"
     verify_hash: bool = True
 
 
@@ -43,6 +43,8 @@ class CalibCfg(BaseModel):
     output_vertical_crs: str = "EGM2008"
     dem_dir: str = "assets/dem"
     dem_posting_m: float = 30.0
+    dem_priority: list[str] = Field(default_factory=lambda: ["cartodem", "copernicus"])  # CartoDEM (assets/dem/cartodem/) preferred where it covers the scene
+    cartodem_vertical_crs: str = "auto"  # auto = decided by comparison with Copernicus (EGM96 vs ellipsoidal); or EGM96 / ellipsoidal / EGM2008
     sigma_cells: float = 1.5
     w_min: float = 0.1
     ground_window_m: float = 60.0

@@ -63,7 +63,7 @@ def main() -> None:
     from backend.jobs.pipeline_b import METHOD_VERSION
 
     results: dict = {"ran_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "method_version": METHOD_VERSION, "system": {k: c.get("/api/system").json()[k] for k in ("app", "runtime", "model", "geoid_grids", "dem_tiles")}, "tiles": {}}
-    for item in [i for i in demo["items"] if i["mode"] == "B"]:
+    for item in [i for i in demo["items"] if i["mode"] == "B" and i.get("reference_dsm")]:
         t = "urban" if "urban" in item["id"] else "rural"
         tile: dict = {"item": item, "runs": {}}
         variants = ([("zeroshot_no_anchors", cz)] if cz else []) + [("no_anchors", c), ("simulated_anchors", c)]

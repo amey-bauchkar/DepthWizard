@@ -36,7 +36,7 @@
         </div>
 
         <div class="demo-showcase">
-          <div class="demo-showcase-title">⚡ ONE-CLICK BENCHMARK DATASETS (swisstopo OGD)</div>
+          <div class="demo-showcase-title">⚡ ONE-CLICK DEMOS · 🇮🇳 Sikkim (Maxar 0.5 m + NASA ICESat-2) · Switzerland (swisstopo LiDAR)</div>
           <div id="demo-buttons" class="demo-grid"></div>
         </div>
 
@@ -82,6 +82,8 @@
           <tr><th>Model</th>       <td id="m-model">—</td></tr>
           <tr><th>Image</th>       <td id="m-image">—</td></tr>
         </table>
+
+        <div id="input-check" class="input-check hidden"></div>
 
         <button id="run-btn" class="primary" disabled>Generate Surface</button>
         <div id="status" class="status"></div>
@@ -197,7 +199,26 @@
             </label>
             <button id="validate-btn" class="primary" disabled style="width:auto;margin-top:0">Run validation</button>
           </div>
+          <div class="optrow" title="Sparse independent checkpoints, e.g. NASA ICESat-2 ground and canopy heights — for regions without LiDAR rasters (India)">
+            <label>
+              <strong>Checkpoints CSV</strong> <code>id,lon,lat,h_ground[,h_canopy]</code>
+              <input id="pts-input" type="file" accept=".csv,.txt" />
+            </label>
+            <label>
+              <strong>or bundled (ICESat-2)</strong>
+              <select id="pts-bundled"><option value="">—</option></select>
+            </label>
+            <button id="validate-pts-btn" class="secondary" disabled style="width:auto;margin-top:0">Validate vs checkpoints</button>
+          </div>
           <div id="val-status" class="status"></div>
+        </div>
+        <div id="pts-result" class="hidden" style="margin-top:14px">
+          <div class="val-verdict-card">
+            <div id="pts-title" class="val-verdict-title"></div>
+            <div id="pts-context" class="val-context"></div>
+          </div>
+          <table class="metrics" id="pts-table"></table>
+          <div id="pts-strata" class="hint" style="margin-top:6px"></div>
         </div>
 
         <div id="val-result" class="hidden" style="margin-top:14px">
@@ -336,6 +357,29 @@
             <div id="walk-hud-stats" class="walk-hud-stats">1.70 m Eye Height · 0.0 km/h</div>
           </div>
         </div>
+      </section>
+
+      <!-- ══════════════════════════════════════ PANEL 5: BUILDINGS -->
+      <section class="panel wide hidden" id="panel-buildings">
+        <div class="panel-header">
+          <span class="panel-step">5</span>
+          <span class="panel-title">Building intelligence</span>
+          <span class="badge muted" id="bld-badge">LoD-1 blocks · heights sampled from the nDSM raster</span>
+        </div>
+        <div id="bld-summary" class="result-grid" style="margin-bottom:10px"></div>
+        <div class="optrow">
+          <label>Min height <input id="bld-minh" type="range" min="0" max="60" step="1" value="5" /> <span id="bld-minh-val">5 m</span></label>
+          <label>Min footprint <input id="bld-mina" type="number" min="0" step="10" value="30" style="width:80px" /> m²</label>
+          <span class="actions" style="margin:0">
+            <a id="bld-geojson" class="linkbtn" href="#">GeoJSON (QGIS)</a>
+            <a id="bld-csv" class="linkbtn" href="#">CSV</a>
+          </span>
+        </div>
+        <div id="bld-detail" class="quality-card hidden" style="margin:10px 0"></div>
+        <div style="max-height:360px;overflow:auto;margin-top:8px">
+          <table class="metrics" id="bld-table"></table>
+        </div>
+        <div id="bld-notes" class="hint" style="margin-top:6px"></div>
       </section>
 
     </main>

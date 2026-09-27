@@ -56,6 +56,14 @@ class ModelRegistry:
             raise ModelUnavailableError(f"model index not found: {self.index_path}")
         return json.loads(self.index_path.read_text(encoding="utf-8"))
 
+    def latest_version(self, name: str) -> str:
+        """Highest installed semantic version of `name` in INDEX.json."""
+        versions = list(self._index().get("models", {}).get(name, {}))
+        if not versions:
+            raise ModelUnavailableError(f"model {name} not in {self.index_path}")
+        key = lambda v: tuple(int(x) if x.isdigit() else 0 for x in v.split("."))  # noqa: E731
+        return max(versions, key=key)
+
     def resolve(self, name: str, version: str, *, verify_hash: bool = True) -> ModelCard:
         if name == "stub":
             return ModelCard("stub", "0", "brightness-stub (deterministic test model)", None, None, None, "n/a", "relative_brightness", "internal")

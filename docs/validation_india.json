@@ -1,0 +1,2198 @@
+{
+ "ran_at": "2026-09-27T07:15:09",
+ "fine_tuned_model_installed": true,
+ "items": {
+  "india_namchi": {
+   "item": {
+    "id": "india_namchi",
+    "label": "Namchi, South Sikkim (hill town) \u00b7 Maxar WorldView 2022-03-14 \u00b7 0.5 m \u00b7 Mode B",
+    "file": "india/namchi_rgb_0.5m.tif",
+    "mode": "B",
+    "country": "IN",
+    "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 1040010073381800; Dense hill town on steep slopes; district HQ of Namchi (South Sikkim).",
+    "reference_points": "india/namchi_icesat2.csv",
+    "reference_points_vertical_crs": "ellipsoidal"
+   },
+   "runs": {
+    "zero_shot": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "OBJECT_SCALE_DEM_FIT"
+     ],
+     "object_scale_source": "tiled_dem_band_fusion (unvalidated)",
+     "stages_ms": {
+      "preprocessing_ms": 602.9,
+      "model_forward_ms": 733.0,
+      "tiled_inference_ms": 21813.1,
+      "inference_ms": 22733.0,
+      "calibration_ms": 21166.1,
+      "total_ms": 45070.7
+     },
+     "tile_model": "da-v2-small-baseline",
+     "points": {
+      "n_checkpoints": 118,
+      "n_in_grid": 21,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 21,
+        "ME": 0.5504703002207818,
+        "RMSE": 8.128869761174725,
+        "MAE": 5.711524468132818,
+        "median": -0.18681027787079074,
+        "NMAD": 4.7844323176211905,
+        "LE90": 13.506952586795023,
+        "LE95": 17.731702428414792,
+        "pearson_r": 0.9954177371129471,
+        "spearman_rho": 0.9857142857142858
+       },
+       "input_dem_vs_ground": {
+        "n": 21,
+        "ME": 1.801223067147865,
+        "RMSE": 7.989387455789991,
+        "MAE": 5.738783774321162,
+        "median": 1.0480975387597482,
+        "NMAD": 5.587241546459972,
+        "LE90": 14.465326610232523,
+        "LE95": 18.017286378252493,
+        "pearson_r": 0.9957372107552251,
+        "spearman_rho": 0.9857142857142858
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 21,
+        "ME": -11.622301595052082,
+        "RMSE": 13.056205520884198,
+        "MAE": 11.622301595052082,
+        "median": -11.050217773437499,
+        "NMAD": 5.659422997265623,
+        "LE90": 21.326748046875,
+        "LE95": 21.70645751953125,
+        "pearson_r": -0.23561512809503515,
+        "spearman_rho": -0.26103896103896107
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 21,
+        "ME": -8.753408327011336,
+        "RMSE": 12.228548702606073,
+        "MAE": 10.438553029005963,
+        "median": -8.185471312679738,
+        "NMAD": 7.710146655108868,
+        "LE90": 20.75169369114974,
+        "LE95": 21.2843458678326,
+        "pearson_r": 0.9950107164837472,
+        "spearman_rho": 0.9883116883116884
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 21,
+        "ME": -11.952300742375925,
+        "RMSE": 14.4693073595742,
+        "MAE": 12.722076252671373,
+        "median": -12.162003374372034,
+        "NMAD": 6.896227732650901,
+        "LE90": 22.242433437243562,
+        "LE95": 22.925844891270117,
+        "pearson_r": 0.9954197027712869,
+        "spearman_rho": 0.9883116883116884
+       }
+      },
+      "strata": {
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 20,
+         "ME": 0.511132761536021,
+         "RMSE": 8.324244215772481,
+         "MAE": 5.930239637843658,
+         "median": -0.5086372997377566,
+         "NMAD": 4.82545593152611,
+         "LE90": 13.929427570957007,
+         "LE95": 17.885349301687928,
+         "pearson_r": 0.9948459032380061,
+         "spearman_rho": 0.9834586466165413
+        },
+        "input_dem_vs_ground": {
+         "n": 20,
+         "ME": 1.838879343567271,
+         "RMSE": 8.18333074561535,
+         "MAE": 5.973318086099232,
+         "median": 0.9096687750371757,
+         "NMAD": 5.520142271227904,
+         "LE90": 14.820522587034525,
+         "LE95": 18.023704202244982,
+         "pearson_r": 0.9952101831586431,
+         "spearman_rho": 0.9834586466165413
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 20,
+         "ME": -12.048097412109374,
+         "RMSE": 13.3605855510326,
+         "MAE": 12.048097412109374,
+         "median": -11.204608886718749,
+         "NMAD": 5.503257365771483,
+         "LE90": 21.364718994140624,
+         "LE95": 21.74534191894531,
+         "pearson_r": -0.32488203128706666,
+         "spearman_rho": -0.3984962406015037
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/namchi_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "tiled_dem_band_fusion (unvalidated)"
+      },
+      "elapsed_ms": 133.6,
+      "ran_at": "2026-09-27T07:15:56"
+     }
+    },
+    "fine_tuned": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "METRIC_NDSM_MODEL"
+     ],
+     "object_scale_source": "fine-tuned metric nDSM model",
+     "stages_ms": {
+      "preprocessing_ms": 1088.1,
+      "model_forward_ms": 800.8,
+      "tiled_inference_ms": 26723.1,
+      "inference_ms": 27730.2,
+      "calibration_ms": 16212.4,
+      "total_ms": 45031.5
+     },
+     "tile_model": "da-v2-small-ndsm",
+     "points": {
+      "n_checkpoints": 118,
+      "n_in_grid": 21,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 21,
+        "ME": -5.14159571075392,
+        "RMSE": 8.852453873539982,
+        "MAE": 5.9313294609505,
+        "median": -3.7154046894197563,
+        "NMAD": 3.7699314146823366,
+        "LE90": 14.995094570056153,
+        "LE95": 16.426389765927752,
+        "pearson_r": 0.9964631267056604,
+        "spearman_rho": 0.9805194805194805
+       },
+       "input_dem_vs_ground": {
+        "n": 21,
+        "ME": 1.801223067147865,
+        "RMSE": 7.989387455789991,
+        "MAE": 5.738783774321162,
+        "median": 1.0480975387597482,
+        "NMAD": 5.587241546459972,
+        "LE90": 14.465326610232523,
+        "LE95": 18.017286378252493,
+        "pearson_r": 0.9957372107552251,
+        "spearman_rho": 0.9857142857142858
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 21,
+        "ME": -2.8932343284970248,
+        "RMSE": 8.746029967242578,
+        "MAE": 7.094582682291666,
+        "median": -2.8744482421874995,
+        "NMAD": 8.692949284277343,
+        "LE90": 14.203544921874999,
+        "LE95": 15.998021484375002,
+        "pearson_r": -0.1451166521493632,
+        "spearman_rho": -0.14415584415584418
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 21,
+        "ME": -7.051111312502404,
+        "RMSE": 11.438749203641967,
+        "MAE": 9.608494950013839,
+        "median": -8.591550023964373,
+        "NMAD": 9.004549336726358,
+        "LE90": 16.72707210911858,
+        "LE95": 20.60585953970758,
+        "pearson_r": 0.9943805662840409,
+        "spearman_rho": 0.9883116883116884
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 21,
+        "ME": -11.952300742375925,
+        "RMSE": 14.4693073595742,
+        "MAE": 12.722076252671373,
+        "median": -12.162003374372034,
+        "NMAD": 6.896227732650901,
+        "LE90": 22.242433437243562,
+        "LE95": 22.925844891270117,
+        "pearson_r": 0.9954197027712869,
+        "spearman_rho": 0.9883116883116884
+       }
+      },
+      "strata": {
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 20,
+         "ME": -4.577356007995229,
+         "RMSE": 8.29414989768101,
+         "MAE": 5.406576445701637,
+         "median": -3.666396008862307,
+         "NMAD": 3.7386327974066385,
+         "LE90": 9.150677653515059,
+         "LE95": 15.69329888702848,
+         "pearson_r": 0.9964060675845097,
+         "spearman_rho": 0.9774436090225563
+        },
+        "input_dem_vs_ground": {
+         "n": 20,
+         "ME": 1.838879343567271,
+         "RMSE": 8.18333074561535,
+         "MAE": 5.973318086099232,
+         "median": 0.9096687750371757,
+         "NMAD": 5.520142271227904,
+         "LE90": 14.820522587034525,
+         "LE95": 18.023704202244982,
+         "pearson_r": 0.9952101831586431,
+         "spearman_rho": 0.9834586466165413
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 20,
+         "ME": -3.837797119140626,
+         "RMSE": 8.217107619264473,
+         "MAE": 6.6494107421875,
+         "median": -3.0965727539062495,
+         "NMAD": 7.099799664111327,
+         "LE90": 13.405857519531251,
+         "LE95": 14.303609619140625,
+         "pearson_r": 0.006498012548681278,
+         "spearman_rho": -0.03909774436090225
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/namchi_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "fine-tuned metric nDSM model"
+      },
+      "elapsed_ms": 30.4,
+      "ran_at": "2026-09-27T07:16:42"
+     }
+    }
+   }
+  },
+  "india_chungthang": {
+   "item": {
+    "id": "india_chungthang",
+    "label": "Chungthang, North Sikkim (valley town, forest) \u00b7 Maxar WorldView 2022-03-07 \u00b7 0.5 m \u00b7 Mode B",
+    "file": "india/chungthang_rgb_0.5m.tif",
+    "mode": "B",
+    "country": "IN",
+    "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 10300100CE8D0400; Steep forested valley and town at the Lachen-Lachung confluence; Teesta-III dam area hit by the Oct-2023 GLOF.",
+    "reference_points": "india/chungthang_icesat2.csv",
+    "reference_points_vertical_crs": "ellipsoidal"
+   },
+   "runs": {
+    "zero_shot": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "OBJECT_SCALE_DEM_FIT"
+     ],
+     "object_scale_source": "tiled_dem_band_fusion (unvalidated)",
+     "stages_ms": {
+      "preprocessing_ms": 458.5,
+      "model_forward_ms": 838.5,
+      "tiled_inference_ms": 31933.6,
+      "inference_ms": 33031.0,
+      "calibration_ms": 14927.0,
+      "total_ms": 48417.1
+     },
+     "tile_model": "da-v2-small-baseline",
+     "points": {
+      "n_checkpoints": 245,
+      "n_in_grid": 115,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 115,
+        "ME": -1.0713552223839997,
+        "RMSE": 7.497694419305524,
+        "MAE": 5.570204561808143,
+        "median": -2.1195708723364532,
+        "NMAD": 4.945624658428491,
+        "LE90": 11.952094790403006,
+        "LE95": 16.255966201418566,
+        "pearson_r": 0.9720696936425579,
+        "spearman_rho": 0.8777874220784346
+       },
+       "input_dem_vs_ground": {
+        "n": 115,
+        "ME": 1.1849770423918156,
+        "RMSE": 7.563136685349088,
+        "MAE": 4.870308602647838,
+        "median": -0.5317976270280269,
+        "NMAD": 3.3962889977520545,
+        "LE90": 14.396999846603974,
+        "LE95": 17.595476675567806,
+        "pearson_r": 0.9714421527669855,
+        "spearman_rho": 0.8723743391462165
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 115,
+        "ME": -5.8705789954144025,
+        "RMSE": 9.181615759246885,
+        "MAE": 7.146788786514945,
+        "median": -5.407486328125,
+        "NMAD": 6.205111011914061,
+        "LE90": 14.021717578125006,
+        "LE95": 16.04685537109375,
+        "pearson_r": 0.06231763369548184,
+        "spearman_rho": 0.06453089787181787
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 115,
+        "ME": -4.529834268749497,
+        "RMSE": 11.367963839677966,
+        "MAE": 9.556177099147115,
+        "median": -7.386945854367241,
+        "NMAD": 6.12863154299985,
+        "LE90": 17.27847644196759,
+        "LE95": 21.029200700336492,
+        "pearson_r": 0.9526323748372744,
+        "spearman_rho": 0.8369700090168756
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 115,
+        "ME": -8.549979479347316,
+        "RMSE": 13.065870377279138,
+        "MAE": 11.491285400272828,
+        "median": -9.955169097298949,
+        "NMAD": 6.764274039130462,
+        "LE90": 19.503310350369578,
+        "LE95": 22.94728833379622,
+        "pearson_r": 0.9598465790481654,
+        "spearman_rho": 0.8501617612246508
+       }
+      },
+      "strata": {
+       "open_canopy_lt2m": {
+        "terrain_vs_ground": {
+         "n": 10,
+         "ME": -1.4100563773478143,
+         "RMSE": 9.456774631248205,
+         "MAE": 7.338721936369097,
+         "median": 0.13933835410477968,
+         "NMAD": 8.479325490332448,
+         "LE90": 15.403085116365785,
+         "LE95": 17.430578706716513,
+         "pearson_r": 0.8978086550157967,
+         "spearman_rho": 0.5272727272727272
+        },
+        "input_dem_vs_ground": {
+         "n": 10,
+         "ME": 0.04958717733968569,
+         "RMSE": 8.839160474072834,
+         "MAE": 7.302943127775348,
+         "median": 0.6217907466829047,
+         "NMAD": 10.59847064929917,
+         "LE90": 14.15836655455007,
+         "LE95": 15.092924355800902,
+         "pearson_r": 0.9139670962234492,
+         "spearman_rho": 0.5515151515151515
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 10,
+         "ME": 2.33560068359375,
+         "RMSE": 4.599063472151356,
+         "MAE": 2.8811534179687497,
+         "median": 0.6299584960937497,
+         "NMAD": 1.8181913603027335,
+         "LE90": 8.18904111328125,
+         "LE95": 9.623616503906247,
+         "pearson_r": 0.016421003644246604,
+         "spearman_rho": -0.1365577483997838
+        }
+       },
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 89,
+         "ME": -1.349172813500325,
+         "RMSE": 7.0958034595005195,
+         "MAE": 5.2107450493700815,
+         "median": -2.1195708723364532,
+         "NMAD": 4.327196654426261,
+         "LE90": 9.885233914037418,
+         "LE95": 14.028461277419819,
+         "pearson_r": 0.9783495250616714,
+         "spearman_rho": 0.8675008512087167
+        },
+        "input_dem_vs_ground": {
+         "n": 89,
+         "ME": 1.1869010212082425,
+         "RMSE": 7.11838198385306,
+         "MAE": 4.313096062650598,
+         "median": -0.5228004390869501,
+         "NMAD": 2.6589682110562305,
+         "LE90": 11.990442788391698,
+         "LE95": 15.741198052092333,
+         "pearson_r": 0.9777509167969243,
+         "spearman_rho": 0.8460163432073546
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 89,
+         "ME": -7.602348698648175,
+         "RMSE": 10.262374158955906,
+         "MAE": 8.518066472085675,
+         "median": -8.279161132812497,
+         "NMAD": 5.830949971875005,
+         "LE90": 14.852070312500002,
+         "LE95": 16.44909951171875,
+         "pearson_r": -0.10855369345459849,
+         "spearman_rho": -0.2084154540529272
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/chungthang_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "tiled_dem_band_fusion (unvalidated)"
+      },
+      "elapsed_ms": 54.8,
+      "ran_at": "2026-09-27T07:17:31"
+     }
+    },
+    "fine_tuned": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "METRIC_NDSM_MODEL"
+     ],
+     "object_scale_source": "fine-tuned metric nDSM model",
+     "stages_ms": {
+      "preprocessing_ms": 461.2,
+      "model_forward_ms": 571.6,
+      "tiled_inference_ms": 23769.6,
+      "inference_ms": 24490.9,
+      "calibration_ms": 13504.3,
+      "total_ms": 38456.8
+     },
+     "tile_model": "da-v2-small-ndsm",
+     "points": {
+      "n_checkpoints": 245,
+      "n_in_grid": 115,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 115,
+        "ME": -2.6999180832875322,
+        "RMSE": 8.10874203785549,
+        "MAE": 6.373183413120875,
+        "median": -3.2637359113989532,
+        "NMAD": 4.883044657931099,
+        "LE90": 14.022774187929521,
+        "LE95": 17.488278803628713,
+        "pearson_r": 0.9722870927665449,
+        "spearman_rho": 0.8888739840606014
+       },
+       "input_dem_vs_ground": {
+        "n": 115,
+        "ME": 1.1849770423918156,
+        "RMSE": 7.563136685349088,
+        "MAE": 4.870308602647838,
+        "median": -0.5317976270280269,
+        "NMAD": 3.3962889977520545,
+        "LE90": 14.396999846603974,
+        "LE95": 17.595476675567806,
+        "pearson_r": 0.9714421527669855,
+        "spearman_rho": 0.8723743391462165
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 115,
+        "ME": -2.706104216202446,
+        "RMSE": 8.011791582373062,
+        "MAE": 5.756224155061141,
+        "median": -2.5358022460937355,
+        "NMAD": 6.026915956933615,
+        "LE90": 10.836336132812502,
+        "LE95": 15.014086914062496,
+        "pearson_r": 0.1207057466944363,
+        "spearman_rho": 0.13753810068594585
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 115,
+        "ME": -3.588496739028021,
+        "RMSE": 10.919002732297429,
+        "MAE": 8.694633030121008,
+        "median": -5.801579714164973,
+        "NMAD": 6.710788234856324,
+        "LE90": 17.269757680279735,
+        "LE95": 19.336882446516256,
+        "pearson_r": 0.9536158782573871,
+        "spearman_rho": 0.8284305215813148
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 115,
+        "ME": -8.549979479347316,
+        "RMSE": 13.065870377279138,
+        "MAE": 11.491285400272828,
+        "median": -9.955169097298949,
+        "NMAD": 6.764274039130462,
+        "LE90": 19.503310350369578,
+        "LE95": 22.94728833379622,
+        "pearson_r": 0.9598465790481654,
+        "spearman_rho": 0.8501617612246508
+       }
+      },
+      "strata": {
+       "open_canopy_lt2m": {
+        "terrain_vs_ground": {
+         "n": 10,
+         "ME": -1.9737160453165643,
+         "RMSE": 9.538608672860786,
+         "MAE": 8.050440686369097,
+         "median": 0.05031857871415468,
+         "NMAD": 10.394940322814326,
+         "LE90": 13.178124551675863,
+         "LE95": 15.3090041860903,
+         "pearson_r": 0.912006529538278,
+         "spearman_rho": 0.5515151515151515
+        },
+        "input_dem_vs_ground": {
+         "n": 10,
+         "ME": 0.04958717733968569,
+         "RMSE": 8.839160474072834,
+         "MAE": 7.302943127775348,
+         "median": 0.6217907466829047,
+         "NMAD": 10.59847064929917,
+         "LE90": 14.15836655455007,
+         "LE95": 15.092924355800902,
+         "pearson_r": 0.9139670962234492,
+         "spearman_rho": 0.5515151515151515
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 10,
+         "ME": 3.328035986328125,
+         "RMSE": 5.129356080734427,
+         "MAE": 3.589743994140625,
+         "median": 1.6571655273437493,
+         "NMAD": 3.313265325439452,
+         "LE90": 7.427369287109373,
+         "LE95": 9.570308178710931,
+         "pearson_r": 0.3753514250966078,
+         "spearman_rho": 0.2253202848596432
+        }
+       },
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 89,
+         "ME": -2.8664855384388783,
+         "RMSE": 7.768338423860068,
+         "MAE": 5.919429482860551,
+         "median": -3.2637359113989532,
+         "NMAD": 3.7091353577429205,
+         "LE90": 13.438318034210674,
+         "LE95": 17.931152954205977,
+         "pearson_r": 0.9786213446132102,
+         "spearman_rho": 0.8733741913517197
+        },
+        "input_dem_vs_ground": {
+         "n": 89,
+         "ME": 1.1869010212082425,
+         "RMSE": 7.11838198385306,
+         "MAE": 4.313096062650598,
+         "median": -0.5228004390869501,
+         "NMAD": 2.6589682110562305,
+         "LE90": 11.990442788391698,
+         "LE95": 15.741198052092333,
+         "pearson_r": 0.9777509167969243,
+         "spearman_rho": 0.8460163432073546
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 89,
+         "ME": -4.225840897120786,
+         "RMSE": 8.667727992802869,
+         "MAE": 6.238360592959972,
+         "median": -3.936960937500002,
+         "NMAD": 5.4542103082031215,
+         "LE90": 12.07873828125,
+         "LE95": 16.372508984375,
+         "pearson_r": -0.056434743243285714,
+         "spearman_rho": -0.0463738508682329
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/chungthang_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "fine-tuned metric nDSM model"
+      },
+      "elapsed_ms": 48.0,
+      "ran_at": "2026-09-27T07:18:10"
+     }
+    }
+   }
+  },
+  "india_teesta_east": {
+   "item": {
+    "id": "india_teesta_east",
+    "label": "Teesta valley east, South Sikkim (hill villages) \u00b7 Maxar WorldView 2022-03-14 \u00b7 0.5 m \u00b7 Mode B",
+    "file": "india/teesta_east_rgb_0.5m.tif",
+    "mode": "B",
+    "country": "IN",
+    "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 1040010073381800; Terraced slopes and scattered villages east of Namchi.",
+    "reference_points": "india/teesta_east_icesat2.csv",
+    "reference_points_vertical_crs": "ellipsoidal"
+   },
+   "runs": {
+    "zero_shot": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "OBJECT_SCALE_DEM_FIT"
+     ],
+     "object_scale_source": "tiled_dem_band_fusion (unvalidated)",
+     "stages_ms": {
+      "preprocessing_ms": 483.1,
+      "model_forward_ms": 564.9,
+      "tiled_inference_ms": 42703.8,
+      "inference_ms": 43411.2,
+      "calibration_ms": 37407.5,
+      "total_ms": 81302.2
+     },
+     "tile_model": "da-v2-small-baseline",
+     "points": {
+      "n_checkpoints": 515,
+      "n_in_grid": 160,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 160,
+        "ME": 0.34910957357051586,
+        "RMSE": 3.2792212631769546,
+        "MAE": 2.330571764262885,
+        "median": 0.45359319363944905,
+        "NMAD": 2.2407194305707714,
+        "LE90": 5.069652337619914,
+        "LE95": 5.969391644805161,
+        "pearson_r": 0.9955333501949694,
+        "spearman_rho": 0.9816418610101957
+       },
+       "input_dem_vs_ground": {
+        "n": 160,
+        "ME": 1.3575400545275471,
+        "RMSE": 3.276000091690829,
+        "MAE": 2.27821473642654,
+        "median": 0.9701746223375949,
+        "NMAD": 2.3019936181756053,
+        "LE90": 5.310577028853959,
+        "LE95": 6.848064694662136,
+        "pearson_r": 0.9962667709087235,
+        "spearman_rho": 0.9893120825032229
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 160,
+        "ME": -9.384879766845703,
+        "RMSE": 12.01629185094365,
+        "MAE": 9.51770556640625,
+        "median": -8.245126220703124,
+        "NMAD": 8.246746770117188,
+        "LE90": 20.9867,
+        "LE95": 23.48744565429687,
+        "pearson_r": 0.1946510266182741,
+        "spearman_rho": 0.20730033722966304
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 160,
+        "ME": -7.00688628214237,
+        "RMSE": 10.364992767594003,
+        "MAE": 7.905882460607219,
+        "median": -5.42373978518242,
+        "NMAD": 6.830633412420347,
+        "LE90": 17.97028641289557,
+        "LE95": 23.08331059027184,
+        "pearson_r": 0.9749239921368109,
+        "spearman_rho": 0.9080598851517637
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 160,
+        "ME": -9.91473494547245,
+        "RMSE": 12.376332735557787,
+        "MAE": 10.019793311044147,
+        "median": -9.162214176135308,
+        "NMAD": 7.702831107687138,
+        "LE90": 20.375254099946847,
+        "LE95": 23.996087457913397,
+        "pearson_r": 0.9767548200025978,
+        "spearman_rho": 0.9125981483651706
+       }
+      },
+      "strata": {
+       "open_canopy_lt2m": {
+        "terrain_vs_ground": {
+         "n": 13,
+         "ME": 0.8436718380377827,
+         "RMSE": 2.1581343339307173,
+         "MAE": 1.6925200061132972,
+         "median": 0.956670753536855,
+         "NMAD": 1.6396693580032977,
+         "LE90": 3.3424021029011786,
+         "LE95": 3.6890480398414627,
+         "pearson_r": 0.9928620665570645,
+         "spearman_rho": 0.967032967032967
+        },
+        "input_dem_vs_ground": {
+         "n": 13,
+         "ME": 1.0500927364752828,
+         "RMSE": 1.7355347998430997,
+         "MAE": 1.4451375656503143,
+         "median": 0.93942477388714,
+         "NMAD": 1.9090962626582269,
+         "LE90": 2.903782599669194,
+         "LE95": 3.015684957385292,
+         "pearson_r": 0.9958101640088589,
+         "spearman_rho": 0.9725274725274725
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 13,
+         "ME": -0.28217788461538473,
+         "RMSE": 1.3522766256975056,
+         "MAE": 1.0855042067307692,
+         "median": -0.5271894531250001,
+         "NMAD": 0.5275247167968748,
+         "LE90": 2.0332414062500006,
+         "LE95": 2.5090087890624977,
+         "pearson_r": 0.22551017949543972,
+         "spearman_rho": 0.10585984987934428
+        }
+       },
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 119,
+         "ME": 0.44903365196868616,
+         "RMSE": 3.6005111092301902,
+         "MAE": 2.5561750149857065,
+         "median": 0.45832811270588536,
+         "NMAD": 2.33668780229645,
+         "LE90": 5.53317700152311,
+         "LE95": 7.5793751950247,
+         "pearson_r": 0.9956303018136916,
+         "spearman_rho": 0.9832431277595786
+        },
+        "input_dem_vs_ground": {
+         "n": 119,
+         "ME": 1.6353309003602303,
+         "RMSE": 3.6688179740629123,
+         "MAE": 2.5808461140934353,
+         "median": 1.0277313100798438,
+         "NMAD": 2.537058646886363,
+         "LE90": 5.867775193829039,
+         "LE95": 8.281473004104713,
+         "pearson_r": 0.9963056588905224,
+         "spearman_rho": 0.9889332003988036
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 119,
+         "ME": -12.11872326762736,
+         "RMSE": 13.868433106741003,
+         "MAE": 12.11872326762736,
+         "median": -10.8332861328125,
+         "NMAD": 6.662548854199216,
+         "LE90": 22.42999140625,
+         "LE95": 23.71979125976562,
+         "pearson_r": 0.10433055996581703,
+         "spearman_rho": 0.113610549864284
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/teesta_east_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "tiled_dem_band_fusion (unvalidated)"
+      },
+      "elapsed_ms": 152.2,
+      "ran_at": "2026-09-27T07:19:32"
+     }
+    },
+    "fine_tuned": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "METRIC_NDSM_MODEL"
+     ],
+     "object_scale_source": "fine-tuned metric nDSM model",
+     "stages_ms": {
+      "preprocessing_ms": 954.4,
+      "model_forward_ms": 709.1,
+      "tiled_inference_ms": 38101.7,
+      "inference_ms": 38980.8,
+      "calibration_ms": 20393.9,
+      "total_ms": 60329.7
+     },
+     "tile_model": "da-v2-small-ndsm",
+     "points": {
+      "n_checkpoints": 515,
+      "n_in_grid": 160,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 160,
+        "ME": -3.1772919462048748,
+        "RMSE": 5.338259632705879,
+        "MAE": 3.5558936413203326,
+        "median": -1.8652141796536625,
+        "NMAD": 2.857768134281657,
+        "LE90": 9.39252873344808,
+        "LE95": 12.46853100665507,
+        "pearson_r": 0.9948011458474,
+        "spearman_rho": 0.9812639165592405
+       },
+       "input_dem_vs_ground": {
+        "n": 160,
+        "ME": 1.3575400545275471,
+        "RMSE": 3.276000091690829,
+        "MAE": 2.27821473642654,
+        "median": 0.9701746223375949,
+        "NMAD": 2.3019936181756053,
+        "LE90": 5.310577028853959,
+        "LE95": 6.848064694662136,
+        "pearson_r": 0.9962667709087235,
+        "spearman_rho": 0.9893120825032229
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 160,
+        "ME": -4.517394964599609,
+        "RMSE": 9.499006226293643,
+        "MAE": 6.783576287841797,
+        "median": -2.8228645019531253,
+        "NMAD": 5.676580038281251,
+        "LE90": 16.1568099609375,
+        "LE95": 22.742909765624997,
+        "pearson_r": 0.34352414677210047,
+        "spearman_rho": 0.41606311860088807
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 160,
+        "ME": -6.814392934974405,
+        "RMSE": 10.15152753857253,
+        "MAE": 7.563539966397771,
+        "median": -5.211912663410885,
+        "NMAD": 6.088779476091998,
+        "LE90": 16.901643456082883,
+        "LE95": 23.21929863955413,
+        "pearson_r": 0.9756073068698015,
+        "spearman_rho": 0.9116430329309738
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 160,
+        "ME": -9.91473494547245,
+        "RMSE": 12.376332735557787,
+        "MAE": 10.019793311044147,
+        "median": -9.162214176135308,
+        "NMAD": 7.702831107687138,
+        "LE90": 20.375254099946847,
+        "LE95": 23.996087457913397,
+        "pearson_r": 0.9767548200025978,
+        "spearman_rho": 0.9125981483651706
+       }
+      },
+      "strata": {
+       "open_canopy_lt2m": {
+        "terrain_vs_ground": {
+         "n": 13,
+         "ME": -0.2203869059526019,
+         "RMSE": 1.221210508128945,
+         "MAE": 1.0226133335496133,
+         "median": -0.27491182995549934,
+         "NMAD": 1.1130773445628486,
+         "LE90": 1.9263397560373055,
+         "LE95": 2.149086850982621,
+         "pearson_r": 0.9965628966834043,
+         "spearman_rho": 0.989010989010989
+        },
+        "input_dem_vs_ground": {
+         "n": 13,
+         "ME": 1.0500927364752828,
+         "RMSE": 1.7355347998430997,
+         "MAE": 1.4451375656503143,
+         "median": 0.93942477388714,
+         "NMAD": 1.9090962626582269,
+         "LE90": 2.903782599669194,
+         "LE95": 3.015684957385292,
+         "pearson_r": 0.9958101640088589,
+         "spearman_rho": 0.9725274725274725
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 13,
+         "ME": -0.3207121018629809,
+         "RMSE": 1.9362809671684642,
+         "MAE": 1.5389453500600963,
+         "median": -0.8558623046875001,
+         "NMAD": 0.5664806109374999,
+         "LE90": 2.734450390625001,
+         "LE95": 3.760319042968747,
+         "pearson_r": -0.3429372029438127,
+         "spearman_rho": -0.027510342394036474
+        }
+       },
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 119,
+         "ME": -3.9275932683306833,
+         "RMSE": 6.048646822323657,
+         "MAE": 4.227983303698427,
+         "median": -2.428045337763706,
+         "NMAD": 3.3697011736634153,
+         "LE90": 10.685870758734518,
+         "LE95": 13.594128711215921,
+         "pearson_r": 0.9950365702326838,
+         "spearman_rho": 0.9823600626691358
+        },
+        "input_dem_vs_ground": {
+         "n": 119,
+         "ME": 1.6353309003602303,
+         "RMSE": 3.6688179740629123,
+         "MAE": 2.5808461140934353,
+         "median": 1.0277313100798438,
+         "NMAD": 2.537058646886363,
+         "LE90": 5.867775193829039,
+         "LE95": 8.281473004104713,
+         "pearson_r": 0.9963056588905224,
+         "spearman_rho": 0.9889332003988036
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 119,
+         "ME": -5.9108338735884995,
+         "RMSE": 10.801013037318361,
+         "MAE": 8.136512543493959,
+         "median": -4.54448583984375,
+         "NMAD": 8.26554784658203,
+         "LE90": 19.367852734375003,
+         "LE95": 23.109150683593743,
+         "pearson_r": 0.11795006016344692,
+         "spearman_rho": 0.11125275069895203
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/teesta_east_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "fine-tuned metric nDSM model"
+      },
+      "elapsed_ms": 50.8,
+      "ran_at": "2026-09-27T07:20:34"
+     }
+    }
+   }
+  },
+  "india_teesta_west": {
+   "item": {
+    "id": "india_teesta_west",
+    "label": "Teesta valley west, South Sikkim (rural slopes) \u00b7 Maxar WorldView 2022-03-14 \u00b7 0.5 m \u00b7 Mode B",
+    "file": "india/teesta_west_rgb_0.5m.tif",
+    "mode": "B",
+    "country": "IN",
+    "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 1040010073381800; Rural terraced hillsides and forest patches west of Namchi.",
+    "reference_points": "india/teesta_west_icesat2.csv",
+    "reference_points_vertical_crs": "ellipsoidal"
+   },
+   "runs": {
+    "zero_shot": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "OBJECT_SCALE_DEM_FIT"
+     ],
+     "object_scale_source": "tiled_dem_band_fusion (unvalidated)",
+     "stages_ms": {
+      "preprocessing_ms": 567.1,
+      "model_forward_ms": 610.7,
+      "tiled_inference_ms": 45776.9,
+      "inference_ms": 46506.7,
+      "calibration_ms": 37216.6,
+      "total_ms": 84291.1
+     },
+     "tile_model": "da-v2-small-baseline",
+     "points": {
+      "n_checkpoints": 337,
+      "n_in_grid": 137,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 137,
+        "ME": -0.0036149232150802847,
+        "RMSE": 4.205619914890641,
+        "MAE": 3.3339207599888425,
+        "median": 0.4941551864669691,
+        "NMAD": 4.112440232974673,
+        "LE90": 6.929906098020959,
+        "LE95": 8.35413274363327,
+        "pearson_r": 0.9987774939140457,
+        "spearman_rho": 0.9982778576362312
+       },
+       "input_dem_vs_ground": {
+        "n": 137,
+        "ME": 1.664692415972876,
+        "RMSE": 3.8341278812509123,
+        "MAE": 3.075465618635872,
+        "median": 1.8269111780468847,
+        "NMAD": 3.35169980984252,
+        "LE90": 6.526575917587343,
+        "LE95": 7.639932740744234,
+        "pearson_r": 0.9991282780263574,
+        "spearman_rho": 0.9986885582541489
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 137,
+        "ME": -8.124895764427464,
+        "RMSE": 10.453746320377983,
+        "MAE": 8.817748574361314,
+        "median": -7.8414941406250005,
+        "NMAD": 6.4910233274414075,
+        "LE90": 16.042909863281253,
+        "LE95": 19.231714843749998,
+        "pearson_r": 0.06645314682040004,
+        "spearman_rho": 0.051418340398933525
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 137,
+        "ME": -5.250860799555181,
+        "RMSE": 8.515000136991153,
+        "MAE": 6.579623992610044,
+        "median": -4.734148338963223,
+        "NMAD": 4.9578891692445355,
+        "LE90": 12.875673510886287,
+        "LE95": 18.69423036300411,
+        "pearson_r": 0.9964829790525844,
+        "spearman_rho": 0.994408871133347
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 137,
+        "ME": -8.993395175268004,
+        "RMSE": 10.89427101466002,
+        "MAE": 9.186165746561405,
+        "median": -8.303355604433136,
+        "NMAD": 5.681504476916976,
+        "LE90": 16.517548959119768,
+        "LE95": 21.243992941227656,
+        "pearson_r": 0.9970073290233722,
+        "spearman_rho": 0.9947448989116433
+       }
+      },
+      "strata": {
+       "open_canopy_lt2m": {
+        "terrain_vs_ground": {
+         "n": 8,
+         "ME": -4.008320750162255,
+         "RMSE": 5.71230722398791,
+         "MAE": 4.768334311190728,
+         "median": -4.952879211578761,
+         "NMAD": 4.994581526438893,
+         "LE90": 8.243211398483686,
+         "LE95": 8.380528473712262,
+         "pearson_r": 0.9995644367280274,
+         "spearman_rho": 0.880952380952381
+        },
+        "input_dem_vs_ground": {
+         "n": 8,
+         "ME": -1.3781175030919428,
+         "RMSE": 3.031972252861068,
+         "MAE": 2.75431148404229,
+         "median": -2.203733703766261,
+         "NMAD": 2.68306974712943,
+         "LE90": 4.034904513718061,
+         "LE95": 4.173225617266951,
+         "pearson_r": 0.9997845656361073,
+         "spearman_rho": 0.880952380952381
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 8,
+         "ME": 2.1981182861328126,
+         "RMSE": 3.4230136567575693,
+         "MAE": 2.9870452880859375,
+         "median": 3.1995312499999997,
+         "NMAD": 2.428085076416016,
+         "LE90": 4.795400146484375,
+         "LE95": 4.8686412353515625,
+         "pearson_r": -0.9369194115833467,
+         "spearman_rho": -0.8455943246644705
+        }
+       },
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 110,
+         "ME": 0.6118364524264053,
+         "RMSE": 3.793194978582638,
+         "MAE": 3.009925836939841,
+         "median": 1.006946650334612,
+         "NMAD": 3.2407807447904786,
+         "LE90": 6.262653681087228,
+         "LE95": 8.13288416452251,
+         "pearson_r": 0.9988451087106927,
+         "spearman_rho": 0.9984311250366296
+        },
+        "input_dem_vs_ground": {
+         "n": 110,
+         "ME": 2.174031831510212,
+         "RMSE": 3.8696521373880275,
+         "MAE": 3.0524842940676122,
+         "median": 2.006447245515119,
+         "NMAD": 2.8990822235267295,
+         "LE90": 6.630459569933942,
+         "LE95": 7.798784556252643,
+         "pearson_r": 0.9991196543582725,
+         "spearman_rho": 0.9989270337894192
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 110,
+         "ME": -10.139872128018464,
+         "RMSE": 11.573578569953852,
+         "MAE": 10.37393096147017,
+         "median": -9.170527587890625,
+         "NMAD": 4.644064966406249,
+         "LE90": 16.83868286132813,
+         "LE95": 19.98606977539062,
+         "pearson_r": 0.13962012322781098,
+         "spearman_rho": 0.18456071556259637
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/teesta_west_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "tiled_dem_band_fusion (unvalidated)"
+      },
+      "elapsed_ms": 144.1,
+      "ran_at": "2026-09-27T07:21:59"
+     }
+    },
+    "fine_tuned": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "METRIC_NDSM_MODEL"
+     ],
+     "object_scale_source": "fine-tuned metric nDSM model",
+     "stages_ms": {
+      "preprocessing_ms": 950.6,
+      "model_forward_ms": 713.6,
+      "tiled_inference_ms": 34013.1,
+      "inference_ms": 34919.8,
+      "calibration_ms": 33163.0,
+      "total_ms": 69034.3
+     },
+     "tile_model": "da-v2-small-ndsm",
+     "points": {
+      "n_checkpoints": 337,
+      "n_in_grid": 137,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 137,
+        "ME": -3.0104232389655365,
+        "RMSE": 4.499302112092281,
+        "MAE": 3.5872582845420213,
+        "median": -2.8913488820196562,
+        "NMAD": 3.7221506529405897,
+        "LE90": 7.011278400860966,
+        "LE95": 9.356746488483935,
+        "pearson_r": 0.9991467448581943,
+        "spearman_rho": 0.9986138854145276
+       },
+       "input_dem_vs_ground": {
+        "n": 137,
+        "ME": 1.664692415972876,
+        "RMSE": 3.8341278812509123,
+        "MAE": 3.075465618635872,
+        "median": 1.8269111780468847,
+        "NMAD": 3.35169980984252,
+        "LE90": 6.526575917587343,
+        "LE95": 7.639932740744234,
+        "pearson_r": 0.9991282780263574,
+        "spearman_rho": 0.9986885582541489
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 137,
+        "ME": -3.306963065265739,
+        "RMSE": 8.112108822911202,
+        "MAE": 5.921662469348768,
+        "median": -2.685359374999999,
+        "NMAD": 5.5381364718749975,
+        "LE90": 13.766431640625,
+        "LE95": 18.37631953125,
+        "pearson_r": 0.20202456162949103,
+        "spearman_rho": 0.26037159946042926
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 137,
+        "ME": -4.875577026174715,
+        "RMSE": 8.487742144554423,
+        "MAE": 6.411605630448548,
+        "median": -4.312404620917505,
+        "NMAD": 4.830150149795826,
+        "LE90": 13.35385105839355,
+        "LE95": 18.181930441227724,
+        "pearson_r": 0.9962322965749952,
+        "spearman_rho": 0.9939748352530473
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 137,
+        "ME": -8.993395175268004,
+        "RMSE": 10.89427101466002,
+        "MAE": 9.186165746561405,
+        "median": -8.303355604433136,
+        "NMAD": 5.681504476916976,
+        "LE90": 16.517548959119768,
+        "LE95": 21.243992941227656,
+        "pearson_r": 0.9970073290233722,
+        "spearman_rho": 0.9947448989116433
+       }
+      },
+      "strata": {
+       "open_canopy_lt2m": {
+        "terrain_vs_ground": {
+         "n": 8,
+         "ME": -3.925915659830224,
+         "RMSE": 4.619427634534716,
+         "MAE": 3.94646322707635,
+         "median": -3.882928505085488,
+         "NMAD": 2.768669537408012,
+         "LE90": 6.703663259203472,
+         "LE95": 7.2000137174876375,
+         "pearson_r": 0.99933393311108,
+         "spearman_rho": 0.9761904761904763
+        },
+        "input_dem_vs_ground": {
+         "n": 8,
+         "ME": -1.3781175030919428,
+         "RMSE": 3.031972252861068,
+         "MAE": 2.75431148404229,
+         "median": -2.203733703766261,
+         "NMAD": 2.68306974712943,
+         "LE90": 4.034904513718061,
+         "LE95": 4.173225617266951,
+         "pearson_r": 0.9997845656361073,
+         "spearman_rho": 0.880952380952381
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 8,
+         "ME": 2.2344085693359363,
+         "RMSE": 4.525154257478989,
+         "MAE": 2.5416634521484363,
+         "median": 0.47866699218749986,
+         "NMAD": 0.7285704890624995,
+         "LE90": 7.559848925781246,
+         "LE95": 9.382122216796867,
+         "pearson_r": 0.43525982803856844,
+         "spearman_rho": 0.3000495990744895
+        }
+       },
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 110,
+         "ME": -2.6707613147966063,
+         "RMSE": 4.240853254657221,
+         "MAE": 3.3450309805888083,
+         "median": -2.748671832602099,
+         "NMAD": 3.7071863639131646,
+         "LE90": 6.754082076747705,
+         "LE95": 8.645657227313473,
+         "pearson_r": 0.9990409187578069,
+         "spearman_rho": 0.9986926041971913
+        },
+        "input_dem_vs_ground": {
+         "n": 110,
+         "ME": 2.174031831510212,
+         "RMSE": 3.8696521373880275,
+         "MAE": 3.0524842940676122,
+         "median": 2.006447245515119,
+         "NMAD": 2.8990822235267295,
+         "LE90": 6.630459569933942,
+         "LE95": 7.798784556252643,
+         "pearson_r": 0.9991196543582725,
+         "spearman_rho": 0.9989270337894192
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 110,
+         "ME": -4.7598329545454545,
+         "RMSE": 8.622649247050967,
+         "MAE": 6.376454918323864,
+         "median": -4.0141367187500006,
+         "NMAD": 5.482360162207032,
+         "LE90": 14.423190136718754,
+         "LE95": 19.161374707031246,
+         "pearson_r": 0.09753509666973516,
+         "spearman_rho": 0.18356287897572302
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/teesta_west_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "fine-tuned metric nDSM model"
+      },
+      "elapsed_ms": 119.2,
+      "ran_at": "2026-09-27T07:23:09"
+     }
+    }
+   }
+  },
+  "india_chungthang_west": {
+   "item": {
+    "id": "india_chungthang_west",
+    "label": "Chungthang west, North Sikkim (forested slopes) \u00b7 Maxar WorldView 2022-03-07 \u00b7 0.5 m \u00b7 Mode B",
+    "file": "india/chungthang_west_rgb_0.5m.tif",
+    "mode": "B",
+    "country": "IN",
+    "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 10300100CE8D0400; Steep forested mountainside above the Lachen valley.",
+    "reference_points": "india/chungthang_west_icesat2.csv",
+    "reference_points_vertical_crs": "ellipsoidal"
+   },
+   "runs": {
+    "zero_shot": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "OBJECT_SCALE_DEM_FIT"
+     ],
+     "object_scale_source": "tiled_dem_band_fusion (unvalidated)",
+     "stages_ms": {
+      "preprocessing_ms": 884.2,
+      "model_forward_ms": 615.9,
+      "tiled_inference_ms": 24590.8,
+      "inference_ms": 25367.5,
+      "calibration_ms": 30756.6,
+      "total_ms": 57008.9
+     },
+     "tile_model": "da-v2-small-baseline",
+     "points": {
+      "n_checkpoints": 507,
+      "n_in_grid": 273,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 273,
+        "ME": 5.000837814333091,
+        "RMSE": 12.438823422990053,
+        "MAE": 6.1525933946907,
+        "median": 2.439023265103515,
+        "NMAD": 3.275293688506264,
+        "LE90": 10.93268206375392,
+        "LE95": 26.068883768532174,
+        "pearson_r": 0.9071431285341418,
+        "spearman_rho": 0.96403682191574
+       },
+       "input_dem_vs_ground": {
+        "n": 273,
+        "ME": 5.892873777230871,
+        "RMSE": 12.835152151068039,
+        "MAE": 6.624914843206405,
+        "median": 3.1777808149458906,
+        "NMAD": 3.8804259086448365,
+        "LE90": 12.65823351785712,
+        "LE95": 28.54842478415726,
+        "pearson_r": 0.9061137504223236,
+        "spearman_rho": 0.9620840194584289
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 273,
+        "ME": -12.593232049851192,
+        "RMSE": 15.081403005750756,
+        "MAE": 12.722607017656822,
+        "median": -11.0306611328125,
+        "NMAD": 8.303557569726564,
+        "LE90": 24.321728515625,
+        "LE95": 26.530046093749995,
+        "pearson_r": 0.2198841713880953,
+        "spearman_rho": 0.14880292642749487
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 273,
+        "ME": -5.175683784510761,
+        "RMSE": 15.196236186360377,
+        "MAE": 11.14749633477896,
+        "median": -6.226052632961228,
+        "NMAD": 9.606008654346283,
+        "LE90": 23.792655203166987,
+        "LE95": 28.900221115092215,
+        "pearson_r": 0.8775713946075727,
+        "spearman_rho": 0.8566722028508202
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 273,
+        "ME": -8.144283731926635,
+        "RMSE": 16.193189459886593,
+        "MAE": 12.692304885830431,
+        "median": -9.540130430780891,
+        "NMAD": 9.471941524448027,
+        "LE90": 25.68802892228633,
+        "LE95": 29.520668972136605,
+        "pearson_r": 0.8923128057456827,
+        "spearman_rho": 0.8748832211155096
+       }
+      },
+      "strata": {
+       "open_canopy_lt2m": {
+        "terrain_vs_ground": {
+         "n": 28,
+         "ME": 1.1711623058950198,
+         "RMSE": 3.9741773054693734,
+         "MAE": 2.75241985952314,
+         "median": 1.108390819713236,
+         "NMAD": 2.266735330042793,
+         "LE90": 5.4680447531229,
+         "LE95": 7.239996163350563,
+         "pearson_r": 0.9444580961345869,
+         "spearman_rho": 0.9239189928845101
+        },
+        "input_dem_vs_ground": {
+         "n": 28,
+         "ME": 1.6298981806160018,
+         "RMSE": 3.942430545928724,
+         "MAE": 2.6745613872377834,
+         "median": 1.019769168287894,
+         "NMAD": 2.7101602613409432,
+         "LE90": 5.352635378537616,
+         "LE95": 5.579005932654365,
+         "pearson_r": 0.952964339875585,
+         "spearman_rho": 0.9414340448823207
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 28,
+         "ME": 0.017211565290178758,
+         "RMSE": 1.3923623641668488,
+         "MAE": 1.0707870744977677,
+         "median": -0.5109665527343747,
+         "NMAD": 1.001296134521484,
+         "LE90": 2.0454588867187504,
+         "LE95": 2.4206173095703125,
+         "pearson_r": -0.28460155548615496,
+         "spearman_rho": -0.15979725700937697
+        }
+       },
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 231,
+         "ME": 5.22298621854452,
+         "RMSE": 12.524239544637895,
+         "MAE": 6.328360370200577,
+         "median": 2.7317126786260815,
+         "NMAD": 3.489367296301511,
+         "LE90": 11.56582867011366,
+         "LE95": 26.64466550324869,
+         "pearson_r": 0.9103844811087664,
+         "spearman_rho": 0.9640900329056252
+        },
+        "input_dem_vs_ground": {
+         "n": 231,
+         "ME": 6.186549815592004,
+         "RMSE": 12.930478654366722,
+         "MAE": 6.868941003201778,
+         "median": 3.6212381330140033,
+         "NMAD": 3.9682984843219766,
+         "LE90": 13.447661951862983,
+         "LE95": 28.75507810090494,
+         "pearson_r": 0.910152098102213,
+         "spearman_rho": 0.9624272279444694
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 231,
+         "ME": -14.721783566693725,
+         "RMSE": 16.368151464516306,
+         "MAE": 14.721783566693725,
+         "median": -12.81966650390625,
+         "NMAD": 7.674369783691405,
+         "LE90": 24.86334228515625,
+         "LE95": 27.3074462890625,
+         "pearson_r": 0.19096894844536874,
+         "spearman_rho": 0.08912267289188214
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/chungthang_west_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "tiled_dem_band_fusion (unvalidated)"
+      },
+      "elapsed_ms": 233.4,
+      "ran_at": "2026-09-27T07:24:08"
+     }
+    },
+    "fine_tuned": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "METRIC_NDSM_MODEL"
+     ],
+     "object_scale_source": "fine-tuned metric nDSM model",
+     "stages_ms": {
+      "preprocessing_ms": 1128.4,
+      "model_forward_ms": 971.8,
+      "tiled_inference_ms": 58118.9,
+      "inference_ms": 59359.3,
+      "calibration_ms": 29853.1,
+      "total_ms": 90341.8
+     },
+     "tile_model": "da-v2-small-ndsm",
+     "points": {
+      "n_checkpoints": 507,
+      "n_in_grid": 273,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 273,
+        "ME": -0.44790025586494,
+        "RMSE": 11.265714065733242,
+        "MAE": 5.927200139198854,
+        "median": -0.645209623530036,
+        "NMAD": 3.7573737482574123,
+        "LE90": 14.090306283387966,
+        "LE95": 20.11152483893083,
+        "pearson_r": 0.9196476250468675,
+        "spearman_rho": 0.9319185001344726
+       },
+       "input_dem_vs_ground": {
+        "n": 273,
+        "ME": 5.892873777230871,
+        "RMSE": 12.835152151068039,
+        "MAE": 6.624914843206405,
+        "median": 3.1777808149458906,
+        "NMAD": 3.8804259086448365,
+        "LE90": 12.65823351785712,
+        "LE95": 28.54842478415726,
+        "pearson_r": 0.9061137504223236,
+        "spearman_rho": 0.9620840194584289
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 273,
+        "ME": -4.52646449855483,
+        "RMSE": 9.995808631897559,
+        "MAE": 7.820424956716461,
+        "median": -3.654384765625,
+        "NMAD": 8.783546424023436,
+        "LE90": 16.421564843749998,
+        "LE95": 20.78994374999999,
+        "pearson_r": 0.4137608632536439,
+        "spearman_rho": 0.4125859000362264
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 273,
+        "ME": -3.9632237591845305,
+        "RMSE": 14.927339568430861,
+        "MAE": 10.59826095123285,
+        "median": -5.502577966185527,
+        "NMAD": 9.963205759623156,
+        "LE90": 23.17436414151985,
+        "LE95": 28.750743693992348,
+        "pearson_r": 0.8741451310902025,
+        "spearman_rho": 0.8576813375546737
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 273,
+        "ME": -8.144283731926635,
+        "RMSE": 16.193189459886593,
+        "MAE": 12.692304885830431,
+        "median": -9.540130430780891,
+        "NMAD": 9.471941524448027,
+        "LE90": 25.68802892228633,
+        "LE95": 29.520668972136605,
+        "pearson_r": 0.8923128057456827,
+        "spearman_rho": 0.8748832211155096
+       }
+      },
+      "strata": {
+       "open_canopy_lt2m": {
+        "terrain_vs_ground": {
+         "n": 28,
+         "ME": -0.9882419037868999,
+         "RMSE": 2.6960950786211577,
+         "MAE": 2.044639259002882,
+         "median": -0.530964607780902,
+         "NMAD": 2.760399267056976,
+         "LE90": 3.4252825027341944,
+         "LE95": 4.752536396476237,
+         "pearson_r": 0.9766896638553616,
+         "spearman_rho": 0.9458128078817735
+        },
+        "input_dem_vs_ground": {
+         "n": 28,
+         "ME": 1.6298981806160018,
+         "RMSE": 3.942430545928724,
+         "MAE": 2.6745613872377834,
+         "median": 1.019769168287894,
+         "NMAD": 2.7101602613409432,
+         "LE90": 5.352635378537616,
+         "LE95": 5.579005932654365,
+         "pearson_r": 0.952964339875585,
+         "spearman_rho": 0.9414340448823207
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 28,
+         "ME": 2.2334256417410714,
+         "RMSE": 6.29918997445334,
+         "MAE": 3.178309988839285,
+         "median": 0.030328369140625006,
+         "NMAD": 1.8279777509765625,
+         "LE90": 9.539833593750007,
+         "LE95": 16.670847412109367,
+         "pearson_r": -0.13365145945036846,
+         "spearman_rho": 0.06861693707976686
+        }
+       },
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 231,
+         "ME": -0.7270389353380559,
+         "RMSE": 11.600987844246509,
+         "MAE": 6.31212704049861,
+         "median": -0.811728847456834,
+         "NMAD": 4.244286863782357,
+         "LE90": 14.451332492687243,
+         "LE95": 20.53234453426535,
+         "pearson_r": 0.9162252600109879,
+         "spearman_rho": 0.9262417492552425
+        },
+        "input_dem_vs_ground": {
+         "n": 231,
+         "ME": 6.186549815592004,
+         "RMSE": 12.930478654366722,
+         "MAE": 6.868941003201778,
+         "median": 3.6212381330140033,
+         "NMAD": 3.9682984843219766,
+         "LE90": 13.447661951862983,
+         "LE95": 28.75507810090494,
+         "pearson_r": 0.910152098102213,
+         "spearman_rho": 0.9624272279444694
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 231,
+         "ME": -5.701926140591179,
+         "RMSE": 10.490433786876578,
+         "MAE": 8.534099321902056,
+         "median": -6.0469755859375,
+         "NMAD": 8.832169623046873,
+         "LE90": 16.637811523437502,
+         "LE95": 21.19637231445312,
+         "pearson_r": 0.31160271331564393,
+         "spearman_rho": 0.30212721112427093
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/chungthang_west_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "fine-tuned metric nDSM model"
+      },
+      "elapsed_ms": 113.1,
+      "ran_at": "2026-09-27T07:25:39"
+     }
+    }
+   }
+  },
+  "india_north_sikkim_alpine": {
+   "item": {
+    "id": "india_north_sikkim_alpine",
+    "label": "North Sikkim alpine (barren / glacial) \u00b7 Maxar WorldView 2022-03-07 \u00b7 0.5 m \u00b7 Mode B",
+    "file": "india/north_sikkim_alpine_rgb_0.5m.tif",
+    "mode": "B",
+    "country": "IN",
+    "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 10300100CF621C00; High-altitude barren and glacial terrain in the South Lhonak region (near-nadir image, off-nadir 2 deg).",
+    "reference_points": "india/north_sikkim_alpine_icesat2.csv",
+    "reference_points_vertical_crs": "ellipsoidal"
+   },
+   "runs": {
+    "zero_shot": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "OBJECT_SCALE_DEM_FIT"
+     ],
+     "object_scale_source": "tiled_dem_band_fusion (unvalidated)",
+     "stages_ms": {
+      "preprocessing_ms": 583.5,
+      "model_forward_ms": 1109.8,
+      "tiled_inference_ms": 35595.4,
+      "inference_ms": 36836.2,
+      "calibration_ms": 16228.5,
+      "total_ms": 53648.7
+     },
+     "tile_model": "da-v2-small-baseline",
+     "points": {
+      "n_checkpoints": 573,
+      "n_in_grid": 408,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 408,
+        "ME": 4.37188888514603,
+        "RMSE": 5.630787378827803,
+        "MAE": 4.8972225480712845,
+        "median": 4.572668629043164,
+        "NMAD": 2.7271560630197147,
+        "LE90": 8.642910501830649,
+        "LE95": 9.902323410577853,
+        "pearson_r": 0.995670759461247,
+        "spearman_rho": 0.9946501090200006
+       },
+       "input_dem_vs_ground": {
+        "n": 408,
+        "ME": 5.155902221926055,
+        "RMSE": 5.911274089910589,
+        "MAE": 5.234427187953625,
+        "median": 4.879157847080933,
+        "NMAD": 2.281935890626999,
+        "LE90": 8.932815892181315,
+        "LE95": 10.227006860294477,
+        "pearson_r": 0.9973912796756829,
+        "spearman_rho": 0.9959927501995673
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 408,
+        "ME": -5.81257776596967,
+        "RMSE": 9.243801695335351,
+        "MAE": 6.794753585516237,
+        "median": -4.32776953125,
+        "NMAD": 6.41635110703125,
+        "LE90": 16.447400000000002,
+        "LE95": 18.9316404296875,
+        "pearson_r": -0.09381934612030986,
+        "spearman_rho": -0.029265316863396916
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 408,
+        "ME": 0.4922436071129489,
+        "RMSE": 7.734330589686771,
+        "MAE": 6.302468171211705,
+        "median": 2.269888802128662,
+        "NMAD": 6.242742571969298,
+        "LE90": 12.764464394153038,
+        "LE95": 15.962845172004833,
+        "pearson_r": 0.9827962966061288,
+        "spearman_rho": 0.9712297839724849
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 408,
+        "ME": -1.7943796408190373,
+        "RMSE": 7.336533838664065,
+        "MAE": 5.697659320342128,
+        "median": 0.11114847703993291,
+        "NMAD": 5.931462113698225,
+        "LE90": 12.244421365341443,
+        "LE95": 14.428324558429583,
+        "pearson_r": 0.9835621059108046,
+        "spearman_rho": 0.9724556349034992
+       }
+      },
+      "strata": {
+       "open_canopy_lt2m": {
+        "terrain_vs_ground": {
+         "n": 122,
+         "ME": 4.122400201946042,
+         "RMSE": 5.585785803534068,
+         "MAE": 4.98252458005729,
+         "median": 4.667745747457047,
+         "NMAD": 2.024275190674326,
+         "LE90": 8.681273197535301,
+         "LE95": 9.921928784275039,
+         "pearson_r": 0.9960692298384513,
+         "spearman_rho": 0.9943691944709719
+        },
+        "input_dem_vs_ground": {
+         "n": 122,
+         "ME": 5.28084146411305,
+         "RMSE": 6.0033599478414725,
+         "MAE": 5.3442180699148,
+         "median": 4.881752548041732,
+         "NMAD": 1.674022553213333,
+         "LE90": 9.366899876797834,
+         "LE95": 10.74316504844073,
+         "pearson_r": 0.9982998596103423,
+         "spearman_rho": 0.9967021455880458
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 122,
+         "ME": 0.9170262391137296,
+         "RMSE": 4.281725524960565,
+         "MAE": 1.9591074699026636,
+         "median": 0.0,
+         "NMAD": 1.4269909171874997,
+         "LE90": 4.2242003906250005,
+         "LE95": 6.460482128906247,
+         "pearson_r": -0.16514647482186626,
+         "spearman_rho": 0.06272235171574547
+        }
+       },
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 201,
+         "ME": 4.642013894821276,
+         "RMSE": 5.856681113443169,
+         "MAE": 5.0457663514278295,
+         "median": 4.678823949167963,
+         "NMAD": 2.980376296272443,
+         "LE90": 8.9321814512341,
+         "LE95": 10.304803488272228,
+         "pearson_r": 0.9947827309705928,
+         "spearman_rho": 0.991532064257517
+        },
+        "input_dem_vs_ground": {
+         "n": 201,
+         "ME": 5.212010591027744,
+         "RMSE": 6.0224517972549085,
+         "MAE": 5.310564551339273,
+         "median": 4.921299284384077,
+         "NMAD": 2.3744512264257387,
+         "LE90": 9.001991039276618,
+         "LE95": 10.199172561468913,
+         "pearson_r": 0.996606581430701,
+         "spearman_rho": 0.9930811290084233
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 201,
+         "ME": -11.339831283037936,
+         "RMSE": 12.57916582144924,
+         "MAE": 11.407296670942165,
+         "median": -10.908970703125,
+         "NMAD": 6.139403164453125,
+         "LE90": 18.676091796875003,
+         "LE95": 20.83,
+         "pearson_r": 0.009739311432087432,
+         "spearman_rho": 0.0004940127299092416
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/north_sikkim_alpine_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "tiled_dem_band_fusion (unvalidated)"
+      },
+      "elapsed_ms": 85.1,
+      "ran_at": "2026-09-27T07:26:34"
+     }
+    },
+    "fine_tuned": {
+     "status": "READY",
+     "tier": "T",
+     "quality": "LIMITED",
+     "flags": [
+      "METRIC_NDSM_MODEL"
+     ],
+     "object_scale_source": "fine-tuned metric nDSM model",
+     "stages_ms": {
+      "preprocessing_ms": 486.4,
+      "model_forward_ms": 885.7,
+      "tiled_inference_ms": 32948.2,
+      "inference_ms": 33949.5,
+      "calibration_ms": 13536.3,
+      "total_ms": 47972.7
+     },
+     "tile_model": "da-v2-small-ndsm",
+     "points": {
+      "n_checkpoints": 573,
+      "n_in_grid": 408,
+      "radius_m": 10.0,
+      "datum_handling": "checkpoint heights converted ellipsoidal -> EGM2008 (C-1 guarded, offline geoid grids)",
+      "filters": {
+       "min_ground_photons": 5,
+       "border_px": 4
+      },
+      "metrics": {
+       "terrain_vs_ground": {
+        "n": 408,
+        "ME": 4.972765038830159,
+        "RMSE": 5.724693127061415,
+        "MAE": 5.0803714865844425,
+        "median": 4.766522019784134,
+        "NMAD": 2.152196152060499,
+        "LE90": 8.4561894002778,
+        "LE95": 10.05119096772073,
+        "pearson_r": 0.997433741812644,
+        "spearman_rho": 0.9960752627946644
+       },
+       "input_dem_vs_ground": {
+        "n": 408,
+        "ME": 5.155902221926055,
+        "RMSE": 5.911274089910589,
+        "MAE": 5.234427187953625,
+        "median": 4.879157847080933,
+        "NMAD": 2.281935890626999,
+        "LE90": 8.932815892181315,
+        "LE95": 10.227006860294477,
+        "pearson_r": 0.9973912796756829,
+        "spearman_rho": 0.9959927501995673
+       },
+       "ndsm_vs_canopy_height": {
+        "n": 408,
+        "ME": -6.657196906594669,
+        "RMSE": 9.20836078826117,
+        "MAE": 6.802649811389399,
+        "median": -4.724001953125,
+        "NMAD": 5.582847575976563,
+        "LE90": 16.223104492187503,
+        "LE95": 19.691726855468747,
+        "pearson_r": 0.09140010788529987,
+        "spearman_rho": -0.049690608911551575
+       },
+       "dsm_vs_top_of_surface": {
+        "n": 408,
+        "ME": 0.5005553986264328,
+        "RMSE": 7.729715649689544,
+        "MAE": 6.3038534661805254,
+        "median": 2.1940169553972737,
+        "NMAD": 6.384979811786027,
+        "LE90": 12.868589587465795,
+        "LE95": 16.006641873330043,
+        "pearson_r": 0.9828433986749522,
+        "spearman_rho": 0.971298161647651
+       },
+       "input_dem_vs_top_of_surface": {
+        "n": 408,
+        "ME": -1.7943796408190373,
+        "RMSE": 7.336533838664065,
+        "MAE": 5.697659320342128,
+        "median": 0.11114847703993291,
+        "NMAD": 5.931462113698225,
+        "LE90": 12.244421365341443,
+        "LE95": 14.428324558429583,
+        "pearson_r": 0.9835621059108046,
+        "spearman_rho": 0.9724556349034992
+       }
+      },
+      "strata": {
+       "open_canopy_lt2m": {
+        "terrain_vs_ground": {
+         "n": 122,
+         "ME": 5.090637906864075,
+         "RMSE": 5.806101380963277,
+         "MAE": 5.178940870247792,
+         "median": 4.718797543612709,
+         "NMAD": 1.516673848470066,
+         "LE90": 9.072046825435157,
+         "LE95": 10.47813819297198,
+         "pearson_r": 0.9983445357933614,
+         "spearman_rho": 0.996755017001464
+        },
+        "input_dem_vs_ground": {
+         "n": 122,
+         "ME": 5.28084146411305,
+         "RMSE": 6.0033599478414725,
+         "MAE": 5.3442180699148,
+         "median": 4.881752548041732,
+         "NMAD": 1.674022553213333,
+         "LE90": 9.366899876797834,
+         "LE95": 10.74316504844073,
+         "pearson_r": 0.9982998596103423,
+         "spearman_rho": 0.9967021455880458
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 122,
+         "ME": -0.4565992891905738,
+         "RMSE": 1.1400765109561422,
+         "MAE": 0.9430319544057376,
+         "median": -0.7997412109375,
+         "NMAD": 1.2500388427734375,
+         "LE90": 1.8258222656250003,
+         "LE95": 1.92199619140625,
+         "pearson_r": -0.40934700763617127,
+         "spearman_rho": -0.5303933147400847
+        }
+       },
+       "vegetated_or_built_ge5m": {
+        "terrain_vs_ground": {
+         "n": 201,
+         "ME": 5.000352815452495,
+         "RMSE": 5.80309285015282,
+         "MAE": 5.134837959688154,
+         "median": 4.818960667917963,
+         "NMAD": 2.3455711291109576,
+         "LE90": 8.414415646864654,
+         "LE95": 9.821242873968913,
+         "pearson_r": 0.9966410240108162,
+         "spearman_rho": 0.9931624057928182
+        },
+        "input_dem_vs_ground": {
+         "n": 201,
+         "ME": 5.212010591027744,
+         "RMSE": 6.0224517972549085,
+         "MAE": 5.310564551339273,
+         "median": 4.921299284384077,
+         "NMAD": 2.3744512264257387,
+         "LE90": 9.001991039276618,
+         "LE95": 10.199172561468913,
+         "pearson_r": 0.996606581430701,
+         "spearman_rho": 0.9930811290084233
+        },
+        "ndsm_vs_canopy_height": {
+         "n": 201,
+         "ME": -11.884577036691539,
+         "RMSE": 12.910300180684224,
+         "MAE": 11.884577036691539,
+         "median": -11.622,
+         "NMAD": 6.012927539062497,
+         "LE90": 19.70997265625,
+         "LE95": 20.78556640625,
+         "pearson_r": 0.09103285696270136,
+         "spearman_rho": -0.028744000459298757
+        }
+       }
+      },
+      "caveats": [
+       "ICESat-2 segments are ~20 m long and ~11 m wide; raster values are summarised in a disk around each segment centre, so steep slopes add sampling error.",
+       "ICESat-2 acquisitions span several years; construction, clearing or tree growth since then appears as error.",
+       "h_canopy (ATL08-style) measures the top of vegetation AND of buildings above ground; it is a sparse, independent check, not a dense LiDAR reference."
+      ],
+      "kind": "points",
+      "source": "bundled: india/north_sikkim_alpine_icesat2.csv",
+      "job": {
+       "calibration_tier": "T",
+       "quality": "LIMITED",
+       "object_scale_source": "fine-tuned metric nDSM model"
+      },
+      "elapsed_ms": 87.0,
+      "ran_at": "2026-09-27T07:27:23"
+     }
+    }
+   }
+  }
+ }
+}

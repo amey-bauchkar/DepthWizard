@@ -43,6 +43,7 @@ class TiledPrediction:
     elapsed_ms: float
     inference_gsd_m: float | None = None
     quantity: str = "relative_inverse_depth"  # or "metric_ndsm_metres" (fine-tuned model: tiles already in metres)
+    model_info: dict = field(default_factory=dict)  # name / version / measured object-height error from the model card
 
     def summary(self) -> dict[str, Any]:
         return {

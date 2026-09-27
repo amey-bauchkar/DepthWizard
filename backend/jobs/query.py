@@ -121,6 +121,17 @@ def sample(job_dir: Path, result: dict[str, Any], x: float, y: float, crs: str =
             entry["absolute"] = False
             entry["tier"] = result.get("calibration_tier")
             entry["scale_source"] = result.get("object_scale_source")
+        u = (result.get("uncertainty") or {}).get(name)
+        if u and valid:
+            if name == "ndsm":
+                obj = v >= u.get("object_threshold_m", 2.5)
+                e = u["object_m"] if obj else u.get("ground_m")
+                if e is not None:
+                    entry["uncertainty_m"] = round(float(e), 2)
+                    entry["uncertainty_note"] = f"typical error for {'objects >= 2.5 m' if obj else 'low ground cover'}; {u['source']}"
+            else:
+                entry["uncertainty_m"] = round(float(u["value_m"]), 2)
+                entry["uncertainty_note"] = u["source"]
         out["values"][name] = entry
     fl = CACHE.get(job_dir, "flags")
     if fl is not None and out.get("in_bounds"):
@@ -221,3 +232,39 @@ def _verdict(d: dict[str, Any]) -> dict[str, Any]:
         out["baseline_text"] = f"Input DEM alone on the same pixels: RMSE {b['RMSE']:.2f} m -> DepthWizard {rmse:.2f} m ({delta:+.2f} m, {100 * delta / b['RMSE']:+.1f} %)."
         out["improves_on_dem"] = bool(delta < 0)
     return out
+
+
+def validate_points_job(job_dir: Path, result: dict[str, Any], points_path: Path, settings: Settings, source_note: str = "") -> dict[str, Any]:
+    """Validate a Mode B job against sparse point checkpoints (e.g. ICESat-2). Stored in the job's validation history."""
+    from core.validate.points import load_checkpoints, validate_points
+
+    if result.get("mode") != "B":
+        raise JobStateError("point validation requires a georeferenced (Mode B) job")
+    layers: dict[str, np.ndarray] = {}
+    grid = None
+    for name in ("terrain", "dem", "ndsm", "dsm"):
+        got = CACHE.get(job_dir, name)
+        if got is None:
+            continue
+        arr, g, nodata = got
+        a = arr.astype(np.float64)
+        if nodata is not None:
+            a[a == nodata] = np.nan
+        layers[name] = a
+        grid = grid or g
+    if grid is None:
+        raise JobStateError("job has no elevation layers to validate")
+    try:
+        cp = load_checkpoints(points_path)
+    except (ValueError, IndexError) as e:
+        raise InvalidFileError(f"unreadable checkpoint CSV: {e}") from e
+    t0 = time.perf_counter()
+    pv = validate_points(grid, layers, cp, out_vcrs=result.get("vertical_reference") or "EGM2008")
+    d = pv.to_dict()
+    d.update({"kind": "points", "source": source_note or cp.source, "job": {"calibration_tier": result.get("calibration_tier"), "quality": result.get("quality"), "object_scale_source": result.get("object_scale_source")}, "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1), "ran_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    history_path = job_dir / "validation.json"
+    history = json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else {"runs": []}
+    history["runs"].append(d)
+    history["latest_points"] = d
+    history_path.write_text(json.dumps(history, indent=2, default=str), encoding="utf-8")
+    return d

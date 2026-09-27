@@ -248,6 +248,11 @@ def extract_lod1_buildings(
             "height_m": round(height_m, 2),
             "base_elev_m": round(base_elev_m, 2),
             "area_m2": round(float(area_m2_val), 1),
+            # robust within-footprint statistics of the nDSM (for the building table; height_m drives the extrusion)
+            "height_p10_m": round(float(np.percentile(valid_heights, 10)), 2),
+            "height_median_m": round(float(np.median(valid_heights)), 2),
+            "height_p90_m": round(float(np.percentile(valid_heights, 90)), 2),
+            "n_pixels": int(valid_heights.size),
             "coords": scene_coords,
             "pixel_bbox": [
                 int(np.floor(pts_col.min())),

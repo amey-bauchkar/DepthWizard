@@ -45,8 +45,83 @@ def _cop_tile_bounds(fn: str) -> tuple[float, float, float, float] | None:
     return (lon, lat, lon + 1, lat + 1)
 
 
+CARTODEM_NOTE = "CartoDEM v3 R1 (ISRO/NRSC, Cartosat-1 stereo, 1 arc-second): national DEM of India; NRSC states LE90 ~8 m"
+
+
+def _raster_bounds_wgs84(path: Path) -> tuple[float, float, float, float] | None:
+    try:
+        from pyproj import Transformer
+
+        with rasterio.open(path) as ds:
+            b = ds.bounds
+            if ds.crs is None:
+                return None
+            if ds.crs.is_geographic:
+                return (b.left, b.bottom, b.right, b.top)
+            t = Transformer.from_crs(ds.crs, "EPSG:4326", always_xy=True)
+            xs, ys = t.transform([b.left, b.right, b.left, b.right], [b.bottom, b.bottom, b.top, b.top])
+            return (min(xs), min(ys), max(xs), max(ys))
+    except Exception:  # noqa: BLE001 - unreadable file: ignored
+        return None
+
+
+def discover_cartodem(bounds_wgs84: tuple[float, float, float, float], dem_dir: Path, vertical_crs: str = "auto") -> DemSource | None:
+    """CartoDEM tiles dropped (any file name, as downloaded from Bhuvan) into <dem_dir>/cartodem/*.tif, matched by footprint."""
+    d = Path(dem_dir) / "cartodem"
+    if not d.exists():
+        return None
+    w, s, e_, n = bounds_wgs84
+    hits = []
+    for f in sorted(list(d.glob("*.tif")) + list(d.glob("*.tiff")) + list(d.glob("*.TIF"))):
+        b = _raster_bounds_wgs84(f)
+        if b and not (b[2] <= w or b[0] >= e_ or b[3] <= s or b[1] >= n):
+            hits.append(str(f))
+    if not hits:
+        return None
+    return DemSource("cartodem", "CartoDEM v3 R1 (ISRO/NRSC)", hits, vertical_crs, 30.0, CARTODEM_NOTE)
+
+
+def resolve_auto_datum(src: DemSource, grid: Grid, reference: DemSource | None, *, tol_m: float = 6.0) -> tuple[DemSource | None, dict]:
+    """Decide whether a DEM with vertical_crs='auto' holds geoid (EGM96) or ellipsoidal heights, by comparing it with a
+    reference DEM of known datum (Copernicus, EGM2008) over the job grid. Geoid models differ by < ~1-2 m, whereas
+    ellipsoidal heights differ by the geoid undulation N (tens of metres in India). Returns (resolved source or None, report)."""
+    from dataclasses import replace as _replace
+
+    rep: dict = {"method": "median(DEM - reference) vs local geoid undulation", "tolerance_m": tol_m}
+    if src.vertical_crs != "auto":
+        return src, {"declared": src.vertical_crs}
+    if reference is None:
+        rep.update({"decision": "unverified", "reason": "no reference DEM to compare with; CartoDEM not used"})
+        return None, rep
+    a = np.full((grid.height, grid.width), np.nan, np.float32)
+    for f in src.files:
+        arr, valid = read_raster_on_grid(f, grid, resampling=Resampling.bilinear)
+        a[np.isnan(a) & valid] = arr[np.isnan(a) & valid]
+    ref, _v, _p = load_dem_on_grid(reference, grid, "EGM2008")
+    m = np.isfinite(a) & np.isfinite(ref)
+    if m.sum() < 100:
+        rep.update({"decision": "unverified", "reason": "too little overlap with the reference DEM"})
+        return None, rep
+    d = float(np.median((a - ref)[m]))
+    from pyproj import Transformer
+
+    cx, cy = grid.transform @ (grid.width / 2, grid.height / 2)  # type: ignore[operator]
+    lon, lat = Transformer.from_crs(grid.crs, "EPSG:4326", always_xy=True).transform(cx, cy)
+    n_und = -float(transform_heights(np.array([lon]), np.array([lat]), np.array([0.0]), "ellipsoidal", "EGM2008")[0])  # geoid undulation N
+    rep.update({"median_minus_reference_m": d, "geoid_undulation_m": n_und})
+    if abs(d) <= tol_m:
+        rep["decision"] = "geoid heights (EGM96)"
+        return _replace(src, vertical_crs="EGM96"), rep
+    if abs(d - n_und) <= tol_m:
+        rep["decision"] = "ellipsoidal heights"
+        return _replace(src, vertical_crs="ellipsoidal"), rep
+    rep.update({"decision": "rejected", "reason": f"offset {d:+.1f} m matches neither a geoid ({0:+.0f} m) nor an ellipsoidal ({n_und:+.1f} m) datum"})
+    return None, rep
+
+
 def discover_dem(bounds_wgs84: tuple[float, float, float, float], dem_dir: Path, *, user_dem: Path | None = None, user_dem_vcrs: str = "EGM2008") -> DemSource | None:
-    """Return the DEM source covering the AOI: a user-supplied DEM wins; else bundled Copernicus tiles (index.json or filename)."""
+    """Return the DEM source covering the AOI: a user-supplied DEM wins; else bundled Copernicus tiles (index.json or filename).
+    (CartoDEM, when installed under <dem_dir>/cartodem, is chosen by core.calib.dem.select_dem.)"""
     if user_dem is not None and Path(user_dem).exists():
         posting = 0.0
         try:
@@ -112,3 +187,26 @@ def load_dem_on_grid(src: DemSource, grid: Grid, out_vcrs: str) -> tuple[np.ndar
 
 def grid_bounds(grid: Grid) -> tuple[float, float, float, float]:
     return grid_bounds_wgs84(grid)
+
+
+def select_dem(bounds_wgs84: tuple[float, float, float, float], dem_dir: Path, grid: Grid, *, user_dem: Path | None = None, user_dem_vcrs: str = "EGM2008", priority: tuple[str, ...] = ("cartodem", "copernicus"), cartodem_vcrs: str = "auto") -> tuple[DemSource | None, dict]:
+    """User DEM > first available of `priority` (CartoDEM with datum auto-check, then bundled Copernicus)."""
+    if user_dem is not None:
+        return discover_dem(bounds_wgs84, dem_dir, user_dem=user_dem, user_dem_vcrs=user_dem_vcrs), {"selected": "user"}
+    cop = discover_dem(bounds_wgs84, dem_dir)
+    rep: dict = {"priority": list(priority)}
+    for name in priority:
+        if name == "cartodem":
+            cd = discover_cartodem(bounds_wgs84, dem_dir, cartodem_vcrs)
+            if cd is None:
+                continue
+            resolved, drep = resolve_auto_datum(cd, grid, cop)
+            rep["cartodem_datum_check"] = drep
+            if resolved is not None:
+                rep["selected"] = "cartodem"
+                return resolved, rep
+        elif name == "copernicus" and cop is not None:
+            rep["selected"] = "copernicus"
+            return cop, rep
+    rep["selected"] = None
+    return None, rep

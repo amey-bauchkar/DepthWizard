@@ -42,6 +42,43 @@ Limits, stated plainly:
 * Only two test tiles have a bundled DEM.
 * With the fine-tuned model, simulated anchors added nothing measurable. The anchor fit was rejected on 2 of 3 tiles, and on the 0.5 m tile it slightly worsened the terrain (3.17 → 4.04 m). The anchors are simulated from the same LiDAR, with pixels within 15 m excluded from the metrics.
 
+## Measured on India (Sikkim, NASA ICESat-2 checkpoints)
+
+No public airborne LiDAR exists for Indian sites, so DepthWizard is validated there against **independent satellite laser altimetry**: NASA ICESat-2 ground and canopy heights. That's 1,114 20 m segments, 2018–2025, fetched without any login through the public SlideRule service.
+
+The imagery is **Maxar WorldView at 0.5 m** (Maxar Open Data Program, Sikkim flood event, CC BY-NC 4.0). The six sites are 1.2 km scenes: Namchi town, the Chungthang valley and dam, two Teesta-valley hillside sites, a steep forest, and a North Sikkim alpine / glacial area. No Indian data was used for training or tuning. Pooled RMSE in metres ([`docs/validation_india.md`](docs/validation_india.md), `scripts/fetch_india_demo.py` + `scripts/validate_india.py`):
+
+| vs ICESat-2 (fine-tuned model) | Copernicus alone | DepthWizard on Copernicus | CartoDEM alone | **DepthWizard on CartoDEM** |
+|---|---|---|---|---|
+| Terrain vs ground | 10.51 | 8.54 | 7.98 | **7.61** |
+| DSM vs top of surface | 11.81 | 11.10 | 11.92 | **10.72** |
+| Height above ground (canopy / buildings) | – | 9.20 | – | **9.20** |
+
+**CartoDEM** (ISRO/NRSC, from Bhoonidhi) is used automatically when its tile is in `assets/dem/cartodem/`:
+- **Datum:** the app detected its heights as **ellipsoidal** on all six sites. The CartoDEM − Copernicus offset of −25…−47 m matches the local geoid undulation of −30…−44 m. The heights are converted to EGM2008; without that check they would be ~40 m off.
+- **Per site the result is mixed:** CartoDEM is much better on steep forest (Chungthang west: 19.7 → 12.8 m) and worse on alpine terrain (1.7 → 5.9 m).
+- **Records:** the Copernicus-based run is kept in `docs/validation_india_copernicus.md`.
+
+The zero-shot model on Copernicus, for reference: terrain 10.25, DSM 11.03, height above ground 11.38.
+
+Site by site, the fine-tuned model improves the height above ground on 5 of 6 sites and the DSM on 5 of 6. The terrain improves on 4 of 6. It is worse on the two forested-valley sites (Namchi, Chungthang), where Copernicus already lies close to the ground under the forest.
+
+Errors are dominated by very steep Himalayan slopes, where the 30 m DEM itself is off by 15–20 m. These numbers are the model's first measurement on Indian imagery; it was trained only on Swiss data.
+
+In the app, the six Sikkim scenes are one-click demos. **Validate vs checkpoints** runs the same comparison for any job, using the bundled ICESat-2 data or an uploaded CSV (`id,lon,lat,h_ground[,h_canopy]`).
+
+## Building intelligence and CartoDEM
+
+* **Building panel** (Mode B, panel 5):
+  * **Per building:** median height with the model's measured typical error (±5.5 m = RMSE for objects on held-out LiDAR), the roof-height spread, ground and roof elevation, footprint, volume, and an *approximate* floor range. Also location.
+  * **Scene summary:** building counts per height class, total footprint and total volume.
+  * **Interaction:** filter by height and footprint; click a row to fly the 3D view to that building, or click a building in 3D to select it.
+  * **Export:** GeoJSON (opens in QGIS) or CSV (`/api/jobs/{id}/buildings[.geojson|.csv]`).
+  * **Limit:** footprints come from a rule-based RGB + nDSM mask, so on forested hills some tree clusters are counted as buildings.
+* **CartoDEM (ISRO/NRSC)** is preferred over Copernicus in India. Put the Bhuvan tiles into `assets/dem/cartodem/` (see its README).
+  * Whether its heights are geoid or ellipsoidal is decided automatically, by comparison with Copernicus.
+  * If neither fits, CartoDEM is refused for that scene and the reason is reported, rather than risking a silent 40–90 m datum error.
+
 ## How Mode B produces metres
 
 ```

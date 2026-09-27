@@ -13,7 +13,7 @@ model:
 model_metric:                     # optional fine-tuned metric nDSM model (tier H) for Mode B tiles
   enabled: true                   # used only if installed (scripts/install_finetuned_model.py); else zero-shot fallback
   name: da-v2-small-ndsm
-  version: 1.0.0
+  version: latest                 # newest installed version (e.g. 2.0.0 after installing v2); pin "1.0.0" to compare
   verify_hash: true
 
 ingest:
@@ -35,6 +35,8 @@ calib:                            # Mode B two-layer calibration (TL-CSM)
   output_vertical_crs: EGM2008    # declared vertical reference of every absolute output (Copernicus native)
   dem_dir: assets/dem             # bundled DEM tiles (Copernicus GLO-30 COGs) or user DEM upload
   dem_posting_m: 30.0
+  dem_priority: [cartodem, copernicus]   # CartoDEM tiles in assets/dem/cartodem/ win where they cover the scene
+  cartodem_vertical_crs: auto     # auto: geoid (EGM96) vs ellipsoidal decided by comparison with Copernicus; refused if neither fits
   sigma_cells: 1.5                # normalized-convolution kernel (DEM cells)
   w_min: 0.1                      # below this ground support the raw DEM is used and flagged
   ground_window_m: 60.0           # morphological ground-filter window on the relative structure

@@ -27,7 +27,12 @@ data/
 *.log
 
 # fine-tuned model bundle from the Colab notebook (99 MB; install with scripts/install_finetuned_model.py)
-depthwizard_ndsm_model.zip
+depthwizard_ndsm_model*.zip
 
 .claude/
 
+
+# CartoDEM tiles (NRSC/Bhoonidhi terms: keep local unless redistribution is confirmed)
+assets/dem/cartodem/*.tif
+assets/dem/cartodem/*.tiff
+P5_PAN_CD_*.zip

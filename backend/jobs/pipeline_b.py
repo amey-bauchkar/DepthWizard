@@ -23,7 +23,7 @@ from scipy import ndimage
 from backend.config.settings import Settings
 from backend.logging_setup import JobLogger
 from core.calib.anchors import robust_offset, split_holdout
-from core.calib.dem import discover_dem, grid_bounds, load_dem_on_grid
+from core.calib.dem import grid_bounds, load_dem_on_grid, select_dem
 from core.calib.fusion import TiledPrediction, default_detail_scales, fit_anchor_gain, fuse_detail, highpass, plan_upsample, stitch_tiles, tiled_relative
 from core.calib.terrain import object_layer_from_relative, terrain_layer
 from core.calib.tier import decide
@@ -61,6 +61,9 @@ def stage_tiled_inference(job_dir: Path, rgb: np.ndarray, gsd_m: float | None, p
     up = plan_upsample(h, w, desired, tile=f.tile_px, overlap=f.overlap, max_tiles=f.max_tiles)
     tp = tiled_relative(lambda x: predictor.predict(x).relative_depth, rgb, upsample=up, tile=f.tile_px, overlap=f.overlap, inference_gsd_m=(gsd_m / up) if gsd_m else None)
     tp.quantity = predictor.card.output_quantity
+    val = (predictor.card.extra or {}).get("validation") or {}
+    ft = val.get("finetuned") if isinstance(val, dict) else None
+    tp.model_info = {"name": predictor.card.name, "version": predictor.card.version, "object_rmse_m": (ft or {}).get("RMSE_objects_ge2.5m"), "object_me_m": (ft or {}).get("ME_objects_ge2.5m"), "ground_rmse_m": (ft or {}).get("RMSE_ground_lt2.5m"), "test_regions": val.get("test_regions") if isinstance(val, dict) else None}
     _dump(job_dir / "tiled_inference.json", tp.summary())
     log.event("INFERENCE", "tiled inference complete", **tp.summary())
     return tp
@@ -148,6 +151,28 @@ def _anchor_calibration(job_dir: Path, grid: Grid, terrain: np.ndarray, dem: np.
     return rep
 
 
+# Typical 1-sigma point errors MEASURED by DepthWizard itself (never assumed): DEM-based layers vs NASA ICESat-2
+# checkpoints over the six Sikkim scenes (docs/validation_india.md = CartoDEM, docs/validation_india_copernicus.md).
+MEASURED_DEM_RMSE = {
+    "cartodem": {"dem_m": 7.98, "terrain_m": 7.61, "dsm_m": 10.72, "source": "measured: DepthWizard with CartoDEM vs ICESat-2, 6 Sikkim scenes (docs/validation_india.md)"},
+    "bundled": {"dem_m": 10.51, "terrain_m": 8.54, "dsm_m": 11.10, "source": "measured: DepthWizard with Copernicus GLO-30 vs ICESat-2, 6 Sikkim scenes (docs/validation_india_copernicus.md)"},
+}
+
+
+def point_uncertainty(tier: str, metric: bool, model_info: dict[str, Any], dem_name: str | None) -> dict[str, Any]:
+    """Per-layer typical error (RMSE, metres) shown next to every point reading; a layer is absent when no measurement backs it."""
+    out: dict[str, Any] = {}
+    if metric and model_info.get("object_rmse_m"):
+        out["ndsm"] = {"ground_m": model_info.get("ground_rmse_m"), "object_m": model_info["object_rmse_m"], "object_threshold_m": 2.5,
+                       "source": f"model card {model_info.get('name')}@{model_info.get('version')}: RMSE on held-out Swiss LiDAR regions"}
+    d = MEASURED_DEM_RMSE.get(dem_name or "")
+    if d and tier in ("T", "A"):
+        out["terrain"] = {"value_m": d["terrain_m"], "source": d["source"]}
+        out["dsm"] = {"value_m": d["dsm_m"], "source": d["source"]}
+        out["dem"] = {"value_m": d["dem_m"], "source": d["source"] + " (input DEM vs ICESat-2 ground)"}
+    return out
+
+
 def _ground_from_surface(dsm: np.ndarray, gsd_m: float, window_m: float) -> np.ndarray:
     """Morphological ground estimate of a surface: grey opening with a window wider than buildings, smoothed."""
     w = max(3, int(round(window_m / max(gsd_m, 1e-6))) | 1)
@@ -177,7 +202,7 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
     register_bundled_grids(settings.proj_grids_dir)
     out_vcrs = c.output_vertical_crs
     bounds = grid_bounds(grid)
-    dem_src = discover_dem(bounds, settings.dem_dir, user_dem=user_dem, user_dem_vcrs=user_dem_vcrs)
+    dem_src, dem_select = select_dem(bounds, settings.dem_dir, grid, user_dem=user_dem, user_dem_vcrs=user_dem_vcrs, priority=tuple(c.dem_priority), cartodem_vcrs=c.cartodem_vertical_crs)
     report: dict[str, Any] = {"method_version": METHOD_VERSION, "output_vertical_crs": out_vcrs, "gsd_m": gsd_m, "object_layer": obj.params, "relative_stats": rstats.to_dict(), "dem": None, "terrain": None, "fusion": None, "anchors": None, "consistency": None, "tiled_inference": tiled.summary() if tiled else None}
     datum_ok = True
     dem = dem_valid = None
@@ -187,7 +212,7 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
     if dem_src is not None:
         try:
             dem, dem_valid, dem_prov = load_dem_on_grid(dem_src, grid, out_vcrs)
-            report["dem"] = dem_prov
+            report["dem"] = {**dem_prov, "selection": dem_select}
         except VerticalTransformUnsafeError as e:
             datum_ok = False
             report["dem"] = {"source": dem_src.to_dict(), "error": e.to_dict()}
@@ -323,6 +348,11 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
                 from core.terrain.lod1 import extract_lod1_buildings, save_lod1_buildings
 
                 lod1_data = extract_lod1_buildings(ndsm, terrain, rgb=ing.rgb, gsd_m=gsd_m)
+                mi = tiled.model_info if tiled is not None else {}
+                lod1_data["height_error"] = ({"typical_m": mi.get("object_rmse_m"), "bias_m": mi.get("object_me_m"), "source": f"{mi.get('name')}@{mi.get('version')} model card: RMSE for objects >= 2.5 m on held-out LiDAR regions {mi.get('test_regions')}", "calibrated": True}
+                                             if metric and mi.get("object_rmse_m") else {"typical_m": None, "source": "zero-shot detail scaled against the DEM: building-height error not calibrated", "calibrated": False})
+                lod1_data["vertical_reference"] = out_vcrs
+                lod1_data["grid"] = {"crs": grid.crs, "transform": list(grid.transform.to_gdal()), "width": grid.width, "height": grid.height}
                 save_lod1_buildings(job_dir / "buildings.json", lod1_data)
                 artifacts["buildings_json"] = "buildings.json"
                 log.event("LOD1", f"extracted {lod1_data['count']} LoD-1 building blocks ({lod1_data.get('segmentation_method', 'unknown')})")
@@ -377,6 +407,7 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
         "heightfield": json.loads((job_dir / ("heightfield_dsm.json" if "dsm" in layers and "heightfield" in layers["dsm"] else "heightfield_ndsm.json" if "ndsm" in layers and "heightfield" in layers["ndsm"] else "heightfield_relative.json")).read_text(encoding="utf-8")),
         "timings_ms": {"calibration_ms": (time.perf_counter() - t0) * 1000.0},
     }
+    result["uncertainty"] = point_uncertainty(tier.tier, metric, tiled.model_info if tiled is not None else {}, dem_src.name if dem_src is not None else None)
     _dump(job_dir / "result.json", result)
     log.event("CALIBRATION", "calibration complete", tier=tier.tier, quality=tier.quality, scale_source=scale_source, ms=round((time.perf_counter() - t0) * 1000, 1))
     return result

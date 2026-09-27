@@ -262,6 +262,7 @@ export function buildLoD1BuildingGroup(
     // Index 0 = Front & Back Caps (The Roof) -> roofMat
     // Index 1 = Sides (Vertical Walls) -> wallMat
     const mesh = new THREE.Mesh(geom, [roofMat, wallMat]);
+    mesh.userData.buildingId = b.id;
 
     // ── Align building base to terrain mesh ──────────────────────────────
     // Seated at ground elevation with skirt sunk into terrain so no gaps or clipping occur on slopes

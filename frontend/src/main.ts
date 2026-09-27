@@ -176,17 +176,21 @@ async function initDemo() {
     const d = await api.demo();
     state.demo = d.items; state.references = d.references;
     const wrap = $("demo-buttons"); wrap.innerHTML = "";
-    d.items.forEach((it) => {
+    // Indian scenes first (SIH / ISRO context), then the Swiss LiDAR benchmark tiles
+    [...d.items].sort((x, y) => Number(y.country === "IN") - Number(x.country === "IN")).forEach((it) => {
       const pill = document.createElement("button");
       pill.type = "button";
       pill.className = `demo-pill demo-mode-${it.mode.toLowerCase()}`;
       const isHD = it.id.includes("hd");
       const isRural = it.id.includes("rural");
-      const icon = isRural ? (it.mode === "B" ? "🌲" : "🏞️") : (it.mode === "B" ? "🏙️" : "📷");
-      const title = isRural
-        ? (it.mode === "B" ? "Emmental Ridge" : "Emmental Photo")
-        : (it.mode === "B" ? (isHD ? "Zürich Core HD" : "Zürich City 2m") : (isHD ? "Zürich Photo HD" : "Zürich Photo"));
-      const tag = it.mode === "B" ? (isHD ? "0.5m DSM" : "2m DSM") : "Mode A";
+      const india = it.country === "IN";
+      const icon = india ? "🇮🇳" : isRural ? (it.mode === "B" ? "🌲" : "🏞️") : (it.mode === "B" ? "🏙️" : "📷");
+      const title = india
+        ? it.id.replace(/^india_/, "").split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ").replace(/^North Sikkim /, "N. Sikkim ")
+        : isRural
+          ? (it.mode === "B" ? "Emmental Ridge" : "Emmental Photo")
+          : (it.mode === "B" ? (isHD ? "Zürich Core HD" : "Zürich City 2m") : (isHD ? "Zürich Photo HD" : "Zürich Photo"));
+      const tag = india ? "0.5m · ICESat-2" : it.mode === "B" ? (isHD ? "0.5m DSM" : "2m DSM") : "Mode A";
 
       pill.innerHTML = `<span class="demo-icon">${icon}</span><span class="demo-name">${title}</span><span class="demo-tag">${tag}</span>`;
       pill.title = `${it.label} — ${it.source ?? ""}`;
@@ -205,6 +209,8 @@ async function initDemo() {
     });
     const sel = $("ref-bundled") as HTMLSelectElement;
     d.references.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; sel.appendChild(o); });
+    const psel = $("pts-bundled") as HTMLSelectElement;
+    d.items.filter((it) => it.reference_points).forEach((it) => { const o = document.createElement("option"); o.value = it.reference_points!; o.textContent = `ICESat-2 · ${it.id.replace(/^india_/, "")}`; psel.appendChild(o); });
   } catch { /* demo assets optional */ }
 }
 
@@ -213,14 +219,16 @@ async function loadDemo(it: DemoItem) {
     const r = await fetch(`/demo/${it.file}`);
     if (!r.ok) throw new Error("demo missing");
     const blob = await r.blob();
-    showInput(new File([blob], it.file, { type: blob.type || (it.mode === "B" ? "image/tiff" : "image/jpeg") }));
-    if (it.mode === "B" && it.reference_dsm) {
-      ($("ref-bundled") as HTMLSelectElement).value = it.reference_dsm;
-      ($("ref-vcrs") as HTMLSelectElement).value = it.reference_vertical_crs ?? "same";
-    }
+    showInput(new File([blob], it.file.split("/").pop() ?? it.file, { type: blob.type || (it.mode === "B" ? "image/tiff" : "image/jpeg") }));
+    ($("ref-bundled") as HTMLSelectElement).value = it.mode === "B" && it.reference_dsm ? it.reference_dsm : "";
+    if (it.mode === "B" && it.reference_dsm) ($("ref-vcrs") as HTMLSelectElement).value = it.reference_vertical_crs ?? "same";
+    ($("pts-bundled") as HTMLSelectElement).value = it.reference_points ?? "";
     if (it.anchors) {
       const type = it.anchors.includes("urban") ? "urban" : "rural";
       await loadDemoAnchors(type);
+    } else if (state.anchorsLabel.startsWith("simulated")) {
+      // demo anchors belong to their own tile; never carry them over to another scene
+      state.anchors = null; state.anchorsLabel = ""; updateOptSummary();
     }
   } catch { setStatus("Demo asset not available on this server.", "err"); }
 }
@@ -235,7 +243,42 @@ async function loadDemoAnchors(t: string) {
   } catch { setStatus("Demo anchors not available.", "err"); }
 }
 
+// ──────────────────────────────────────── Input check (before running)
+let checkSeq = 0;
+async function runInputCheck() {
+  const box = $("input-check");
+  if (!state.file) { box.classList.add("hidden"); return; }
+  const seq = ++checkSeq;
+  box.className = "input-check"; box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">checking…</span></div>`;
+  try {
+    const r = await api.inspect(state.file, !!state.dem, !!state.anchors);
+    if (seq !== checkSeq) return;
+    const badge = { ok: "READY", warn: "USABLE WITH LIMITS", bad: "NOT SUITABLE" }[r.verdict];
+    const icon = { ok: "✓", warn: "!", bad: "✕" };
+    const facts = [
+      r.gsd_m ? `${fmt(r.gsd_m, 2)} m/px` : "",
+      r.extent_km ? `${fmt(r.extent_km[0], 2)} × ${fmt(r.extent_km[1], 2)} km` : "",
+      r.width ? `${r.width}×${r.height} px` : "",
+      `mode ${r.mode} → expected tier ${r.expected_tier}`,
+    ].filter(Boolean).join(" · ");
+    const a = r.expected_accuracy;
+    const acc = a ? `<div class="ic-acc"><div class="ic-acc-h">Expected typical error (RMSE, measured)</div>
+      ${a.height_above_ground ? `<div title="${esc(a.height_above_ground.source)}">Height above ground: ± ${fmt(a.height_above_ground.objects_m, 1)} m buildings/trees · ± ${fmt(a.height_above_ground.ground_m, 1)} m open ground</div>` : ""}
+      ${a.terrain_m !== undefined ? `<div title="${esc(a.elevation_source ?? "")}">Terrain elevation: ± ${fmt(a.terrain_m, 1)} m · surface (DSM): ± ${fmt(a.dsm_m ?? NaN, 1)} m <span class="ic-src">(Sikkim vs ICESat-2)</span></div>` : ""}
+    </div>` : "";
+    box.className = `input-check ${r.verdict}`;
+    box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">${badge}</span></div>
+      <div class="ic-facts">${esc(facts)}</div>
+      <ul class="ic-list">${r.checks.map((c) => `<li class="${c.level}"><span class="ic-i">${icon[c.level]}</span><div><b>${esc(c.title)}</b><div class="ic-d">${esc(c.detail)}</div></div></li>`).join("")}</ul>${acc}`;
+  } catch (e) {
+    if (seq !== checkSeq) return;
+    box.className = "input-check bad";
+    box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">NOT READABLE</span></div><div class="ic-d">${esc(userMessage(e))}</div>`;
+  }
+}
+
 function updateOptSummary() {
+  if (state.file) void runInputCheck();
   const parts: string[] = [];
   if (state.dem) parts.push(`user DEM: ${state.dem.name} (${($("dem-vcrs") as HTMLSelectElement).value})`);
   if (state.anchors) parts.push(`anchors: ${state.anchorsLabel || state.anchors.name}`);
@@ -265,9 +308,13 @@ function showInput(file: File) {
   $("run-btn").textContent = tif ? "Generate Surface (GeoTIFF → Mode B)" : "Generate Relative Surface (Mode A)";
   ($("open3d-btn") as HTMLButtonElement).disabled = true;
   ($("validate-btn") as HTMLButtonElement).disabled = true;
+  ($("validate-pts-btn") as HTMLButtonElement).disabled = true;
   $("result-body").classList.add("hidden"); $("result-empty").classList.remove("hidden");
   $("val-result").classList.add("hidden");
+  $("pts-result").classList.add("hidden");
+  $("panel-buildings").classList.add("hidden");
   setStatus(tif ? "Ready — click Generate Calibrated Surface." : "Ready — click Generate Relative Surface.");
+  void runInputCheck();
 }
 
 // ──────────────────────────────────────── Run pipeline
@@ -418,6 +465,7 @@ async function renderResult(job: Job, res: Result) {
     ($("input-preview") as HTMLImageElement).src = api.artifactUrl(id, res.artifacts.input_preview);
     $("input-preview-wrap").classList.remove("hidden");
     ($("validate-btn") as HTMLButtonElement).disabled = false;
+    ($("validate-pts-btn") as HTMLButtonElement).disabled = false;
   }
 
   // ── Default layer
@@ -454,6 +502,9 @@ async function renderResult(job: Job, res: Result) {
   });
   state.viewLayer = vl.value;
   ($("open3d-btn") as HTMLButtonElement).disabled = false;
+
+  // ── Building intelligence panel
+  loadBuildingsPanel();
 
   // ── Reset readout
   const ro = $("readout-body"); ro.innerHTML = "Click a point on the image or 3D mesh."; ro.className = "readout-body empty";
@@ -500,9 +551,12 @@ function renderSample(s: Sample): string {
   const rows = Object.entries(s.values).map(([k, v]) => {
     const meta = [v.tier ? `tier ${v.tier}` : "", v.vertical_reference ?? "", v.scale_source ?? ""].filter(Boolean).join(" · ");
     const valStr = v.valid && v.value !== null ? `${fmt(v.value, v.units === "m" ? 2 : 3)} ${v.units}` : "nodata";
+    const unc = v.valid && v.uncertainty_m !== undefined
+      ? `<div class="ru" title="${esc(v.uncertainty_note ?? "")}">± ${fmt(v.uncertainty_m, 1)} m typical</div>`
+      : v.valid && v.metric && v.units === "m" ? `<div class="ru none" title="No held-out measurement backs this layer for this job">± not measured</div>` : "";
     return `<tr>
       <td><div class="rk">${esc(k)}</div>${meta ? `<div class="rq">${esc(meta)}</div>` : ""}</td>
-      <td class="rv">${esc(valStr)}</td>
+      <td class="rv">${esc(valStr)}${unc}</td>
     </tr>`;
   }).join("");
   const flagsLine = s.flags?.length ? `<div class="readout-flags">⚑ ${s.flags.join(", ")}</div>` : "";
@@ -582,6 +636,42 @@ function metricRow(m: Record<string, any>): string {
   return `<td>${m.n}</td><td>${fmt(m.ME)}</td><td>${fmt(m.RMSE)}</td><td>${fmt(m.MAE)}</td><td>${fmt(m.NMAD)}</td><td>${fmt(m.LE90)}</td><td>${fmt(m.LE95)}</td><td>${fmt(m.pearson_r, 3)}</td><td>${fmt(m.spearman_rho, 3)}</td>`;
 }
 
+async function runPointValidation() {
+  if (!state.jobId || !state.result) return;
+  const btn = $("validate-pts-btn") as HTMLButtonElement; btn.disabled = true;
+  const file = ($("pts-input") as HTMLInputElement).files?.[0] ?? null;
+  const bundled = ($("pts-bundled") as HTMLSelectElement).value || null;
+  try {
+    if (!file && !bundled) { setStatus("Choose a checkpoint CSV or bundled ICESat-2 checkpoints.", "err", "val-status"); return; }
+    setStatus("Validating against checkpoints (datum-converted, 10 m footprint)…", "", "val-status");
+    const v = await api.validatePoints(state.jobId, { points: file, bundled: file ? null : bundled });
+    renderPointValidation(v);
+    setStatus(`Checkpoint validation complete: ${v.n_in_grid} checkpoints in the scene.`, "ok", "val-status");
+  } catch (e) { setStatus(userMessage(e), "err", "val-status"); }
+  finally { btn.disabled = false; }
+}
+
+function renderPointValidation(v: Record<string, any>) {
+  $("pts-result").classList.remove("hidden");
+  const m = v.metrics ?? {};
+  const t = m.terrain_vs_ground, b = m.input_dem_vs_ground;
+  $("pts-title").textContent = t && b
+    ? `Terrain vs independent checkpoints: RMSE ${fmt(t.RMSE)} m (input DEM alone: ${fmt(b.RMSE)} m) over ${t.n} points`
+    : "Checkpoint comparison";
+  $("pts-context").textContent = `${v.source ?? ""} · ${v.datum_handling} · job tier ${v.job?.calibration_tier ?? "—"}, quality ${v.job?.quality ?? "—"}`;
+  const rows: [string, string][] = [
+    ["input_dem_vs_ground", "Input DEM vs checkpoint ground (baseline)"],
+    ["terrain_vs_ground", "DepthWizard terrain vs checkpoint ground"],
+    ["input_dem_vs_top_of_surface", "Input DEM vs checkpoint top of surface (baseline)"],
+    ["dsm_vs_top_of_surface", "DepthWizard DSM vs checkpoint top of surface"],
+    ["ndsm_vs_canopy_height", "DepthWizard nDSM vs checkpoint canopy / structure height"],
+  ];
+  const head = `<thead><tr><th>Comparison</th><th>n</th><th>ME (m)</th><th>RMSE (m)</th><th>MAE (m)</th><th>NMAD (m)</th><th>LE90</th><th>LE95</th><th>r</th><th>ρ</th></tr></thead>`;
+  $("pts-table").innerHTML = head + "<tbody>" + rows.filter(([k]) => m[k]?.RMSE !== undefined).map(([k, label]) => `<tr><td>${esc(label)}</td>${metricRow(m[k])}</tr>`).join("") + "</tbody>";
+  const strata = Object.entries(v.strata ?? {}).map(([name, sm]: [string, any]) => `${esc(name)}: ` + Object.entries(sm).map(([k, x]: [string, any]) => `${esc(k)} RMSE ${fmt(x.RMSE)} m (n=${x.n})`).join(" · "));
+  $("pts-strata").innerHTML = [...strata, ...(v.caveats ?? []).map((c: string) => `⚠ ${esc(c)}`)].join("<br>");
+}
+
 function renderValidation(v: Record<string, any>) {
   $("val-result").classList.remove("hidden");
   const head = `<thead><tr><th>Set</th><th>n</th><th>ME (m)</th><th>RMSE (m)</th><th>MAE (m)</th><th>NMAD (m)</th><th>LE90</th><th>LE95</th><th>r</th><th>ρ</th></tr></thead>`;
@@ -606,6 +696,55 @@ function renderValidation(v: Record<string, any>) {
     img.src = api.artifactUrl(state.jobId, v.artifacts.residual_preview) + `?t=${Date.now()}`;
 }
 
+// ──────────────────────────────────────── Building intelligence
+let bldRows: Record<string, any>[] = [];
+let bldTimer = 0;
+
+async function loadBuildingsPanel() {
+  const panel = $("panel-buildings");
+  if (!state.jobId || !state.result?.artifacts?.buildings_json) { panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+  const minH = Number(($("bld-minh") as HTMLInputElement).value);
+  const minA = Number(($("bld-mina") as HTMLInputElement).value) || 0;
+  $("bld-minh-val").textContent = `${minH} m`;
+  const q = `min_height=${minH}&min_area=${minA}`;
+  ($("bld-geojson") as HTMLAnchorElement).href = `/api/jobs/${state.jobId}/buildings.geojson?${q}`;
+  ($("bld-csv") as HTMLAnchorElement).href = `/api/jobs/${state.jobId}/buildings.csv?${q}`;
+  try {
+    const r = await api.buildings(state.jobId, minH, minA, 300);
+    const s = r.summary; bldRows = r.buildings;
+    const err = s.height_error ?? {};
+    const errTxt = err.typical_m ? `±${fmt(err.typical_m, 1)} m typical (1 RMSE, held-out LiDAR)` : "not calibrated (zero-shot)";
+    const cls = s.height_classes ?? {};
+    const fields: [string, string][] = [
+      ["Buildings", `${s.count_filtered} of ${s.count_total}`],
+      ["Tallest / median", `${fmt(s.max_height_m, 1)} m / ${fmt(s.median_height_m, 1)} m`],
+      ["Low · mid · high-rise", `${cls.low_lt10m ?? 0} · ${cls.mid_10_25m ?? 0} · ${cls.high_ge25m ?? 0}`],
+      ["Footprint · volume", `${(s.total_footprint_m2 / 1e4).toFixed(2)} ha · ${(s.total_volume_m3 / 1e6).toFixed(2)} Mm³`],
+      ["Height error", errTxt],
+    ];
+    $("bld-summary").innerHTML = fields.map(([l, v]) => `<div class="result-field"><div class="result-field-label">${l}</div><div class="result-field-value">${esc(v)}</div></div>`).join("");
+    $("bld-table").innerHTML = `<thead><tr><th>#</th><th>Height (m)</th><th>Roof spread p10–p90</th><th>Floors (approx.)</th><th>Footprint (m²)</th><th>Volume (m³)</th><th>Ground elev. (m)</th></tr></thead><tbody>` +
+      bldRows.map((b) => `<tr data-bid="${b.id}" style="cursor:pointer"><td>${b.id}</td><td><b>${fmt(b.height_m, 1)}</b>${b.height_interval_m ? ` <span class="hint">(${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)})</span>` : ""}</td><td>${fmt(b.height_p10_m, 1)}–${fmt(b.height_p90_m, 1)}</td><td>${b.floors_range[0]}–${b.floors_range[1]}</td><td>${fmt(b.area_m2, 0)}</td><td>${b.volume_m3.toLocaleString()}</td><td>${fmt(b.ground_elev_m, 1)}</td></tr>`).join("") + "</tbody>";
+    $("bld-notes").innerHTML = [err.source ? `Height error source: ${esc(err.source)}` : "", ...(s.notes ?? []).map((n: string) => esc(n))].filter(Boolean).join("<br>");
+    $("bld-table").querySelectorAll<HTMLTableRowElement>("tr[data-bid]").forEach((tr) => tr.addEventListener("click", () => selectBuilding(Number(tr.dataset.bid), true)));
+  } catch (e) { $("bld-summary").textContent = userMessage(e); }
+}
+
+function selectBuilding(id: number, fly: boolean) {
+  const b = bldRows.find((x) => x.id === id);
+  $("bld-table").querySelectorAll<HTMLTableRowElement>("tr[data-bid]").forEach((tr) => tr.classList.toggle("active", Number(tr.dataset.bid) === id));
+  $("bld-table").querySelector<HTMLTableRowElement>(`tr[data-bid="${id}"]`)?.scrollIntoView({ block: "nearest" });
+  const d = $("bld-detail");
+  if (!b) { d.classList.remove("hidden"); d.innerHTML = `Building #${id} is outside the current filter.`; return; }
+  d.classList.remove("hidden");
+  d.innerHTML = `<div class="quality-card-header"><span class="q-badge q-GOOD">BUILDING #${b.id}</span><span class="quality-card-title">${fmt(b.height_m, 1)} m tall${b.height_interval_m ? ` (typical range ${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)} m)` : ""} · approx. ${b.floors_range[0]}–${b.floors_range[1]} floors</span></div>
+    <ul class="quality-triggers"><li>Ground ${fmt(b.ground_elev_m, 1)} m · roof ${fmt(b.roof_elev_m, 1)} m (${esc(state.result?.vertical_reference ?? "")})</li>
+    <li>Footprint ${fmt(b.area_m2, 0)} m² · volume ≈ ${b.volume_m3.toLocaleString()} m³ · roof height spread ${fmt(b.height_p10_m, 1)}–${fmt(b.height_p90_m, 1)} m</li>
+    <li>Location ${fmt(b.lat, 5)}° N, ${fmt(b.lon, 5)}° E</li></ul>`;
+  if (fly && state.viewer) { state.viewer.setBuildingsVisible(true); ($("lod1-chk") as HTMLInputElement).checked = true; state.viewer.focusBuilding(id); }
+}
+
 // ──────────────────────────────────────── 3D viewer
 async function open3d() {
   if (!state.jobId || !state.result) return;
@@ -615,6 +754,7 @@ async function open3d() {
       msg.textContent = "Initialising WebGL…";
       state.viewer = new HeightfieldViewer($("viewer"));
       state.viewer.onPick(pickAt);
+      state.viewer.onBuildingPick((id) => selectBuilding(id, false));
       state.viewer.onCameraModeChange((mode) => {
         $("cam-orbit-btn").classList.toggle("active", mode === "orbit");
         $("cam-walk-btn").classList.toggle("active", mode === "walk");
@@ -754,6 +894,10 @@ function wire() {
   $("open3d-btn").addEventListener("click", open3d);
   ($("view-layer") as HTMLSelectElement).addEventListener("change", () => { if (state.viewer && state.result) open3d(); });
   $("validate-btn").addEventListener("click", runValidation);
+  $("validate-pts-btn").addEventListener("click", runPointValidation);
+  const bldReload = () => { clearTimeout(bldTimer); bldTimer = window.setTimeout(loadBuildingsPanel, 250); };
+  $("bld-minh").addEventListener("input", bldReload);
+  $("bld-mina").addEventListener("input", bldReload);
   $("measure-btn").addEventListener("click", () => {
     state.measuring = !state.measuring; state.measurePts = [];
     $("measure-btn").classList.toggle("active", state.measuring);

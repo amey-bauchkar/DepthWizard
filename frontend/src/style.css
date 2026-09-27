@@ -962,3 +962,26 @@ select:focus, input:focus {
   line-height: 1.6;
   border-top: 1px solid var(--line);
 }
+
+.metrics tr.active td { background: rgba(245, 158, 11, 0.18); }
+.readout-table .ru { font-size: 10px; font-weight: 500; color: #fbbf24; margin-top: 1px; cursor: help; }
+.readout-table .ru.none { color: var(--muted); }
+
+/* input check card */
+.input-check { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--border, #334155); border-left-width: 4px; border-radius: 8px; font-size: 12px; }
+.input-check.ok { border-left-color: #22c55e; }
+.input-check.warn { border-left-color: #f59e0b; }
+.input-check.bad { border-left-color: #ef4444; }
+.input-check .ic-head { font-weight: 700; display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.input-check .ic-badge { font-size: 10px; letter-spacing: .05em; padding: 2px 6px; border-radius: 4px; background: rgba(148,163,184,.15); }
+.input-check.ok .ic-badge { color: #22c55e; } .input-check.warn .ic-badge { color: #f59e0b; } .input-check.bad .ic-badge { color: #ef4444; }
+.input-check .ic-facts { color: var(--muted); font-family: "JetBrains Mono", monospace; font-size: 11px; margin-bottom: 6px; }
+.input-check .ic-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.input-check .ic-list li { display: flex; gap: 8px; align-items: flex-start; }
+.input-check .ic-i { width: 16px; flex: none; text-align: center; font-weight: 700; }
+.input-check li.ok .ic-i { color: #22c55e; } .input-check li.warn .ic-i { color: #f59e0b; } .input-check li.bad .ic-i { color: #ef4444; }
+.input-check .ic-d { color: var(--muted); font-size: 11px; line-height: 1.35; }
+.input-check .ic-acc { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--border, #334155); display: grid; gap: 2px; }
+.input-check .ic-acc > div { cursor: help; }
+.input-check .ic-acc-h { font-weight: 600; font-size: 11px; cursor: default; }
+.input-check .ic-src { color: var(--muted); font-size: 10px; }

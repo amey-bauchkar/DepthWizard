@@ -7,6 +7,7 @@ import platform
 from pathlib import Path
 from typing import Any
 
+import rasterio
 import torch
 from fastapi import APIRouter, Body, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -80,6 +81,22 @@ async def create_job(request: Request, file: UploadFile = File(...), dem: Upload
     return mgr.get(job.job_id).to_dict()
 
 
+@router.post("/api/inspect")
+async def inspect_input(request: Request, file: UploadFile = File(...), has_dem: bool = Form(False), has_anchors: bool = Form(False)):
+    """Input check before a job: header + overview only; reports mode, resolution fit, DEM coverage, expected tier and accuracy."""
+    from backend.jobs.inspect import inspect_upload
+
+    mgr = _mgr(request)
+    data = await file.read()
+    if not data:
+        raise InvalidFileError("empty upload")
+    mp = mgr.metric_predictor()
+    try:
+        return inspect_upload(file.filename or "upload", data, mgr.settings, metric_card=mp.card if mp is not None else None, has_user_dem=has_dem, has_anchors=has_anchors)
+    except rasterio.errors.RasterioIOError as e:
+        raise InvalidFileError(f"unreadable GeoTIFF: {e}") from e
+
+
 @router.get("/api/demo")
 def demo_items():
     """Bundled demo inputs and LiDAR references (swisstopo OGD, see assets/demo/README.md)."""
@@ -124,6 +141,69 @@ async def job_validate(request: Request, job_id: str, reference: UploadFile | No
     else:
         raise InvalidFileError("provide a reference upload or a bundled reference name")
     return query.validate_job(job_dir, result, ref_path, ref_type, vertical_crs, note, mgr.settings, acquisition_date)
+
+
+@router.post("/api/jobs/{job_id}/validate_points")
+async def job_validate_points(request: Request, job_id: str, points: UploadFile | None = File(None), bundled: str | None = Form(None), source_note: str = Form("")):
+    """Validate a Mode B job against sparse checkpoints (CSV: id,lon,lat,h_ground[,h_canopy,...], '# vcrs=...').
+    `bundled` = a demo checkpoint file listed in assets/demo/manifest.json (e.g. ICESat-2 over Sikkim)."""
+    mgr = _mgr(request)
+    job_dir = mgr._job_dir(job_id)
+    result = mgr.result(job_id)
+    if points is not None and points.filename:
+        data = await points.read()
+        if not data:
+            raise InvalidFileError("empty checkpoint upload")
+        mgr.attach_extra(job_id, "checkpoints", points.filename, data)
+        path = job_dir / mgr.get(job_id).inputs["checkpoints"]
+        note = source_note or points.filename
+    elif bundled:
+        allowed = {i.get("reference_points") for i in json.loads((DEMO_DIR / "manifest.json").read_text(encoding="utf-8")).get("items", [])} - {None}
+        if bundled not in allowed:
+            raise JobNotFoundError(f"bundled checkpoints {bundled!r} not found")
+        path = DEMO_DIR / bundled
+        note = source_note or f"bundled: {bundled}"
+    else:
+        raise InvalidFileError("provide a checkpoint CSV upload or a bundled checkpoint name")
+    return query.validate_points_job(job_dir, result, path, mgr.settings, note)
+
+
+def _buildings(request: Request, job_id: str) -> dict[str, Any]:
+    mgr = _mgr(request)
+    result = mgr.result(job_id)
+    name = (result.get("artifacts") or {}).get("buildings_json")
+    if not name:
+        raise JobNotFoundError("this job has no LoD-1 buildings (Mode B with model detail only)")
+    from core.terrain import buildings as B
+
+    return B.load(mgr._job_dir(job_id) / name)
+
+
+@router.get("/api/jobs/{job_id}/buildings")
+def job_buildings(request: Request, job_id: str, min_height: float = Query(0.0, ge=0), min_area: float = Query(0.0, ge=0), limit: int = Query(500, ge=1, le=20000)):
+    """Building table (tallest first) with robust heights, measured typical error, ground/roof elevation, area, volume, floors range."""
+    from core.terrain import buildings as B
+
+    data = _buildings(request, job_id)
+    recs = B.records(data, min_height_m=min_height, min_area_m2=min_area)
+    return {"summary": B.summary(data, recs), "buildings": recs[:limit]}
+
+
+@router.get("/api/jobs/{job_id}/buildings.geojson")
+def job_buildings_geojson(request: Request, job_id: str, min_height: float = Query(0.0, ge=0), min_area: float = Query(0.0, ge=0)):
+    from core.terrain import buildings as B
+
+    data = _buildings(request, job_id)
+    body = json.dumps(B.to_geojson(data, B.records(data, min_height_m=min_height, min_area_m2=min_area)))
+    return Response(body, media_type="application/geo+json", headers={"content-disposition": f'attachment; filename="buildings_{job_id}.geojson"'})
+
+
+@router.get("/api/jobs/{job_id}/buildings.csv")
+def job_buildings_csv(request: Request, job_id: str, min_height: float = Query(0.0, ge=0), min_area: float = Query(0.0, ge=0)):
+    from core.terrain import buildings as B
+
+    data = _buildings(request, job_id)
+    return Response(B.to_csv(B.records(data, min_height_m=min_height, min_area_m2=min_area)), media_type="text/csv", headers={"content-disposition": f'attachment; filename="buildings_{job_id}.csv"'})
 
 
 @router.get("/api/jobs/{job_id}/validation")

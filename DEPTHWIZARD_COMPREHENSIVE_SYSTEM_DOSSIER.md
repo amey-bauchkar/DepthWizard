@@ -69,6 +69,24 @@ Honest reading:
   * the leave-one-out test rejected the anchor fit on 2 of 3 tiles;
   * on the 0.5 m tile it was accepted but worsened the terrain from 3.17 to 4.04 m.
 
+### 4.3 India: Sikkim vs NASA ICESat-2 (independent satellite laser checkpoints)
+
+Six 1.2 km scenes of Maxar WorldView 0.5 m imagery (Maxar Open Data Program, CC BY-NC 4.0) are scored against 1,114 ICESat-2 20 m segments. The heights are converted from ellipsoidal to EGM2008 with the C-1 datum guard. No Indian data was used for training or tuning. Pooled RMSE in metres (`docs/validation_india.md`):
+
+| vs ICESat-2 | Copernicus alone | Zero-shot | Fine-tuned |
+|---|---|---|---|
+| Terrain vs ground | 10.51 | 10.25 | **8.54** |
+| DSM vs top of surface | 11.81 | 11.03 | **11.10** |
+| Height above ground | – | 11.38 | **9.20** |
+
+Per site, the fine-tuned model improves height above ground and DSM on 5 of 6 sites and terrain on 4 of 6. It is worse on the two forested-valley sites, where Copernicus already lies within ~2 m of the ground under forest.
+
+Two fixes were tested and rejected because they did not improve track-wise cross-validation:
+- a DEM-only estimate of how much object height the DEM contains;
+- an ICESat-2-anchored estimate of the same quantity.
+
+The limitation is documented rather than tuned away.
+
 The in-app validation panel reproduces these comparisons for any job. It shows the product and the *input DEM alone* on the same mask, and it reports co-registration (grid search with sub-pixel refinement, ≤ 4 px), mask accounting, datum handling, slope / object / height strata, an oracle affine diagnostic and a residual map.
 
 ## 5. Visualisation and interaction
