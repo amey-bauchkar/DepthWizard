@@ -19,6 +19,7 @@ from backend.jobs.manager import JobManager
 from core.geo.vertical import grid_status
 from core.disaster.flood import run_flood_screening
 from core.disaster.accessibility import run_accessibility_screening
+from core.screening_params import DEFAULT_MAX_SLOPE_DEG
 
 REFERENCE_DIR = REPO_ROOT / "assets" / "reference"
 DEMO_DIR = REPO_ROOT / "assets" / "demo"
@@ -261,8 +262,11 @@ def job_disaster_flood(request: Request, job_id: str, body: dict[str, Any] = Bod
     mgr = _mgr(request)
     job_dir = mgr._job_dir(job_id)
     result = mgr.result(job_id)
-    water_level = float(body.get("waterLevel_m", 0.0))
-    return run_flood_screening(job_dir, water_level, result)
+    try:
+        water_level = float(body.get("waterLevel_m", 0.0))
+        return run_flood_screening(job_dir, water_level, result, connected_only=bool(body.get("connectedOnly", False)))
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
 
 
 @router.post("/api/jobs/{job_id}/disaster/accessibility")
@@ -270,8 +274,11 @@ def job_disaster_accessibility(request: Request, job_id: str, body: dict[str, An
     mgr = _mgr(request)
     job_dir = mgr._job_dir(job_id)
     result = mgr.result(job_id)
-    max_slope = float(body.get("maxSlopeDeg", 15.0))
-    return run_accessibility_screening(job_dir, max_slope, result)
+    try:
+        max_slope = float(body.get("maxSlopeDeg", DEFAULT_MAX_SLOPE_DEG))
+        return run_accessibility_screening(job_dir, max_slope, result)
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
 
 
 

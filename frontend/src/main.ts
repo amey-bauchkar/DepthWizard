@@ -1054,7 +1054,7 @@ async function runDisasterAnalysis(silent = false) {
     return;
   }
   const runBtn = $("run-disaster-btn") as HTMLButtonElement;
-  if (!silent && runBtn) runBtn.textContent = "⚡ Screening...";
+  if (!silent && runBtn) runBtn.textContent = "Screening…";
 
   try {
     const disScen = $("disaster-scenario") as HTMLSelectElement;
@@ -1078,13 +1078,13 @@ async function runDisasterAnalysis(silent = false) {
 
     if (mode === "flood") {
       $("stat-area-card").querySelector(".stat-label")!.textContent = "Inundated Area";
-      $("stat-area-val").textContent = `${(resp.affectedAreaM2 / 1000000).toFixed(3)} km²`;
-      const pctText = resp.affectedAreaPct !== undefined ? `${resp.affectedAreaPct}% of AOI` : `${Math.round(resp.affectedAreaM2).toLocaleString()} m²`;
-      $("stat-area-sub").textContent = pctText;
+      $("stat-area-val").textContent = fmtArea(resp.affectedAreaM2);
+      const iso = resp.isolatedAreaM2 ? ` · ${fmtArea(resp.isolatedAreaM2)} isolated` : "";
+      $("stat-area-sub").textContent = `${resp.affectedAreaPct}% of valid terrain${iso}`;
 
       $("stat-buildings-card").classList.remove("hidden");
       $("stat-buildings-val").textContent = String(resp.affectedBuildingsCount ?? 0);
-      $("stat-buildings-sub").textContent = "structures inundated";
+      $("stat-buildings-sub").textContent = `exposed · ${resp.contactBuildingsCount ?? 0} in contact`;
 
       $("stat-maxdepth-card").classList.remove("hidden");
       $("stat-maxdepth-val").textContent = `${resp.maxDepth_m} m`;
@@ -1095,7 +1095,7 @@ async function runDisasterAnalysis(silent = false) {
       const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
       if (dlLink) {
         dlLink.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
-        dlLink.textContent = "📥 Download Depth Raster (GeoTIFF)";
+        dlLink.textContent = "Download depth raster (GeoTIFF)";
       }
 
       const bWrap = $("disaster-buildings-wrap");
@@ -1109,9 +1109,9 @@ async function runDisasterAnalysis(silent = false) {
           <div class="disaster-bldg-item" data-bldg-id="${b.id}">
             <div>
               <b>Building #${b.id}</b>
-              <span class="hint" style="margin-left: 6px;">Elev: ${b.base_elev_m}m · Depth: <span style="color:#38bdf8;font-weight:700;">${b.flood_depth_m}m</span></span>
+              <span class="hint" style="margin-left: 6px;">Ground ${b.base_elev_m} m · depth <span class="depth-val">${b.flood_depth_m} m</span>${b.wet_fraction != null ? ` · ${Math.round(b.wet_fraction * 100)}% wet` : ""}</span>
             </div>
-            <span class="badge ${b.exposure === 'NONE' ? 'muted' : b.exposure === 'LOW' ? 'ok' : b.exposure === 'MODERATE' ? 'warn' : 'bad'}" style="font-size: 10px;">${b.exposure}</span>
+            <span class="badge ${exposureBadge(b.exposure)}" style="font-size: 10px;">${b.exposure}</span>
           </div>
         `).join("");
 
@@ -1126,20 +1126,18 @@ async function runDisasterAnalysis(silent = false) {
         bWrap.classList.add("hidden");
       }
 
-      $("disaster-legend-title").textContent = "Water Depth (m)";
-      $("disaster-ramp-bar").style.background = "linear-gradient(to right, #add8e6, #00bfff, #0000cd, #000080)";
-      $("disaster-ramp-labels").innerHTML = `<span>0.0 m</span><span>0.5 m</span><span>1.5 m</span><span>3.0 m+</span>`;
-      $("disaster-legend-classes").innerHTML = `
-        <span class="l-item"><i style="background:#add8e6"></i>Low</span>
-        <span class="l-item"><i style="background:#00bfff"></i>Mod</span>
-        <span class="l-item"><i style="background:#0000cd"></i>High</span>
-        <span class="l-item"><i style="background:#000080"></i>Extreme</span>
-      `;
-      $("disaster-toggle-lbl").textContent = "🌊 Water Overlay";
+      // legend drawn from the backend's ramp + class definitions (single source of truth)
+      const ramp = resp.previewRamp ?? { colours: ["#add8e6", "#00bfff", "#0000cd", "#000080"], stops_m: [0, 1.67, 3.33, 5] };
+      $("disaster-legend-title").textContent = "Water depth above terrain (m)";
+      $("disaster-ramp-bar").style.background = `linear-gradient(to right, ${ramp.colours.join(", ")})`;
+      $("disaster-ramp-labels").innerHTML = ramp.stops_m.map((v: number, i: number) => `<span>${v.toFixed(1)}${i === ramp.stops_m.length - 1 ? "+" : ""}</span>`).join("");
+      $("disaster-legend-classes").innerHTML = (resp.exposureRules ?? []).map((r: any) =>
+        `<span class="l-item">${r.label} ${r.le_m == null ? `> ${r.gt_m}` : `≤ ${r.le_m}`}</span>`).join("");
+      $("disaster-toggle-lbl").textContent = "Water overlay";
     } else {
       $("stat-area-card").querySelector(".stat-label")!.textContent = "Accessible Area";
-      $("stat-area-val").textContent = `${(resp.accessibleAreaM2 / 1000000).toFixed(3)} km²`;
-      $("stat-area-sub").textContent = `${Math.round(resp.accessibleAreaM2).toLocaleString()} m²`;
+      $("stat-area-val").textContent = fmtArea(resp.accessibleAreaM2);
+      $("stat-area-sub").textContent = `${resp.accessiblePctOfGround ?? "—"}% of open ground · buildings excluded`;
 
       $("stat-buildings-card").classList.add("hidden");
       $("stat-maxdepth-card").classList.add("hidden");
@@ -1148,7 +1146,7 @@ async function runDisasterAnalysis(silent = false) {
       const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
       if (dlLink) {
         dlLink.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
-        dlLink.textContent = "📥 Download Accessibility Mask (GeoTIFF)";
+        dlLink.textContent = "Download accessibility mask (GeoTIFF)";
       }
 
       $("disaster-buildings-wrap").classList.add("hidden");
@@ -1158,15 +1156,16 @@ async function runDisasterAnalysis(silent = false) {
       $("disaster-ramp-labels").innerHTML = `<span>≤ ${resp.maxSlopeDeg}° (Safe)</span><span>> ${resp.maxSlopeDeg}° (Hazard)</span>`;
       $("disaster-legend-classes").innerHTML = `
         <span class="l-item"><i style="background:#22c55e"></i>Accessible</span>
-        <span class="l-item"><i style="background:#ef4444"></i>Steep / Hazard</span>
+        <span class="l-item"><i style="background:#ef4444"></i>Steeper</span>
+        <span class="l-item"><i style="background:#5a5a5a"></i>Building</span>
       `;
-      $("disaster-toggle-lbl").textContent = "🚜 Access Overlay";
+      $("disaster-toggle-lbl").textContent = "Access overlay";
     }
 
     // Warnings
     const wDiv = $("disaster-warnings");
     if (resp.warnings && resp.warnings.length > 0) {
-      wDiv.innerHTML = resp.warnings.map((w: string) => `⚠️ ${w}`).join("<br>");
+      wDiv.innerHTML = resp.warnings.map((w: string) => esc(w)).join("<br>");
       wDiv.classList.remove("hidden");
     } else {
       wDiv.classList.add("hidden");
@@ -1189,7 +1188,7 @@ async function runDisasterAnalysis(silent = false) {
   } catch (e: any) {
     if (!silent) alert("Disaster Analysis Failed: " + (e.message || String(e)));
   } finally {
-    if (!silent && runBtn) runBtn.textContent = "⚡ Run Screening";
+    if (!silent && runBtn) runBtn.textContent = "Run screening";
   }
 }
 
@@ -1277,12 +1276,12 @@ function showHudBuildingInfo(b: any) {
   if (!hud) return;
   const isFlood = (b.flood_depth_m ?? 0) > 0;
   hud.innerHTML = `
-    <b style="color:#f1f5f9;">🏢 Building #${b.id}</b><br/>
-    Base Elev: ${b.base_elev_m} m${b.height_m ? ` · Height: ${b.height_m}m` : ""}<br/>
-    Status: ${isFlood 
-      ? `<span style="color:#ef4444;font-weight:bold;">🌊 Inundated (${b.flood_depth_m}m depth)</span>` 
-      : `<span style="color:#4ade80;font-weight:bold;">🌿 Safe above flood</span>`}<br/>
-    Exposure: <span class="badge ${b.exposure === 'NONE' ? 'muted' : b.exposure === 'LOW' ? 'ok' : b.exposure === 'MODERATE' ? 'warn' : 'bad'}">${b.exposure}</span>
+    <b>Building #${b.id}</b><br/>
+    Ground ${b.base_elev_m} m${b.height_m ? ` · roof height ${b.height_m} m` : ""}<br/>
+    Status: ${isFlood
+      ? `<span class="hud-risk">Exposed — ${b.flood_depth_m} m on the low side${b.wet_fraction != null ? `, ${Math.round(b.wet_fraction * 100)}% of footprint wet` : ""}</span>`
+      : `<span class="hud-dry">Above the water level</span>`}<br/>
+    Exposure: <span class="badge ${exposureBadge(b.exposure)}">${b.exposure}</span>
   `;
 }
 
@@ -1291,12 +1290,20 @@ function resetHudInfo() {
   if (hud) hud.innerHTML = "Hover or click anywhere on the 2D map to inspect flood depth";
 }
 
+/** Applies the backend's exposure rules (resp.exposureRules) — the thresholds are never duplicated here. */
 function classifyExposure(depth: number): string {
-  if (depth <= 0) return "NONE";
-  if (depth <= 0.5) return "LOW";
-  if (depth <= 1.5) return "MODERATE";
-  if (depth <= 3.0) return "HIGH";
-  return "VERY HIGH";
+  const rules: { label: string; gt_m: number; le_m: number | null }[] = state.disaster.lastResult?.exposureRules ?? [];
+  if (!(depth > 0) || !rules.length) return "NONE";
+  return (rules.find((r) => depth > r.gt_m && (r.le_m == null || depth <= r.le_m)) ?? rules[rules.length - 1]).label;
+}
+
+function exposureBadge(label: string): string {
+  return label === "NONE" ? "muted" : label === "LOW" ? "ok" : label === "MODERATE" ? "warn" : "bad";
+}
+
+/** Same quantity (m²) at a readable scale: m² below 1 ha, else km². */
+function fmtArea(m2: number): string {
+  return m2 < 1e4 ? `${Math.round(m2).toLocaleString()} m²` : `${(m2 / 1e6).toFixed(3)} km²`;
 }
 
 function wireDisasterMapInspector() {
@@ -1323,15 +1330,15 @@ function wireDisasterMapInspector() {
 
     if (scen === "flood") {
       hud.innerHTML = `
-        <span style="color:#38bdf8;font-weight:700;">Pixel:</span> [${col}, ${row}]<br/>
-        <span style="color:#94a3b8;">Water Plane:</span> ${fLvl.toFixed(1)} m<br/>
+        <span class="hud-k">Pixel</span> [${col}, ${row}]<br/>
+        <span class="hud-k">Water plane</span> ${fLvl.toFixed(1)} m<br/>
         <span class="hint" style="font-size:10px;">Click to query elevation & depth</span>
       `;
     } else {
       const aSlp = Number(($("access-slope-slider") as HTMLInputElement).value || 15);
       hud.innerHTML = `
-        <span style="color:#38bdf8;font-weight:700;">Pixel:</span> [${col}, ${row}]<br/>
-        <span style="color:#94a3b8;">Max Slope:</span> ${aSlp}°<br/>
+        <span class="hud-k">Pixel</span> [${col}, ${row}]<br/>
+        <span class="hud-k">Max slope</span> ${aSlp}°<br/>
         <span class="hint" style="font-size:10px;">Click to query slope</span>
       `;
     }
@@ -1368,8 +1375,8 @@ function wireDisasterMapInspector() {
           <b>Location:</b> [${col}, ${row}]<br/>
           <b>Ground Elev:</b> ${tVal.toFixed(2)} m<br/>
           <b>Status:</b> ${isFlood 
-            ? `<span style="color:#38bdf8;font-weight:bold;">🌊 Inundated (${depth.toFixed(2)}m depth)` 
-            : `<span style="color:#4ade80;font-weight:bold;">🌿 Dry Ground (+${(-depth).toFixed(1)}m clear)`}</span><br/>
+            ? `<span class="hud-wet">Inundated (${depth.toFixed(2)} m depth)` 
+            : `<span class="hud-dry">Dry ground (+${(-depth).toFixed(1)} m clear)`}</span><br/>
           ${isFlood ? `<b>Exposure:</b> <span class="badge ${depth > 3 ? 'bad' : depth > 1.5 ? 'warn' : 'ok'}">${classifyExposure(depth)}</span>` : ""}
         `;
       } else {

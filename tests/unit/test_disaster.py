@@ -85,7 +85,9 @@ def test_run_flood_screening_below_min(mock_job_dir):
     assert summary["affectedBuildingsCount"] == 0
 
 
-def test_run_accessibility_screening(mock_job_dir):
+def test_run_accessibility_screening_legacy_slope_fallback(mock_job_dir):
+    # jobs without a terrain layer fall back to slope.tif (surface slope) and say so
+    (mock_job_dir / "terrain.tif").unlink()
     result = {}
     max_slope = 15.0
     summary = run_accessibility_screening(mock_job_dir, max_slope, result)
@@ -95,4 +97,4 @@ def test_run_accessibility_screening(mock_job_dir):
     # Half the raster is slope 10, half is 20
     assert summary["accessibleAreaM2"] == 50.0  # 50 pixels * 1m^2
     assert (mock_job_dir / "accessibility.tif").exists()
-
+    assert "surface slope" in summary["elevationSource"]

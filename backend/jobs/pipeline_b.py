@@ -307,10 +307,10 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
         leg = elevation_preview(job_dir / "dsm_preview.png", dsm, lo=dlo, hi=dhi)
         elevation_preview(job_dir / "terrain_preview.png", terrain, lo=dlo, hi=dhi)
         hillshade_preview(job_dir / "hillshade_preview.png", dsm, gsd[0], gsd[1])
-        slope, aspect = slope_layers(dsm, gsd[0], gsd[1])
+        slope, aspect = slope_layers(dsm, grid.transform)  # surface (DSM) slope; terrain slope is derived in core.disaster
         sg = Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, None, tier.tier)
-        write_raster(job_dir / "slope.tif", slope, sg, {"OUTPUT_QUANTITY": "slope_degrees", "METHOD": "Horn 3x3, edges flagged"})
-        write_raster(job_dir / "aspect.tif", aspect, sg, {"OUTPUT_QUANTITY": "aspect_degrees_from_north"})
+        write_raster(job_dir / "slope.tif", slope, sg, {"OUTPUT_QUANTITY": "surface_slope_degrees", "SURFACE": "dsm (includes buildings and canopy)", "METHOD": "Horn 3x3 in pixel space, mapped to CRS axes by J^-T of the affine; edges flagged"})
+        write_raster(job_dir / "aspect.tif", aspect, sg, {"OUTPUT_QUANTITY": "surface_aspect_degrees", "CONVENTION": "downslope (facing) azimuth, clockwise from grid north, [0,360); NaN where flat"})
         sleg = slope_preview(job_dir / "slope_preview.png", slope)
         low_support = terrain_res.support < 0.25
         flags = build_flags(dsm.shape, valid=np.isfinite(dsm), raw_fallback=terrain_res.raw_fallback, dem_void=~dem_valid, no_object_scale=detail_t is None, low_support=low_support)
@@ -355,7 +355,11 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
             try:
                 from core.terrain.lod1 import extract_lod1_buildings, save_lod1_buildings
 
-                lod1_data = extract_lod1_buildings(ndsm, terrain, rgb=ing.rgb, gsd_m=gsd_m)
+                lod1_data = extract_lod1_buildings(ndsm, terrain, rgb=ing.rgb, gsd_m=gsd_m, transform=grid.transform, return_labels=True)
+                labels = lod1_data.pop("_labels")
+                # exact footprint pixel sets (value = building id): hazard screening intersects these, not polygons
+                write_raster(job_dir / "building_labels.tif", labels, Grid(grid.width, grid.height, grid.transform, grid.crs, "int32", 0, "relative", False, None, tier.tier), {"OUTPUT_QUANTITY": "building_id", "NOTE": "0 = no building; ids match buildings.json"}, dtype="int32")
+                artifacts["building_labels_tif"] = "building_labels.tif"
                 mi = tiled.model_info if tiled is not None else {}
                 lod1_data["height_error"] = ({"typical_m": mi.get("object_rmse_m"), "bias_m": mi.get("object_me_m"), "source": f"{mi.get('name')}@{mi.get('version')} model card: RMSE for objects >= 2.5 m on held-out LiDAR regions {mi.get('test_regions')}", "calibrated": True}
                                              if metric and mi.get("object_rmse_m") else {"typical_m": None, "source": "zero-shot detail scaled against the DEM: building-height error not calibrated", "calibrated": False})
@@ -373,7 +377,7 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
         hg = Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, None, "H")
         write_raster(job_dir / "ndsm.tif", ndsm, hg, {"OUTPUT_QUANTITY": "height_above_ground", "SCALE_SOURCE": scale_source, "MODEL": tiled.quantity})
         nleg = elevation_preview(job_dir / "ndsm_preview.png", ndsm, lo=0.0, hi=max(1.0, float(np.nanpercentile(ndsm, 99))))
-        slope, aspect = slope_layers(ndsm, gsd[0], gsd[1])
+        slope, aspect = slope_layers(ndsm, grid.transform)
         write_raster(job_dir / "slope.tif", slope, hg, {"OUTPUT_QUANTITY": "slope_degrees_of_ndsm"})
         sleg = slope_preview(job_dir / "slope_preview.png", slope)
         hillshade_preview(job_dir / "hillshade_preview.png", ndsm, gsd[0], gsd[1])

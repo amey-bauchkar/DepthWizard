@@ -152,9 +152,9 @@ export class HeightfieldViewer {
       }
     });
 
-    // Scene background — sleek dark obsidian slate
-    this.scene.background = new THREE.Color(0x0b1120);
-    this.scene.fog = new THREE.FogExp2(0x0b1120, 0.00006);
+    // Scene background — light survey grey-green, matches the workspace (--viewer bg in style.css)
+    this.scene.background = new THREE.Color(0xe4ebe8);
+    this.scene.fog = new THREE.FogExp2(0xe4ebe8, 0.00006);
 
     // 1. Ambient baseline illumination — guarantees all building facades are clean, bright, and legible
     const amb = new THREE.AmbientLight(0xffffff, 0.90);

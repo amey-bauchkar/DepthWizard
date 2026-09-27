@@ -31,13 +31,15 @@ def horn_gradients(z: np.ndarray, gsd: float = 1.0) -> tuple[np.ndarray, np.ndar
 
 
 def slope_aspect_deg(z: np.ndarray, gsd_x: float, gsd_y: float | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """Slope (degrees) and aspect (degrees clockwise from north) — Horn method. Edge pixels use
+    """Slope (degrees) and aspect (degrees clockwise from north, downslope/facing direction, GDAL convention)
+    — Horn method, north-up grids only (see core.dsm.derive.slope_aspect_affine for any affine). Edge pixels use
     'nearest' padding and should be flagged (Phase 8 L0-06: up to ~3 deg edge error)."""
     gsd_y = gsd_x if gsd_y is None else gsd_y
     p = ndimage.correlate(z, HORN_KX, mode="nearest") / gsd_x
     q = ndimage.correlate(z, HORN_KY, mode="nearest") / gsd_y
     slope = np.degrees(np.arctan(np.hypot(p, q)))
-    aspect = (np.degrees(np.arctan2(p, -q)) + 360.0) % 360.0
+    # p = dz/dx (east), q = dz/drow = -dz/dy (north); downslope azimuth = atan2(-dz/dx, -dz/dy) = atan2(-p, q)
+    aspect = (np.degrees(np.arctan2(-p, q)) + 360.0) % 360.0
     return slope, aspect
 
 

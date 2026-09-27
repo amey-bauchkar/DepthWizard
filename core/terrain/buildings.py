@@ -1,22 +1,32 @@
 """Building intelligence: a per-building table from buildings.json, with filters and GIS exports (GeoJSON, CSV).
 
 Each building record carries its footprint, robust height statistics from the nDSM inside the footprint, ground and
-roof elevation, footprint area, an approximate volume and a floor-count *range*. It also carries the model's measured
-typical height error (from the model card, held-out LiDAR), never an invented confidence.
+roof elevation, footprint area, the integrated above-ground volume and a floor-count *range*. It also carries the
+model's measured typical height error (from the model card, held-out LiDAR), never an invented confidence.
+The mathematics is specified in core/terrain/building_stats.py and docs/math_audit.md.
 """
 from __future__ import annotations
 
 import csv
 import io
 import json
-import math
 from pathlib import Path
 from typing import Any
+
+import statistics
 
 from affine import Affine
 from pyproj import Transformer
 
-FLOOR_M = (3.0, 3.5)  # typical storey heights used for the approximate floor range
+from core.terrain.building_stats import floors_range
+
+# What every output number IS (docs/math_audit.md §19). PREDICTED = model output; DERIVED = computed from other
+# quantities; REFERENCE = from the DEM-based terrain layer; SCENARIO = depends on a user-chosen parameter.
+QUANTITY_CATEGORY = {
+    "height_m": "PREDICTED", "height_block_m": "DERIVED", "height_p10_m": "PREDICTED", "height_p90_m": "PREDICTED",
+    "height_interval_m": "DERIVED", "ground_elev_m": "REFERENCE", "ground_slope_deg": "DERIVED", "roof_elev_m": "DERIVED",
+    "area_m2": "DERIVED", "volume_m3": "DERIVED", "volume_range_m3": "DERIVED", "floors_range": "DERIVED",
+}
 
 
 def load(path: str | Path) -> dict[str, Any]:
@@ -43,9 +53,12 @@ def records(data: dict[str, Any], *, min_height_m: float = 0.0, min_area_m2: flo
     to_ll = Transformer.from_crs(crs, "EPSG:4326", always_xy=True) if crs else None
     out = []
     for b in data.get("buildings", []):
-        h = float(b.get("height_median_m", b["height_m"]))
+        h = float(b.get("height_median_m", b["height_m"]))  # typical roof height (median of nDSM in the footprint)
         if h < min_height_m or b["area_m2"] < min_area_m2:
             continue
+        exact = "volume_m3" in b  # jobs processed before the audit lack the pixelwise quantities
+        h_block = float(b.get("height_block_m", h))
+        vol = float(b["volume_m3"]) if exact else b["area_m2"] * h
         pts = _to_crs(data, b["coords"])
         cx, cy = sum(p[0] for p in pts[:-1]) / max(1, len(pts) - 1), sum(p[1] for p in pts[:-1]) / max(1, len(pts) - 1)
         lon, lat = to_ll.transform(cx, cy) if to_ll else (None, None)
@@ -57,11 +70,19 @@ def records(data: dict[str, Any], *, min_height_m: float = 0.0, min_area_m2: flo
             "height_p10_m": b.get("height_p10_m"),
             "height_p90_m": b.get("height_p90_m"),
             "height_interval_m": [round(max(0.0, h - typ), 1), round(h + typ, 1)] if typ else None,
+            "height_block_m": round(h_block, 2),
             "ground_elev_m": b["base_elev_m"],
-            "roof_elev_m": round(b["base_elev_m"] + h, 1),
+            "ground_slope_deg": b.get("ground_slope_deg"),
+            # pixelwise median(T_i + h_i); legacy jobs: base + median h (differs on sloped sites)
+            "roof_elev_m": round(float(b["roof_elev_m"]), 2) if exact else round(b["base_elev_m"] + h, 2),
             "area_m2": b["area_m2"],
-            "volume_m3": round(b["area_m2"] * h),
-            "floors_range": [max(1, math.floor(h / FLOOR_M[1])), max(1, math.ceil(h / FLOOR_M[0]))] if h >= 2.5 else [0, 0],
+            "volume_m3": round(vol),
+            # +-1 sigma band if the model's per-object error were fully correlated across the roof (conservative bound:
+            # V = A * H_block, dV = A * sigma_h). Independent pixel errors would give A_px * sigma * sqrt(N), far smaller.
+            "volume_range_m3": [round(b["area_m2"] * max(0.0, h_block - typ)), round(b["area_m2"] * (h_block + typ))] if typ else None,
+            "floors_range": floors_range(h),
+            "valid_fraction": b.get("valid_fraction"),
+            "quality_flags": b.get("quality_flags", []) if exact else ["LEGACY_STATS_REPROCESS_JOB"],
             "lon": round(lon, 6) if lon is not None else None,
             "lat": round(lat, 6) if lat is not None else None,
             "scene_xy": [round(scx, 2), round(scy, 2)],
@@ -73,20 +94,26 @@ def records(data: dict[str, Any], *, min_height_m: float = 0.0, min_area_m2: flo
 
 def summary(data: dict[str, Any], recs: list[dict[str, Any]]) -> dict[str, Any]:
     hs = sorted(r["height_m"] for r in recs)
+    method = "pixelwise" if any("volume_m3" in b for b in data.get("buildings", [])) else "legacy (area x median height; reprocess the job)"
     classes = {"low_lt10m": sum(h < 10 for h in hs), "mid_10_25m": sum(10 <= h < 25 for h in hs), "high_ge25m": sum(h >= 25 for h in hs)}
     return {
         "count_total": data.get("count", len(data.get("buildings", []))),
         "count_filtered": len(recs),
         "height_classes": classes,
         "max_height_m": hs[-1] if hs else None,
-        "median_height_m": hs[len(hs) // 2] if hs else None,
+        "median_height_m": round(statistics.median(hs), 1) if hs else None,
         "total_footprint_m2": round(sum(r["area_m2"] for r in recs)),
         "total_volume_m3": round(sum(r["volume_m3"] for r in recs)),
         "height_error": data.get("height_error"),
         "vertical_reference": data.get("vertical_reference"),
         "segmentation_method": data.get("segmentation_method"),
+        "stats_method": method,
+        "quantity_category": QUANTITY_CATEGORY,
         "notes": [
-            "height = median of the model's nDSM inside the footprint; p10-p90 shows the spread across the roof.",
+            "height = typical roof height = median of the model's nDSM over the footprint pixels; p10-p90 shows the spread (a wide spread means several roof levels or a pitched roof).",
+            "volume = integral of the nDSM over the footprint (sum h_i x cell area); the 3D block height is volume / area, so the extruded block has exactly this volume.",
+            "roof elevation is the median of (terrain + nDSM) per pixel, so it stays correct on sloped ground.",
+            "height interval and volume range use the model card's per-object RMSE; they are not per-building calibrated uncertainties.",
             "floors_range assumes 3.0-3.5 m per storey and is an approximation, not a measurement.",
             "footprints come from a rule-based RGB + nDSM mask (not a trained segmentation model) and may merge or split buildings.",
         ],
@@ -110,10 +137,10 @@ def to_geojson(data: dict[str, Any], recs: list[dict[str, Any]]) -> dict[str, An
 
 
 def to_csv(recs: list[dict[str, Any]]) -> str:
-    cols = ["id", "lon", "lat", "height_m", "height_p10_m", "height_p90_m", "height_interval_m", "ground_elev_m", "roof_elev_m", "area_m2", "volume_m3", "floors_range", "n_pixels"]
+    cols = ["id", "lon", "lat", "height_m", "height_p10_m", "height_p90_m", "height_interval_m", "height_block_m", "ground_elev_m", "ground_slope_deg", "roof_elev_m", "area_m2", "volume_m3", "volume_range_m3", "floors_range", "valid_fraction", "quality_flags", "n_pixels"]
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(cols)
     for r in recs:
-        w.writerow(["-".join(map(str, r[c])) if isinstance(r.get(c), list) else r.get(c) for c in cols])
+        w.writerow([("|" if c == "quality_flags" else "-").join(map(str, r[c])) if isinstance(r.get(c), list) else r.get(c) for c in cols])
     return buf.getvalue()

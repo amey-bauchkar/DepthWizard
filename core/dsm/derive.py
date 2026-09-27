@@ -4,7 +4,6 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from core.validate.coregister import slope_aspect_deg
 
 FLAG_BORDER = 1
 FLAG_TERRAIN_RAW_DEM = 2
@@ -15,13 +14,62 @@ FLAG_LOW_SUPPORT = 32
 FLAG_BITS = {"BORDER": FLAG_BORDER, "TERRAIN_RAW_DEM": FLAG_TERRAIN_RAW_DEM, "DEM_VOID": FLAG_DEM_VOID, "NODATA": FLAG_NODATA, "NO_OBJECT_SCALE": FLAG_NO_OBJECT_SCALE, "LOW_SUPPORT": FLAG_LOW_SUPPORT}
 
 
-def slope_layers(dsm: np.ndarray, gsd_x: float, gsd_y: float) -> tuple[np.ndarray, np.ndarray]:
-    z = np.where(np.isfinite(dsm), dsm, np.nanmedian(dsm)).astype(np.float64)
-    s, a = slope_aspect_deg(z, gsd_x, gsd_y)
+FLAT_TAN = 1e-6  # |grad z| below this (0.00006 deg) has no defined aspect: below float32 resolution of typical DEM steps
+
+
+def pixel_area_m2(transform) -> float:
+    """Physical area of one cell = |det J| of the affine's 2x2 linear part. Exact under rotation and shear, where
+    pixel_width * pixel_height (column-vector norms) over-estimates it. Units: CRS units squared (m^2 for the
+    projected metric grids DepthWizard produces; geographic rasters are reprojected to UTM at ingest)."""
+    t = transform
+    return abs(t.a * t.e - t.b * t.d)
+
+
+def world_gradients(z: np.ndarray, transform) -> tuple[np.ndarray, np.ndarray]:
+    """(dz/dx, dz/dy) in z-units per CRS unit, x = east, y = north, for ANY affine pixel->CRS transform.
+
+    Horn's 3x3 kernels give the pixel-space derivatives g_c = dz/dcol and g_r = dz/drow (per pixel). With
+    [x, y]^T = J [col, row]^T + t, the chain rule gives [g_c, g_r]^T = J^T grad_xy z, hence
+        grad_xy z = J^-T [g_c, g_r]^T,   J^-T = (1/det J) [[ e, -d], [-b, a]].
+    For a north-up grid (a = gx, e = -gy, b = d = 0) this reduces to dz/dx = g_c/gx and dz/dy = -g_r/gy.
+    """
+    from core.validate.coregister import horn_gradients
+
+    gc, gr = horn_gradients(z, 1.0)
+    t = transform
+    det = t.a * t.e - t.b * t.d
+    if det == 0:
+        raise ValueError("degenerate (singular) raster transform")
+    return (t.e * gc - t.d * gr) / det, (-t.b * gc + t.a * gr) / det
+
+
+def slope_aspect_affine(z: np.ndarray, transform) -> tuple[np.ndarray, np.ndarray]:
+    """Slope (degrees, atan|grad z|) and aspect (degrees clockwise from grid north, [0, 360), the azimuth of the
+    DOWNSLOPE direction = the direction the surface faces, GDAL/ArcGIS convention: a west-facing slope is 270).
+    Aspect is NaN where the surface is flat (|grad z| < FLAT_TAN). Angles are converted to degrees only here."""
+    dzdx, dzdy = world_gradients(z, transform)
+    g = np.hypot(dzdx, dzdy)
+    slope = np.degrees(np.arctan(g))
+    aspect = (np.degrees(np.arctan2(-dzdx, -dzdy)) + 360.0) % 360.0
+    aspect[g < FLAT_TAN] = np.nan
+    return slope, aspect
+
+
+def slope_layers(elev: np.ndarray, transform) -> tuple[np.ndarray, np.ndarray]:
+    """Slope/aspect rasters of an elevation layer. The 3x3 Horn stencil is only defined where all 9 cells exist, so the
+    result is NaN on the outer raster ring and next to NoData. (Before the audit those cells were filled by 'nearest'
+    padding / the scene median, which halves the gradient on the edge: 5.71 deg reads as 2.86 deg.)"""
+    from scipy.ndimage import binary_dilation
+
+    bad = ~np.isfinite(elev)
+    z = np.where(bad, np.nanmedian(elev) if (~bad).any() else 0.0, elev).astype(np.float64)
+    s, a = slope_aspect_affine(z, transform)
+    undefined = binary_dilation(bad, structure=np.ones((3, 3), bool))
+    undefined[0, :] = undefined[-1, :] = undefined[:, 0] = undefined[:, -1] = True
     s = s.astype(np.float32)
     a = a.astype(np.float32)
-    s[~np.isfinite(dsm)] = np.nan
-    a[~np.isfinite(dsm)] = np.nan
+    s[undefined] = np.nan
+    a[undefined] = np.nan
     return s, a
 
 

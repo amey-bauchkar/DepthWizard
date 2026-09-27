@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 import rasterio.features
+from core.terrain.building_stats import STATS_VERSION, footprint_stats
 from scipy.ndimage import (
     binary_closing,
     binary_dilation,
@@ -91,6 +92,14 @@ def _separate_building_instances(
             markers[r, c] = idx
 
         labels = watershed(ws_surface, markers, mask=mask)
+        # watershed only floods basins that contain a marker: a mask component without a peak (e.g. a building
+        # within min_distance of the image border, where peak_local_max excludes peaks) would be silently dropped
+        # (Zürich demo: 11 buildings >= 15 m^2). Every such component becomes its own instance, so labels partition
+        # the mask exactly.
+        orphan = mask & (labels == 0)
+        if orphan.any():
+            extra, k = nd_label(orphan)
+            labels = np.where(extra > 0, extra + labels.max(), labels)
         return labels, int(labels.max())
     except Exception as e:
         log.warning("Watershed instance separation fallback to connected components: %s", e)
@@ -108,6 +117,8 @@ def extract_lod1_buildings(
     min_area_m2: float = 15.0,
     max_buildings: int = 3000,
     simplify_tol_m: float = 1.0,
+    return_labels: bool = False,
+    transform: Any = None,
 ) -> dict[str, Any]:
     """Extract LoD-1 buildings — one clean block per building.
 
@@ -117,11 +128,17 @@ def extract_lod1_buildings(
       3. Vectorize all components in a single pass
       4. Sample exact roof height & base elevation per building using fast bounding slices
       5. Simplify polygon + map to centered scene coordinates
+
+    With return_labels=True the result also carries "_labels": an int32 raster where pixel value k is building id k
+    (0 = none). It is the exact pixel set every per-building statistic is computed on; callers must pop it before
+    JSON serialisation.
     """
     from scipy.ndimage import find_objects
 
     H, W = ndsm.shape
-    pixel_area_m2 = gsd_m * gsd_m
+    # pixel->CRS affine; without one, a north-up grid of gsd_m cells (pixel area = |det J| either way)
+    tr = transform if transform is not None else rasterio.Affine(gsd_m, 0.0, 0.0, 0.0, -gsd_m, 0.0)
+    pixel_area_m2 = abs(tr.a * tr.e - tr.b * tr.d)
     min_area_px = max(4, int(round(min_area_m2 / max(pixel_area_m2, 1e-6))))
     max_area_m2 = 50000.0
 
@@ -146,14 +163,19 @@ def extract_lod1_buildings(
 
     if not base_mask.any():
         return {
+            **({"_labels": np.zeros((H, W), np.int32)} if return_labels else {}),
             "buildings": [], "count": 0, "min_height_m": min_height_m,
             "gsd_m": gsd_m, "extent": [(W - 1) * gsd_m, (H - 1) * gsd_m],
             "segmentation_method": segmentation_method,
         }
 
-    # Cleanup noise
-    clean = binary_opening(base_mask, structure=np.ones((2, 2), dtype=bool))
-    clean = binary_closing(clean, structure=np.ones((3, 3), dtype=bool))
+    # Cleanup noise. Pixels outside the raster are unknown, not background: edge-replicate before the morphology and
+    # crop after, otherwise the opening erodes (and the closing cannot restore) every building touching the raster
+    # edge by one pixel (measured: a 16 x 10 px edge block lost 10 % of its area).
+    pad = 2
+    padded = np.pad(base_mask, pad, mode="edge")
+    padded = binary_opening(padded, structure=np.ones((2, 2), dtype=bool))
+    clean = binary_closing(padded, structure=np.ones((3, 3), dtype=bool))[pad:-pad, pad:-pad]
 
     # ── Step 2: Separate touching buildings via watershed ─────────────────
     labeled, n_components = _separate_building_instances(clean, ndsm, gsd_m=gsd_m)
@@ -192,40 +214,28 @@ def extract_lod1_buildings(
     extent_x = (W - 1) * gsd_m
     extent_y = (H - 1) * gsd_m
 
-    for val, (geom, area_px) in best_per_label.items():
-        area_m2_val = area_px * pixel_area_m2
-        if area_m2_val < min_area_m2 or area_m2_val > max_area_m2:
-            continue
-
+    for val, (geom, _ring_area_px) in best_per_label.items():
         coords = geom["coordinates"][0]
         pts_col = np.array([p[0] for p in coords])
         pts_row = np.array([p[1] for p in coords])
-
-        # ── Fast sub-slice height & terrain sampling ─────────────────
-        if val - 1 < len(slices) and slices[val - 1] is not None:
-            sl = slices[val - 1]
-            sub_mask = (labeled[sl] == val)
-            sub_ndsm = ndsm[sl]
-            valid_heights = sub_ndsm[sub_mask & np.isfinite(sub_ndsm)]
-            if valid_heights.size == 0:
-                continue
-            height_m = float(np.percentile(valid_heights, 85))
-            if height_m < min_height_m:
-                continue
-
-            sub_terr = terrain[sl]
-            valid_terr = sub_terr[sub_mask & np.isfinite(sub_terr)]
-            base_elev_m = float(np.median(valid_terr)) if valid_terr.size else 0.0
-        else:
-            comp_mask = (labeled == val)
-            valid_heights = ndsm[comp_mask & np.isfinite(ndsm)]
-            if valid_heights.size == 0:
-                continue
-            height_m = float(np.percentile(valid_heights, 85))
-            if height_m < min_height_m:
-                continue
-            terr_vals = terrain[comp_mask & np.isfinite(terrain)]
-            base_elev_m = float(np.median(terr_vals)) if terr_vals.size else 0.0
+        sl = slices[val - 1] if val - 1 < len(slices) else None
+        if sl is None:
+            continue
+        sub_mask = labeled[sl] == val
+        # area from the label's pixel set (holes excluded, all parts included): the same set the statistics use.
+        # The outer-ring polygon area used before this audit counted courtyard holes as building area.
+        area_m2_val = float(sub_mask.sum()) * pixel_area_m2
+        if area_m2_val < min_area_m2 or area_m2_val > max_area_m2:
+            continue
+        sub_ndsm = ndsm[sl]
+        det_h = sub_ndsm[sub_mask & np.isfinite(sub_ndsm)]
+        # detection gate (segmentation rule, unchanged by the audit): the upper roof level must clear min_height_m
+        if det_h.size == 0 or float(np.percentile(det_h, 85)) < min_height_m:
+            continue
+        touches = sl[0].start == 0 or sl[1].start == 0 or sl[0].stop == H or sl[1].stop == W
+        st = footprint_stats(sub_ndsm, terrain[sl], sub_mask, transform=tr, row0=sl[0].start, col0=sl[1].start, touches_edge=touches)
+        if st is None:
+            continue
 
         # ── Simplify polygon ─────────────────────────────────────────
         simplified = rdp_simplify(
@@ -247,14 +257,9 @@ def extract_lod1_buildings(
 
         buildings.append({
             "id": len(buildings) + 1,
-            "height_m": round(height_m, 2),
-            "base_elev_m": round(base_elev_m, 2),
-            "area_m2": round(float(area_m2_val), 1),
-            # robust within-footprint statistics of the nDSM (for the building table; height_m drives the extrusion)
-            "height_p10_m": round(float(np.percentile(valid_heights, 10)), 2),
-            "height_median_m": round(float(np.median(valid_heights)), 2),
-            "height_p90_m": round(float(np.percentile(valid_heights, 90)), 2),
-            "n_pixels": int(valid_heights.size),
+            "_label": val,
+            # height_m = V/A (LoD-1 extrusion; block volume == volume_m3); height_median_m = typical roof height
+            **st,
             "coords": scene_coords,
             "pixel_coords": pixel_coords,
             "pixel_bbox": [
@@ -315,13 +320,21 @@ def extract_lod1_buildings(
 
     log.info("LoD-1: %d clean non-overlapping buildings via %s", len(buildings), segmentation_method)
 
+    # relabel so the raster value equals the final building id (dropped labels -> 0)
+    lut = np.zeros(int(labeled.max()) + 1, dtype=np.int32)
+    for b in buildings:
+        lut[b.pop("_label")] = b["id"]
+    extra: dict[str, Any] = {"_labels": lut[labeled]} if return_labels else {}
+
     return {
+        **extra,
         "buildings": buildings,
         "count": len(buildings),
         "min_height_m": min_height_m,
         "gsd_m": gsd_m,
         "extent": [extent_x, extent_y],
         "segmentation_method": segmentation_method,
+        "stats_version": STATS_VERSION,
     }
 
 

@@ -12,625 +12,703 @@
     <!-- ══════════════════════════════════════ TOPBAR -->
     <header class="topbar">
       <div class="topbar-left">
-        <div class="brand">DEPTHWIZARD</div>
-        <div class="tagline">Single-View Height Estimation &amp; 3D Surface Explorer · Mode A (relative rDSM) · Mode B (DEM-anchored calibrated DSM) · SIH26175 · ISRO</div>
+        <a class="brand" href="#top" aria-label="DepthWizard home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-word">DepthWizard</span>
+        </a>
+        <span class="tagline">Height estimation &amp; 3D surface explorer</span>
       </div>
+      <nav class="topnav" aria-label="Sections">
+        <a href="#panel-input">Input</a>
+        <a href="#panel-result">Result</a>
+        <a href="#panel-3d">3D Surface</a>
+        <a href="#panel-disaster">Hazard</a>
+        <a href="#panel-validate">Validation</a>
+      </nav>
       <div id="system-badge" class="badge muted">connecting…</div>
     </header>
 
-    <main class="layout">
-
-      <!-- ══════════════════════════════════════ PANEL 1: INPUT -->
-      <section class="panel" id="panel-input">
-        <div class="panel-header">
-          <span class="panel-step">1</span>
-          <span class="panel-title">Input</span>
-        </div>
-
-        <div id="dropzone" class="dropzone">
-          <div class="dropzone-icon">🛰️</div>
-          <p class="dropzone-prompt"><strong>Drop an Aerial Photograph or GeoTIFF here</strong></p>
-          <p class="dropzone-sub">PNG / JPG / plain TIFF (Mode A relative surface) or GeoTIFF (Mode B metric calibrated DSM)</p>
-          <input id="file-input" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,image/png,image/jpeg,image/tiff" />
-          <button type="button" class="btn-browse" onclick="document.getElementById('file-input').click()">Browse Image</button>
-        </div>
-
-        <div class="demo-showcase">
-          <div class="demo-showcase-title">⚡ ONE-CLICK DEMOS · 🇮🇳 Sikkim (Maxar 0.5 m + NASA ICESat-2) · Switzerland (swisstopo LiDAR)</div>
-          <div id="demo-buttons" class="demo-grid"></div>
-        </div>
-
-        <details id="opt-inputs" class="opts">
-          <summary>Optional calibration inputs (Mode B)</summary>
-          <div class="optrow">
-            <label>
-              <strong>User DEM (GeoTIFF)</strong>
-              <input id="dem-input" type="file" accept=".tif,.tiff" />
-            </label>
-            <label>
-              <strong>DEM vertical CRS</strong>
-              <select id="dem-vcrs">
-                <option value="EGM2008">EGM2008 (Copernicus / default)</option>
-                <option value="EGM96">EGM96 (SRTM / NASADEM / AW3D30)</option>
-                <option value="ellipsoidal">WGS84 ellipsoidal</option>
-              </select>
-            </label>
-          </div>
-          <div class="optrow">
-            <label>
-              <strong>Anchors CSV</strong> <code>id,x,y,z,type[,sigma]</code>
-              <input id="anchors-input" type="file" accept=".csv,.txt" />
-            </label>
-            <span class="hint">
-              or simulated demo anchors (sampled from LiDAR — NOT surveyed):
-              <span id="anchor-demo-buttons"></span>
-              &nbsp;<button class="linkbtn" id="anchors-clear">clear</button>
-            </span>
-          </div>
-          <div id="opt-summary" class="hint"></div>
-        </details>
-
-        <div id="input-preview-wrap" class="hidden">
-          <img id="input-preview" alt="input preview" />
-        </div>
-
-        <table class="meta" id="meta-table">
-          <tr><th>Mode</th>        <td id="m-mode">—</td></tr>
-          <tr><th>Georeferenced</th><td id="m-geo">—</td></tr>
-          <tr><th>Metric</th>      <td id="m-metric">—</td></tr>
-          <tr><th>Calib. tier</th> <td id="m-tier">—</td></tr>
-          <tr><th>Model</th>       <td id="m-model">—</td></tr>
-          <tr><th>Image</th>       <td id="m-image">—</td></tr>
-        </table>
-
-        <div id="input-check" class="input-check hidden"></div>
-
-        <button id="run-btn" class="primary" disabled>Generate Surface</button>
-        <div id="job-progress-wrap" class="job-progress-wrap hidden">
-          <div class="progress-header">
-            <span id="job-progress-stage" class="progress-stage">INFERENCE</span>
-            <span id="job-progress-eta" class="progress-eta">⏱️ estimating…</span>
-          </div>
-          <div class="progress-bar-bg">
-            <div id="job-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
-          </div>
-          <div class="progress-meta">
-            <span id="job-progress-label" class="progress-label">Starting inference…</span>
-            <span id="job-progress-pct" class="progress-pct">0%</span>
+    <!-- ══════════════════════════════════════ HERO -->
+    <section class="hero" id="top">
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <div class="eyebrow">SIH 26175 · ISRO · Remote sensing</div>
+          <h1>Single-view height estimation &amp; 3D surface reconstruction</h1>
+          <p>Turn one aerial photograph or GeoTIFF into a surface model. Mode A gives a relative surface; Mode B anchors it to a DEM to produce a calibrated, georeferenced DSM with traceable quality.</p>
+          <div class="hero-actions">
+            <a class="btn-hero" href="#panel-input">Start with imagery</a>
+            <a class="btn-hero ghost" href="#panel-3d">Open 3D workspace</a>
           </div>
         </div>
-        <div id="status" class="status"></div>
-      </section>
-
-      <!-- ══════════════════════════════════════ PANEL 2: RESULT -->
-      <section class="panel" id="panel-result">
-        <div class="panel-header">
-          <span class="panel-step">2</span>
-          <span class="panel-title">Result</span>
-        </div>
-
-        <div id="result-empty" class="result-empty">No result yet — upload an image and click Generate Surface.</div>
-
-        <div id="result-body" class="hidden">
-
-          <!-- PRIMARY: state badge + quality badge -->
-          <div id="result-primary" class="result-primary"></div>
-          <p id="result-state-desc" class="hint" style="margin-bottom:12px;line-height:1.6"></p>
-
-          <!-- SECONDARY: key metrics -->
-          <div class="result-secondary">
-            <div class="result-secondary-title">Surface metrics</div>
-            <div id="result-fields" class="result-grid"></div>
-          </div>
-
-          <!-- QUALITY CARD: why is quality X? -->
-          <div id="quality-card" class="quality-card q-UNVALIDATED"></div>
-
-          <!-- TRUST / PROVENANCE PANEL -->
-          <div id="trust-panel" class="trust-panel"></div>
-
-          <!-- LAYER TABS + LAYER CARD -->
-          <div id="layer-tabs" class="tabs"></div>
-          <div class="layer-card">
-            <div class="layer-header">
-              <div>
-                <div id="layer-name" class="layer-name"></div>
-                <div id="layer-desc" class="layer-desc"></div>
-                <div id="layer-meta" class="layer-meta"></div>
-              </div>
-            </div>
-            <div class="layer-body">
-              <div class="imgwrap">
-                <img id="layer-img" alt="layer preview" />
-              </div>
-              <!-- POINT READOUT -->
-              <div class="readout-panel">
-                <div class="readout-head">
-                  Point readout
-                  <span class="readout-authority" title="Measurements are always sampled from the server-side DSM raster, not from the rendered mesh">SOURCE: SERVER RASTER</span>
-                </div>
-                <div id="readout-body" class="readout-body empty">Click a point on the image or 3D mesh.</div>
-                <div class="measure-row">
-                  <button id="measure-btn" class="secondary">Measure (2 clicks)</button>
-                  <span id="measure-out" class="measure-out"></span>
-                </div>
-              </div>
-            </div>
-            <div id="layer-legend" class="hint" style="padding:4px 14px 10px"></div>
-          </div>
-
-          <!-- DOWNLOADS -->
-          <div id="downloads" class="actions"></div>
-
-          <!-- TECHNICAL DETAILS (collapsed) -->
-          <details class="tech-details">
-            <summary>Technical metadata (CRS · calibration report · timings · provenance JSON)</summary>
-            <pre id="result-json"></pre>
-          </details>
-
-        </div>
-      </section>
-
-      <!-- ══════════════════════════════════════ PANEL 3: VALIDATION -->
-      <section class="panel" id="panel-validate">
-        <div class="panel-header">
-          <span class="panel-step">3</span>
-          <span class="panel-title">Validation against reference</span>
-          <span class="badge muted">Mode B only · reference is never used for calibration</span>
-        </div>
-
-        <div class="valform">
-          <div class="optrow">
-            <label>
-              <strong>Reference raster (GeoTIFF)</strong>
-              <input id="ref-input" type="file" accept=".tif,.tiff" />
-            </label>
-            <label>
-              <strong>or bundled</strong>
-              <select id="ref-bundled"><option value="">—</option></select>
-            </label>
-          </div>
-          <div class="optrow">
-            <label>
-              <strong>Type</strong>
-              <select id="ref-type">
-                <option value="dsm">DSM (compare to dsm.tif)</option>
-                <option value="dtm">DTM (compare to terrain layer)</option>
-                <option value="ndsm">nDSM (compare to object height)</option>
-              </select>
-            </label>
-            <label>
-              <strong>Reference vertical CRS</strong>
-              <select id="ref-vcrs">
-                <option value="same">same as output</option>
-                <option value="EGM2008">EGM2008</option>
-                <option value="EGM96">EGM96</option>
-                <option value="ellipsoidal">WGS84 ellipsoidal</option>
-                <option value="EPSG:5728">LN02 (EPSG:5728, swisstopo)</option>
-                <option value="unknown">unknown</option>
-              </select>
-            </label>
-            <button id="validate-btn" class="primary" disabled style="width:auto;margin-top:0">Run validation</button>
-          </div>
-          <div class="optrow" title="Sparse independent checkpoints, e.g. NASA ICESat-2 ground and canopy heights — for regions without LiDAR rasters (India)">
-            <label>
-              <strong>Checkpoints CSV</strong> <code>id,lon,lat,h_ground[,h_canopy]</code>
-              <input id="pts-input" type="file" accept=".csv,.txt" />
-            </label>
-            <label>
-              <strong>or bundled (ICESat-2)</strong>
-              <select id="pts-bundled"><option value="">—</option></select>
-            </label>
-            <button id="validate-pts-btn" class="secondary" disabled style="width:auto;margin-top:0">Validate vs checkpoints</button>
-          </div>
-          <div id="val-status" class="status"></div>
-        </div>
-        <div id="pts-result" class="hidden" style="margin-top:14px">
-          <div class="val-verdict-card">
-            <div id="pts-title" class="val-verdict-title"></div>
-            <div id="pts-context" class="val-context"></div>
-          </div>
-          <table class="metrics" id="pts-table"></table>
-          <div id="pts-strata" class="hint" style="margin-top:6px"></div>
-        </div>
-
-        <div id="val-result" class="hidden" style="margin-top:14px">
-          <div class="val-verdict-card">
-            <div id="val-verdict-title" class="val-verdict-title"></div>
-            <div id="val-context" class="val-context"></div>
-          </div>
-          <div class="valgrid">
+        <aside class="hero-spec" aria-label="Output modes">
+          <div class="spec-head">Output modes</div>
+          <dl class="spec-list">
             <div>
-              <table class="metrics" id="val-overall"></table>
-              <details>
-                <summary style="font-size:12px;color:var(--muted);cursor:pointer;padding:4px 0">By slope class / object class / height quartile / oracle affine</summary>
-                <div id="val-strata"></div>
-              </details>
-              <details style="margin-top:8px">
-                <summary style="font-size:12px;color:var(--muted);cursor:pointer;padding:4px 0">Alignment · mask · datum handling · caveats</summary>
-                <pre id="val-json" style="font-size:11px;max-height:200px;overflow:auto;background:#1e293b;color:#cbd5e1;padding:10px;border-radius:6px;margin-top:6px"></pre>
-              </details>
+              <dt><span class="spec-key">A</span>Relative rDSM</dt>
+              <dd>PNG · JPG · plain TIFF. Shape only — no units, no scale.</dd>
             </div>
-            <figure>
-              <img id="val-residual" alt="residual map" />
-              <figcaption>Residual map (prediction − reference). Blue = below reference, red = above.</figcaption>
-            </figure>
-          </div>
-          <div id="val-history" class="hint" style="margin-top:8px"></div>
-        </div>
-      </section>
+            <div>
+              <dt><span class="spec-key b">B</span>Calibrated DSM</dt>
+              <dd>GeoTIFF + DEM. Metres, EGM2008 vertical reference unless stated.</dd>
+            </div>
+          </dl>
+          <div class="spec-foot">Measurements are sampled server-side from the DSM raster — never from the rendered mesh.</div>
+        </aside>
+      </div>
+      <a class="hero-cue" href="#pipeline" aria-label="Scroll to workflow">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </a>
+    </section>
 
-      <!-- ══════════════════════════════════════ PANEL 4: DISASTER MANAGEMENT -->
-      <section class="panel wide" id="panel-disaster">
-        <div class="panel-header">
-          <span class="panel-step">4</span>
-          <span class="panel-title">Disaster Management &amp; Hydrological Screening</span>
-          <span class="badge ok" id="disaster-badge">2D Flood Map Overlay</span>
-          <span class="badge muted">Elevation-based screening only · Non-hydrodynamic</span>
-        </div>
+    <!-- ══════════════════════════════════════ PIPELINE -->
+    <section class="pipeline" id="pipeline" aria-label="Workflow">
+      <ol class="pipeline-steps">
+        <li><a href="#panel-input"><span class="step-dot">01</span><span class="step-title">Ingest imagery</span><span class="step-desc">Upload an image or pick a bundled demo scene.</span></a></li>
+        <li><a href="#panel-result"><span class="step-dot">02</span><span class="step-title">Reconstruct surface</span><span class="step-desc">DSM, terrain and object-height layers with quality flags.</span></a></li>
+        <li><a href="#panel-3d"><span class="step-dot">03</span><span class="step-title">Explore in 3D</span><span class="step-desc">Orbit, walk, measure and inspect LoD-1 buildings.</span></a></li>
+        <li><a href="#panel-disaster"><span class="step-dot">04</span><span class="step-title">Assess hazards</span><span class="step-desc">Flood and slope screening, then validate against references.</span></a></li>
+      </ol>
+    </section>
 
-        <div class="disaster-layout">
-          <!-- Left Column: Controls & Analytics -->
-          <div class="disaster-sidebar">
-            <div class="disaster-controls-box">
+    <main class="layout" id="workspace">
+
+      <!-- ══════════════════════════════════════ BAND 1: INPUT + RESULT -->
+      <div class="band band-work">
+        <div class="band-grid">
+
+          <!-- PANEL 1: INPUT -->
+          <section class="panel" id="panel-input">
+            <div class="panel-header">
+              <span class="panel-step">01</span>
+              <span class="panel-title">Input</span>
+            </div>
+
+            <div id="dropzone" class="dropzone">
+              <div class="dropzone-icon" aria-hidden="true">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><polyline points="7 9 12 4 17 9"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+              </div>
+              <p class="dropzone-prompt"><strong>Drop an aerial photograph or GeoTIFF</strong></p>
+              <p class="dropzone-sub">PNG / JPG / plain TIFF → Mode A relative surface · GeoTIFF → Mode B metric calibrated DSM</p>
+              <input id="file-input" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,image/png,image/jpeg,image/tiff" />
+              <button type="button" class="btn-browse" onclick="document.getElementById('file-input').click()">Browse files</button>
+            </div>
+
+            <div class="demo-showcase">
+              <div class="demo-showcase-title">One-click demos <span>Sikkim (Maxar 0.5 m + NASA ICESat-2) · Switzerland (swisstopo LiDAR)</span></div>
+              <div id="demo-buttons" class="demo-grid"></div>
+            </div>
+
+            <details id="opt-inputs" class="opts">
+              <summary>Optional calibration inputs (Mode B)</summary>
               <div class="optrow">
-                <label style="flex: 1;">
-                  <strong>Scenario</strong>
-                  <select id="disaster-scenario">
-                    <option value="flood">🌊 Flood Screening (Inundation)</option>
-                    <option value="accessibility">🚜 Terrain Accessibility (Slope)</option>
+                <label>
+                  <strong>User DEM (GeoTIFF)</strong>
+                  <input id="dem-input" type="file" accept=".tif,.tiff" />
+                </label>
+                <label>
+                  <strong>DEM vertical CRS</strong>
+                  <select id="dem-vcrs">
+                    <option value="EGM2008">EGM2008 (Copernicus / default)</option>
+                    <option value="EGM96">EGM96 (SRTM / NASADEM / AW3D30)</option>
+                    <option value="ellipsoidal">WGS84 ellipsoidal</option>
                   </select>
                 </label>
               </div>
+              <div class="optrow">
+                <label>
+                  <strong>Anchors CSV</strong> <code>id,x,y,z,type[,sigma]</code>
+                  <input id="anchors-input" type="file" accept=".csv,.txt" />
+                </label>
+                <span class="hint">
+                  or simulated demo anchors (sampled from LiDAR — NOT surveyed):
+                  <span id="anchor-demo-buttons"></span>
+                  &nbsp;<button class="linkbtn" id="anchors-clear">clear</button>
+                </span>
+              </div>
+              <div id="opt-summary" class="hint"></div>
+            </details>
 
-              <!-- Flood Controls -->
-              <div id="flood-controls-wrap">
-                <div class="slider-header-row">
-                  <label for="flood-level-slider">
-                    <strong>Water Level: <span id="flood-level-val" class="highlight-val">0</span> m</strong>
-                  </label>
-                  <div class="slider-quick-btns">
-                    <button type="button" class="micro-btn" id="flood-minus-1" title="Decrease by 1m">-1m</button>
-                    <button type="button" class="micro-btn" id="flood-plus-1" title="Increase by 1m">+1m</button>
-                    <button type="button" class="micro-btn" id="flood-auto-btn" title="Reset to auto flood level">Auto</button>
+            <div id="input-preview-wrap" class="hidden">
+              <img id="input-preview" alt="input preview" />
+            </div>
+
+            <table class="meta" id="meta-table">
+              <tr><th>Mode</th>        <td id="m-mode">—</td></tr>
+              <tr><th>Georeferenced</th><td id="m-geo">—</td></tr>
+              <tr><th>Metric</th>      <td id="m-metric">—</td></tr>
+              <tr><th>Calib. tier</th> <td id="m-tier">—</td></tr>
+              <tr><th>Model</th>       <td id="m-model">—</td></tr>
+              <tr><th>Image</th>       <td id="m-image">—</td></tr>
+            </table>
+
+            <div id="input-check" class="input-check hidden"></div>
+
+            <button id="run-btn" class="primary" disabled>Generate surface</button>
+            <div id="job-progress-wrap" class="job-progress-wrap hidden">
+              <div class="progress-header">
+                <span id="job-progress-stage" class="progress-stage">INFERENCE</span>
+                <span id="job-progress-eta" class="progress-eta">estimating…</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div id="job-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+              </div>
+              <div class="progress-meta">
+                <span id="job-progress-label" class="progress-label">Starting inference…</span>
+                <span id="job-progress-pct" class="progress-pct">0%</span>
+              </div>
+            </div>
+            <div id="status" class="status"></div>
+          </section>
+
+          <!-- PANEL 2: RESULT -->
+          <section class="panel" id="panel-result">
+            <div class="panel-header">
+              <span class="panel-step">02</span>
+              <span class="panel-title">Result</span>
+            </div>
+
+            <div id="result-empty" class="result-empty">
+              <div class="empty-grid" aria-hidden="true"></div>
+              <p>No result yet — upload an image and click <b>Generate surface</b>.</p>
+            </div>
+
+            <div id="result-body" class="hidden">
+
+              <!-- PRIMARY: state badge + quality badge -->
+              <div id="result-primary" class="result-primary"></div>
+              <p id="result-state-desc" class="hint state-desc"></p>
+
+              <!-- SECONDARY: key metrics -->
+              <div class="result-secondary">
+                <div class="result-secondary-title">Surface metrics</div>
+                <div id="result-fields" class="result-grid"></div>
+              </div>
+
+              <!-- QUALITY CARD: why is quality X? -->
+              <div id="quality-card" class="quality-card q-UNVALIDATED"></div>
+
+              <!-- TRUST / PROVENANCE PANEL -->
+              <div id="trust-panel" class="trust-panel"></div>
+
+              <!-- LAYER TABS + LAYER CARD -->
+              <div id="layer-tabs" class="tabs"></div>
+              <div class="layer-card">
+                <div class="layer-header">
+                  <div>
+                    <div id="layer-name" class="layer-name"></div>
+                    <div id="layer-desc" class="layer-desc"></div>
+                    <div id="layer-meta" class="layer-meta"></div>
                   </div>
                 </div>
-                <input id="flood-level-slider" type="range" min="0" max="100" step="0.1" value="0" />
-                <div class="slider-range-labels">
-                  <span id="flood-min-lbl">0 m</span>
-                  <span id="flood-max-lbl">100 m</span>
-                </div>
-              </div>
-
-              <!-- Accessibility Controls -->
-              <div id="access-slope-wrap" class="hidden">
-                <div class="slider-header-row">
-                  <label for="access-slope-slider">
-                    <strong>Max Traverse Slope: <span id="access-slope-val" class="highlight-val">15</span>°</strong>
-                  </label>
-                </div>
-                <input id="access-slope-slider" type="range" min="0" max="60" step="1" value="15" />
-                <div class="slider-range-labels">
-                  <span>0° (Flat)</span>
-                  <span>60° (Steep)</span>
-                </div>
-              </div>
-
-              <div class="optrow" style="margin-top: 14px; gap: 10px; align-items: center;">
-                <button id="run-disaster-btn" class="primary" style="flex: 1; margin-top:0;">⚡ Run Screening</button>
-                <label class="toggle-wrap" title="Auto-run analysis when slider is released">
-                  <input type="checkbox" id="disaster-live-scrub" checked />
-                  <span style="font-size: 11px;">Live Scrub</span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Analysis Results / Metrics Card -->
-            <div id="disaster-result" class="hidden" style="margin-top: 14px;">
-              <div class="disaster-stats-grid">
-                <div class="stat-card" id="stat-area-card">
-                  <div class="stat-label">Inundated Area</div>
-                  <div class="stat-value" id="stat-area-val">—</div>
-                  <div class="stat-sub" id="stat-area-sub">—</div>
-                </div>
-                <div class="stat-card" id="stat-buildings-card">
-                  <div class="stat-label">Affected Buildings</div>
-                  <div class="stat-value" id="stat-buildings-val">—</div>
-                  <div class="stat-sub" id="stat-buildings-sub">structures at risk</div>
-                </div>
-                <div class="stat-card" id="stat-maxdepth-card">
-                  <div class="stat-label">Max Depth</div>
-                  <div class="stat-value" id="stat-maxdepth-val">—</div>
-                  <div class="stat-sub">crest flood point</div>
-                </div>
-                <div class="stat-card" id="stat-meandepth-card">
-                  <div class="stat-label">Mean Depth</div>
-                  <div class="stat-value" id="stat-meandepth-val">—</div>
-                  <div class="stat-sub">average water pool</div>
-                </div>
-              </div>
-
-              <div class="disaster-downloads-row" style="margin-top: 10px;">
-                <a id="disaster-download-raster" href="#" class="linkbtn" download>📥 Download Depth Raster (GeoTIFF)</a>
-              </div>
-
-              <!-- Affected Buildings List -->
-              <div id="disaster-buildings-wrap" class="hidden" style="margin-top: 12px;">
-                <div class="result-secondary-title" style="display: flex; justify-content: space-between; align-items: center;">
-                  <span>Affected Buildings (<span id="disaster-bldg-count">0</span>)</span>
-                  <span class="hint" style="font-size: 10px;">Hover/click to locate</span>
-                </div>
-                <div id="disaster-buildings-list" class="disaster-bldg-scrollbox"></div>
-              </div>
-
-              <div id="disaster-warnings" class="disaster-warning-box" style="margin-top: 10px;"></div>
-            </div>
-          </div>
-
-          <!-- Right Column: 2D Disaster Map Viewer -->
-          <div class="disaster-map-column">
-            <!-- Map Top Toolbar -->
-            <div class="disaster-map-toolbar">
-              <div class="toolbar-left">
-                <span class="group-label">2D BASE MAP</span>
-                <div class="btn-group" id="disaster-base-group">
-                  <button type="button" class="sub-btn active" data-base="rgb" title="Aerial Orthophoto (RGB)">🛰️ Aerial</button>
-                  <button type="button" class="sub-btn" data-base="terrain" title="Ground Terrain Model">🏔️ Terrain</button>
-                  <button type="button" class="sub-btn" data-base="hillshade" title="Relief Hillshade">⛰️ Hillshade</button>
-                  <button type="button" class="sub-btn" data-base="dsm" title="Digital Surface Model">🗺️ DSM</button>
-                </div>
-              </div>
-
-              <div class="toolbar-right">
-                <label class="toolbar-toggle" title="Show or hide the water layer overlay">
-                  <input type="checkbox" id="disaster-overlay-toggle" checked />
-                  <span id="disaster-toggle-lbl">🌊 Water Overlay</span>
-                </label>
-
-                <div class="opacity-control" title="Adjust water layer transparency">
-                  <span class="opacity-label">Opacity</span>
-                  <input id="disaster-overlay-opacity" type="range" min="10" max="100" value="75" step="5" />
-                  <span id="disaster-opacity-val">75%</span>
-                </div>
-
-                <button type="button" class="sub-btn active" id="disaster-shimmer-btn" title="Toggle fluid water ripple & shimmer animation">✨ Shimmer</button>
-                <button type="button" class="sub-btn active" id="disaster-bldg-toggle-btn" title="Toggle building polygon footprints on map">🏙️ Buildings</button>
-              </div>
-            </div>
-
-            <!-- Map Display Area -->
-            <div class="disaster-map-viewport" id="disaster-map-viewport">
-              <div class="disaster-stage-wrap" id="disaster-stage-wrap">
-                <!-- Base 2D Map -->
-                <img id="disaster-base-img" alt="2D Map Base Layer" />
-                
-                <!-- Water Overlay Layer (Directly on top of 2D map) -->
-                <img id="disaster-overlay-img" class="water-shimmer" alt="Water / Disaster Overlay" />
-
-                <!-- Vector SVG for building footprints, hover highlights, pins -->
-                <svg id="disaster-vector-svg" class="disaster-svg-layer"></svg>
-
-                <!-- Point Pick Dot Marker -->
-                <div id="disaster-pick-dot" class="disaster-pick-dot hidden"></div>
-
-                <!-- Map Hover / Click Inspection HUD (Floating Card Top-Right) -->
-                <div id="disaster-hover-hud" class="disaster-map-hud">
-                  <div class="hud-title">2D Map Inspector</div>
-                  <div id="disaster-hud-content" class="hud-body">Hover or click anywhere on the 2D map to inspect flood depth</div>
-                </div>
-
-                <!-- Water Depth Legend (Floating Card Bottom-Left) -->
-                <div id="disaster-map-legend" class="disaster-map-legend">
-                  <div class="legend-header" id="disaster-legend-title">Water Depth (m)</div>
-                  <div class="legend-ramp">
-                    <div class="ramp-bar" id="disaster-ramp-bar"></div>
-                    <div class="ramp-labels" id="disaster-ramp-labels">
-                      <span>0.0 m</span>
-                      <span>0.5 m</span>
-                      <span>1.5 m</span>
-                      <span>3.0 m+</span>
+                <div class="layer-body">
+                  <div class="imgwrap">
+                    <img id="layer-img" alt="layer preview" />
+                  </div>
+                  <!-- POINT READOUT -->
+                  <div class="readout-panel">
+                    <div class="readout-head">
+                      Point readout
+                      <span class="readout-authority" title="Measurements are always sampled from the server-side DSM raster, not from the rendered mesh">SOURCE: SERVER RASTER</span>
+                    </div>
+                    <div id="readout-body" class="readout-body empty">Click a point on the image or 3D mesh.</div>
+                    <div class="measure-row">
+                      <button id="measure-btn" class="secondary">Measure (2 clicks)</button>
+                      <span id="measure-out" class="measure-out"></span>
                     </div>
                   </div>
-                  <div class="legend-classes" id="disaster-legend-classes">
-                    <span class="l-item"><i style="background:#add8e6"></i>Low</span>
-                    <span class="l-item"><i style="background:#00bfff"></i>Mod</span>
-                    <span class="l-item"><i style="background:#0000cd"></i>High</span>
-                    <span class="l-item"><i style="background:#000080"></i>Extreme</span>
-                  </div>
                 </div>
+                <div id="layer-legend" class="hint layer-legend"></div>
+              </div>
 
-                <!-- Empty / Pending Overlay Placeholder -->
-                <div id="disaster-map-placeholder" class="disaster-map-placeholder">
-                  <div class="placeholder-icon">🌊</div>
-                  <div class="placeholder-text">Load a dataset or click "Run Screening" to display the 2D Map and Water Overlay</div>
-                </div>
+              <!-- DOWNLOADS -->
+              <div id="downloads" class="actions"></div>
+
+              <!-- TECHNICAL DETAILS (collapsed) -->
+              <details class="tech-details">
+                <summary>Technical metadata (CRS · calibration report · timings · provenance JSON)</summary>
+                <pre id="result-json"></pre>
+              </details>
+
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════ BAND 2: 3D WORKSPACE -->
+      <div class="band band-viewer">
+        <section class="panel wide panel-viewer" id="panel-3d">
+          <div class="panel-header">
+            <span class="panel-step">03</span>
+            <span class="panel-title">3D Surface Explorer</span>
+            <span class="badge muted" id="view-badge">Open a result to load the heightfield</span>
+            <div class="panel-header-actions">
+              <button id="reset-cam" class="secondary" type="button">Reset view</button>
+              <button id="open3d-btn" class="primary inline" disabled>Open 3D view</button>
+            </div>
+          </div>
+
+          <div class="viewer-toolbar">
+            <!-- Camera Mode switch: Orbit vs First-Person Walk vs Cinematic Flythrough -->
+            <div class="toolbar-group">
+              <span class="group-label">Navigate</span>
+              <div class="btn-group" id="cam-mode-group">
+                <button id="cam-orbit-btn" class="sub-btn active" type="button" title="Aerial Orbit controls (Rotate / Pan / Zoom)">Orbit</button>
+                <button id="cam-walk-btn" class="sub-btn" type="button" title="First-Person Ground Walking (WASD + mouse look)">Walk</button>
+                <button id="cam-fly-btn" class="sub-btn glow-accent" type="button" title="Automated Cinematic Drone Orbit (360° Inspection)">Fly-around</button>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      <!-- ══════════════════════════════════════ PANEL 5: 3D VIEWER -->
-      <section class="panel wide" id="panel-3d">
-        <div class="panel-header">
-          <span class="panel-step">5</span>
-          <span class="panel-title">3D Surface Explorer</span>
-          <span class="badge muted" id="view-badge">Open a result to load the heightfield</span>
-        </div>
+            <!-- Camera Angles -->
+            <div class="toolbar-group">
+              <span class="group-label">View</span>
+              <div class="btn-group" id="preset-group">
+                <button id="preset-nadir-btn" class="sub-btn" type="button" title="Top-down Nadir (Satellite map view)">Nadir</button>
+                <button id="preset-oblique-btn" class="sub-btn active" type="button" title="3D Oblique angle (Perspective 45°)">Oblique</button>
+                <button id="preset-horizon-btn" class="sub-btn" type="button" title="Low horizon / profile perspective">Horizon</button>
+              </div>
+            </div>
 
-        <div class="viewer-toolbar">
-          <!-- Camera Mode switch: Orbit vs First-Person Walk vs Cinematic Flythrough -->
-          <div class="toolbar-group">
-            <span class="group-label">NAV</span>
-            <div class="btn-group" id="cam-mode-group">
-              <button id="cam-orbit-btn" class="sub-btn active" type="button" title="Aerial Orbit controls (Rotate / Pan / Zoom)">🛰️ Orbit</button>
-              <button id="cam-walk-btn" class="sub-btn" type="button" title="First-Person Ground Walking (WASD + mouse look)">🚶 Walk</button>
-              <button id="cam-fly-btn" class="sub-btn glow-accent" type="button" title="Automated Cinematic Drone Orbit (360° Inspection)">🎬 Drone Fly</button>
+            <!-- Surface Shader -->
+            <div class="toolbar-group">
+              <span class="group-label">Render</span>
+              <div class="btn-group" id="shader-mode-group">
+                <button id="shader-aerial-btn" class="sub-btn active" type="button" title="Photometric Aerial Texture">Aerial</button>
+                <button id="shader-heatmap-btn" class="sub-btn" type="button" title="Scientific Elevation Heatmap (Google Turbo Colormap + Topo Contours)">Elevation</button>
+                <button id="shader-cyber-btn" class="sub-btn" type="button" title="Blueprint with isolines">Blueprint</button>
+              </div>
+            </div>
+
+            <!-- Display controls -->
+            <div class="toolbar-group">
+              <label>
+                Layer
+                <select id="view-layer"></select>
+              </label>
+              <label id="zscale-wrap">
+                Scale
+                <input id="zscale" type="range" min="0.02" max="0.6" step="0.01" value="0.2" />
+                <span id="zscale-val" class="mono">0.20</span>
+              </label>
+              <label id="exag-wrap" class="hidden">
+                Vert. exag.
+                <input id="exag" type="range" min="0.5" max="3" step="0.1" value="1.0" />
+                <span id="exag-val" class="mono">×1.0 (true scale)</span>
+              </label>
+            </div>
+
+            <!-- Features & Simplification -->
+            <div class="toolbar-group">
+              <label>
+                Mesh
+                <select id="mesh-mode-sel" title="Switch between uniform regular grid and client-side adaptive RTIN mesh">
+                  <option value="regular">1:1 Regular</option>
+                  <option value="rtin">Adaptive RTIN</option>
+                </select>
+              </label>
+              <label id="rtin-tol-wrap" class="hidden" title="Elevation error threshold for simplification">
+                Tol
+                <input id="rtin-tol" type="range" min="0.1" max="5.0" step="0.1" value="0.5" />
+                <span id="rtin-tol-val" class="mono">0.5 m</span>
+              </label>
+              <label class="check">
+                <input id="wire" type="checkbox" />
+                Wireframe
+              </label>
+              <label class="check" title="Eliminate vertical texture smearing on building facades and steep cliffs">
+                <input id="antismear" type="checkbox" checked />
+                Anti-smear
+              </label>
+              <label id="lod1-wrap" class="check hidden" title="Render clean extruded 3D building blocks with 90° vertical walls">
+                <input id="lod1-chk" type="checkbox" checked />
+                LoD-1 buildings
+              </label>
             </div>
           </div>
 
-          <!-- Camera Angles -->
-          <div class="toolbar-group">
-            <span class="group-label">ANGLE</span>
-            <div class="btn-group" id="preset-group">
-              <button id="preset-nadir-btn" class="sub-btn" type="button" title="Top-down Nadir (Satellite map view)">⬇️ Top</button>
-              <button id="preset-oblique-btn" class="sub-btn active" type="button" title="3D Oblique angle (Perspective 45°)">📐 3D</button>
-              <button id="preset-horizon-btn" class="sub-btn" type="button" title="Low horizon / profile perspective">🌅 Horizon</button>
+          <div id="viewer" class="viewer">
+            <div id="viewer-msg" class="viewer-msg">Open a result to build the heightfield — geometry is derived from the DSM raster.</div>
+
+            <!-- Floating Navigation Dock (North, Recenter, Zoom In/Out) -->
+            <div id="viewer-nav-dock" class="viewer-nav-dock">
+              <button id="nav-north-btn" class="nav-dock-btn" type="button" title="Align Heading Due North (N)">
+                <div class="compass-dial">
+                  <div id="nav-compass-needle" class="compass-needle"></div>
+                  <span class="compass-n">N</span>
+                </div>
+              </button>
+              <div class="nav-dock-divider"></div>
+              <button id="nav-zoom-in" class="nav-dock-btn" type="button" title="Zoom in (+)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <button id="nav-zoom-out" class="nav-dock-btn" type="button" title="Zoom out (−)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <div class="nav-dock-divider"></div>
+              <button id="nav-fit-btn" class="nav-dock-btn" type="button" title="Reset View / Fit (F)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Bottom Floating Controls Helper Pill -->
+            <div id="viewer-hint-pill" class="viewer-hint-pill">
+              <span class="hint-item"><span class="hint-mouse hint-left"></span> Drag: orbit</span>
+              <span class="hint-sep">·</span>
+              <span class="hint-item"><span class="hint-mouse hint-right"></span> Right / <kbd>Shift</kbd>+drag: pan</span>
+              <span class="hint-sep">·</span>
+              <span class="hint-item"><span class="hint-mouse hint-scroll"></span> Scroll: zoom</span>
+              <span class="hint-sep">·</span>
+              <span class="hint-item"><span class="hint-tag">Double-click</span> centre on point</span>
+            </div>
+
+            <!-- First-Person Walk HUD Overlay -->
+            <div id="walk-hud" class="walk-hud hidden">
+              <div class="walk-crosshair"></div>
+              <div class="walk-instructions">
+                <span class="walk-tag">FIRST-PERSON WALK</span>
+                <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</span>
+                <span><kbd>Shift</kbd> Sprint</span>
+                <span>Mouse look</span>
+                <span><kbd>ESC</kbd> Exit to orbit</span>
+              </div>
+              <div id="walk-hud-stats" class="walk-hud-stats">1.70 m Eye Height · 0.0 km/h</div>
             </div>
           </div>
 
-          <!-- Surface Shader -->
-          <div class="toolbar-group">
-            <span class="group-label">SHADER</span>
-            <div class="btn-group" id="shader-mode-group">
-              <button id="shader-aerial-btn" class="sub-btn active" type="button" title="Photometric Aerial Texture">🛰️ Aerial</button>
-              <button id="shader-heatmap-btn" class="sub-btn" type="button" title="Scientific Elevation Heatmap (Google Turbo Colormap + Topo Contours)">🌈 Heatmap</button>
-              <button id="shader-cyber-btn" class="sub-btn" type="button" title="Cyber Blueprint with Glowing Isolines">⚡ Blueprint</button>
-            </div>
-          </div>
-
-          <!-- Display controls -->
-          <div class="toolbar-group">
-            <label>
-              Layer
-              <select id="view-layer"></select>
-            </label>
-            <label id="zscale-wrap">
-              Scale
-              <input id="zscale" type="range" min="0.02" max="0.6" step="0.01" value="0.2" />
-              <span id="zscale-val">0.20</span>
-            </label>
-            <label id="exag-wrap" class="hidden">
-              Vert. Exag
-              <input id="exag" type="range" min="0.5" max="3" step="0.1" value="1.0" />
-              <span id="exag-val">×1.0 (true scale)</span>
-            </label>
-          </div>
-
-          <!-- Features & Simplification -->
-          <div class="toolbar-group">
-            <label>
-              Mesh
-              <select id="mesh-mode-sel" title="Switch between uniform regular grid and client-side adaptive RTIN mesh">
-                <option value="regular">1:1 Regular</option>
-                <option value="rtin">Adaptive RTIN</option>
-              </select>
-            </label>
-            <label id="rtin-tol-wrap" class="hidden" title="Elevation error threshold for simplification">
-              Tol
-              <input id="rtin-tol" type="range" min="0.1" max="5.0" step="0.1" value="0.5" />
-              <span id="rtin-tol-val">0.5 m</span>
-            </label>
-            <label>
-              <input id="wire" type="checkbox" />
-              Wireframe
-            </label>
-            <label title="Eliminate vertical texture smearing on building facades and steep cliffs">
-              <input id="antismear" type="checkbox" checked />
-              Anti-Smear
-            </label>
-            <label id="lod1-wrap" class="hidden" title="Render clean extruded 3D building blocks with 90° vertical walls">
-              <input id="lod1-chk" type="checkbox" checked />
-              🏢 3D Buildings
-            </label>
-          </div>
-
-          <div class="toolbar-group toolbar-actions">
-            <button id="reset-cam" class="secondary" type="button">Reset</button>
-            <button id="open3d-btn" class="primary" disabled style="width:auto;margin-top:0">Open 3D View</button>
-          </div>
           <div class="toolbar-status">
             <span id="mesh-info"></span>
             <span id="mesh-reduction-pill" class="badge ok hidden" title="Real-time triangle reduction statistics"></span>
           </div>
-        </div>
+        </section>
+      </div>
 
-        <div id="viewer" class="viewer">
-          <div id="viewer-msg" class="viewer-msg">Open a result to build the heightfield — geometry is derived from the DSM raster.</div>
+      <!-- ══════════════════════════════════════ BAND 3: ANALYSIS -->
+      <div class="band band-analysis">
 
-          <!-- Floating Navigation Dock (North, Recenter, Zoom In/Out) -->
-          <div id="viewer-nav-dock" class="viewer-nav-dock">
-            <button id="nav-north-btn" class="nav-dock-btn" type="button" title="Align Heading Due North (N)">
-              <div class="compass-dial">
-                <div id="nav-compass-needle" class="compass-needle"></div>
-                <span class="compass-n">N</span>
+        <!-- PANEL: BUILDINGS -->
+        <section class="panel wide hidden" id="panel-buildings">
+          <div class="panel-header">
+            <span class="panel-step">03b</span>
+            <span class="panel-title">Building intelligence</span>
+            <span class="badge muted" id="bld-badge">LoD-1 blocks · heights sampled from the nDSM raster</span>
+          </div>
+          <div id="bld-summary" class="result-grid bld-summary"></div>
+          <div class="optrow">
+            <label>Min height <input id="bld-minh" type="range" min="0" max="60" step="1" value="5" /> <span id="bld-minh-val" class="mono">5 m</span></label>
+            <label>Min footprint <input id="bld-mina" type="number" min="0" step="10" value="30" class="num-sm" /> m²</label>
+            <span class="actions actions-inline">
+              <a id="bld-geojson" class="linkbtn" href="#">GeoJSON (QGIS)</a>
+              <a id="bld-csv" class="linkbtn" href="#">CSV</a>
+            </span>
+          </div>
+          <div id="bld-detail" class="quality-card hidden bld-detail"></div>
+          <div class="table-scroll">
+            <table class="metrics" id="bld-table"></table>
+          </div>
+          <div id="bld-notes" class="hint note-gap"></div>
+        </section>
+
+        <!-- PANEL: DISASTER MANAGEMENT -->
+        <section class="panel wide" id="panel-disaster">
+          <div class="panel-header">
+            <span class="panel-step">04</span>
+            <span class="panel-title">Hazard screening</span>
+            <span class="badge ok" id="disaster-badge">2D Flood Map Overlay</span>
+            <span class="badge warn">Elevation-based screening only · Non-hydrodynamic</span>
+          </div>
+
+          <div class="disaster-layout">
+            <!-- Left Column: Controls & Analytics -->
+            <div class="disaster-sidebar">
+              <div class="disaster-controls-box">
+                <div class="optrow">
+                  <label class="grow">
+                    <strong>Scenario</strong>
+                    <select id="disaster-scenario">
+                      <option value="flood">Flood screening (inundation)</option>
+                      <option value="accessibility">Terrain accessibility (slope)</option>
+                    </select>
+                  </label>
+                </div>
+
+                <!-- Flood Controls -->
+                <div id="flood-controls-wrap">
+                  <div class="slider-header-row">
+                    <label for="flood-level-slider">
+                      <strong>Water level <span id="flood-level-val" class="highlight-val">0</span> m</strong>
+                    </label>
+                    <div class="slider-quick-btns">
+                      <button type="button" class="micro-btn" id="flood-minus-1" title="Decrease by 1m">−1 m</button>
+                      <button type="button" class="micro-btn" id="flood-plus-1" title="Increase by 1m">+1 m</button>
+                      <button type="button" class="micro-btn" id="flood-auto-btn" title="Reset to auto flood level">Auto</button>
+                    </div>
+                  </div>
+                  <input id="flood-level-slider" type="range" min="0" max="100" step="0.1" value="0" />
+                  <div class="slider-range-labels">
+                    <span id="flood-min-lbl">0 m</span>
+                    <span id="flood-max-lbl">100 m</span>
+                  </div>
+                </div>
+
+                <!-- Accessibility Controls -->
+                <div id="access-slope-wrap" class="hidden">
+                  <div class="slider-header-row">
+                    <label for="access-slope-slider">
+                      <strong>Max traverse slope <span id="access-slope-val" class="highlight-val">15</span>°</strong>
+                    </label>
+                  </div>
+                  <input id="access-slope-slider" type="range" min="0" max="60" step="1" value="15" />
+                  <div class="slider-range-labels">
+                    <span>0° flat</span>
+                    <span>60° steep</span>
+                  </div>
+                </div>
+
+                <div class="run-row">
+                  <button id="run-disaster-btn" class="primary inline grow">Run screening</button>
+                  <label class="toggle-wrap" title="Auto-run analysis when slider is released">
+                    <input type="checkbox" id="disaster-live-scrub" checked />
+                    <span>Live scrub</span>
+                  </label>
+                </div>
               </div>
-            </button>
-            <div class="nav-dock-divider"></div>
-            <button id="nav-zoom-in" class="nav-dock-btn" type="button" title="Zoom in (+)">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </button>
-            <button id="nav-zoom-out" class="nav-dock-btn" type="button" title="Zoom out (−)">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </button>
-            <div class="nav-dock-divider"></div>
-            <button id="nav-fit-btn" class="nav-dock-btn" type="button" title="Reset View / Fit (F)">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-              </svg>
-            </button>
-          </div>
 
-          <!-- Bottom Floating Controls Helper Pill -->
-          <div id="viewer-hint-pill" class="viewer-hint-pill">
-            <span class="hint-item"><span class="hint-mouse hint-left"></span> Left-drag: Orbit</span>
-            <span class="hint-sep">·</span>
-            <span class="hint-item"><span class="hint-mouse hint-right"></span> Right / <kbd>Shift</kbd>+drag: Pan</span>
-            <span class="hint-sep">·</span>
-            <span class="hint-item"><span class="hint-mouse hint-scroll"></span> Scroll: Zoom</span>
-            <span class="hint-sep">·</span>
-            <span class="hint-item"><span class="hint-tag">Double-click</span> Center on point</span>
-          </div>
+              <!-- Analysis Results / Metrics Card -->
+              <div id="disaster-result" class="hidden">
+                <div class="disaster-stats-grid">
+                  <div class="stat-card" id="stat-area-card">
+                    <div class="stat-label">Inundated Area</div>
+                    <div class="stat-value" id="stat-area-val">—</div>
+                    <div class="stat-sub" id="stat-area-sub">—</div>
+                  </div>
+                  <div class="stat-card" id="stat-buildings-card">
+                    <div class="stat-label">Affected Buildings</div>
+                    <div class="stat-value" id="stat-buildings-val">—</div>
+                    <div class="stat-sub" id="stat-buildings-sub">structures at risk</div>
+                  </div>
+                  <div class="stat-card" id="stat-maxdepth-card">
+                    <div class="stat-label">Max Depth</div>
+                    <div class="stat-value" id="stat-maxdepth-val">—</div>
+                    <div class="stat-sub">deepest flooded cell</div>
+                  </div>
+                  <div class="stat-card" id="stat-meandepth-card">
+                    <div class="stat-label">Mean Depth</div>
+                    <div class="stat-value" id="stat-meandepth-val">—</div>
+                    <div class="stat-sub">over flooded area</div>
+                  </div>
+                </div>
 
-          <!-- First-Person Walk HUD Overlay -->
-          <div id="walk-hud" class="walk-hud hidden">
-            <div class="walk-crosshair"></div>
-            <div class="walk-instructions">
-              <span class="walk-tag">🚶 FIRST-PERSON WALK</span>
-              <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</span>
-              <span><kbd>Shift</kbd> Sprint</span>
-              <span>Mouse Look</span>
-              <span><kbd>ESC</kbd> Exit to Orbit</span>
+                <div class="disaster-downloads-row">
+                  <a id="disaster-download-raster" href="#" class="linkbtn" download>Download depth raster (GeoTIFF)</a>
+                </div>
+
+                <!-- Affected Buildings List -->
+                <div id="disaster-buildings-wrap" class="hidden">
+                  <div class="result-secondary-title split">
+                    <span>Affected buildings (<span id="disaster-bldg-count">0</span>)</span>
+                    <span class="hint">Hover / click to locate</span>
+                  </div>
+                  <div id="disaster-buildings-list" class="disaster-bldg-scrollbox"></div>
+                </div>
+
+                <div id="disaster-warnings" class="disaster-warning-box"></div>
+              </div>
             </div>
-            <div id="walk-hud-stats" class="walk-hud-stats">1.70 m Eye Height · 0.0 km/h</div>
-          </div>
-        </div>
-      </section>
 
-      <!-- ══════════════════════════════════════ PANEL 5: BUILDINGS -->
-      <section class="panel wide hidden" id="panel-buildings">
-        <div class="panel-header">
-          <span class="panel-step">5</span>
-          <span class="panel-title">Building intelligence</span>
-          <span class="badge muted" id="bld-badge">LoD-1 blocks · heights sampled from the nDSM raster</span>
-        </div>
-        <div id="bld-summary" class="result-grid" style="margin-bottom:10px"></div>
-        <div class="optrow">
-          <label>Min height <input id="bld-minh" type="range" min="0" max="60" step="1" value="5" /> <span id="bld-minh-val">5 m</span></label>
-          <label>Min footprint <input id="bld-mina" type="number" min="0" step="10" value="30" style="width:80px" /> m²</label>
-          <span class="actions" style="margin:0">
-            <a id="bld-geojson" class="linkbtn" href="#">GeoJSON (QGIS)</a>
-            <a id="bld-csv" class="linkbtn" href="#">CSV</a>
-          </span>
-        </div>
-        <div id="bld-detail" class="quality-card hidden" style="margin:10px 0"></div>
-        <div style="max-height:360px;overflow:auto;margin-top:8px">
-          <table class="metrics" id="bld-table"></table>
-        </div>
-        <div id="bld-notes" class="hint" style="margin-top:6px"></div>
-      </section>
+            <!-- Right Column: 2D Disaster Map Viewer -->
+            <div class="disaster-map-column">
+              <!-- Map Top Toolbar -->
+              <div class="disaster-map-toolbar">
+                <div class="toolbar-left">
+                  <span class="group-label">Base map</span>
+                  <div class="btn-group" id="disaster-base-group">
+                    <button type="button" class="sub-btn active" data-base="rgb" title="Aerial Orthophoto (RGB)">Aerial</button>
+                    <button type="button" class="sub-btn" data-base="terrain" title="Ground Terrain Model">Terrain</button>
+                    <button type="button" class="sub-btn" data-base="hillshade" title="Relief Hillshade">Hillshade</button>
+                    <button type="button" class="sub-btn" data-base="dsm" title="Digital Surface Model">DSM</button>
+                  </div>
+                </div>
+
+                <div class="toolbar-right">
+                  <label class="toolbar-toggle" title="Show or hide the water layer overlay">
+                    <input type="checkbox" id="disaster-overlay-toggle" checked />
+                    <span id="disaster-toggle-lbl">Water overlay</span>
+                  </label>
+
+                  <div class="opacity-control" title="Adjust water layer transparency">
+                    <span class="opacity-label">Opacity</span>
+                    <input id="disaster-overlay-opacity" type="range" min="10" max="100" value="75" step="5" />
+                    <span id="disaster-opacity-val" class="mono">75%</span>
+                  </div>
+
+                  <div class="btn-group">
+                    <button type="button" class="sub-btn active" id="disaster-shimmer-btn" title="Toggle water shimmer animation">Shimmer</button>
+                    <button type="button" class="sub-btn active" id="disaster-bldg-toggle-btn" title="Toggle building polygon footprints on map">Footprints</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Map Display Area -->
+              <div class="disaster-map-viewport" id="disaster-map-viewport">
+                <div class="disaster-stage-wrap" id="disaster-stage-wrap">
+                  <!-- Base 2D Map -->
+                  <img id="disaster-base-img" alt="2D Map Base Layer" />
+
+                  <!-- Water Overlay Layer (Directly on top of 2D map) -->
+                  <img id="disaster-overlay-img" class="water-shimmer" alt="Water / Disaster Overlay" />
+
+                  <!-- Vector SVG for building footprints, hover highlights, pins -->
+                  <svg id="disaster-vector-svg" class="disaster-svg-layer"></svg>
+
+                  <!-- Point Pick Dot Marker -->
+                  <div id="disaster-pick-dot" class="disaster-pick-dot hidden"></div>
+
+                  <!-- Map Hover / Click Inspection HUD (Floating Card Top-Right) -->
+                  <div id="disaster-hover-hud" class="disaster-map-hud">
+                    <div class="hud-title">Map inspector</div>
+                    <div id="disaster-hud-content" class="hud-body">Hover or click anywhere on the 2D map to inspect flood depth</div>
+                  </div>
+
+                  <!-- Water Depth Legend (Floating Card Bottom-Left) -->
+                  <div id="disaster-map-legend" class="disaster-map-legend">
+                    <div class="legend-header" id="disaster-legend-title">Water Depth (m)</div>
+                    <div class="legend-ramp">
+                      <div class="ramp-bar" id="disaster-ramp-bar"></div>
+                      <div class="ramp-labels" id="disaster-ramp-labels">
+                        <span>0.0 m</span>
+                        <span>0.5 m</span>
+                        <span>1.5 m</span>
+                        <span>3.0 m+</span>
+                      </div>
+                    </div>
+                    <div class="legend-classes" id="disaster-legend-classes">
+                      <span class="l-item"><i style="background:#add8e6"></i>Low</span>
+                      <span class="l-item"><i style="background:#00bfff"></i>Mod</span>
+                      <span class="l-item"><i style="background:#0000cd"></i>High</span>
+                      <span class="l-item"><i style="background:#000080"></i>Extreme</span>
+                    </div>
+                  </div>
+
+                  <!-- Empty / Pending Overlay Placeholder -->
+                  <div id="disaster-map-placeholder" class="disaster-map-placeholder">
+                    <div class="placeholder-icon" aria-hidden="true">
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2"/><path d="M2 17c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2"/><path d="M2 7c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2"/></svg>
+                    </div>
+                    <div class="placeholder-text">Load a dataset or click “Run screening” to display the 2D map and water overlay</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PANEL: VALIDATION -->
+        <section class="panel wide" id="panel-validate">
+          <div class="panel-header">
+            <span class="panel-step">05</span>
+            <span class="panel-title">Validation against reference</span>
+            <span class="badge muted">Mode B only · reference is never used for calibration</span>
+          </div>
+
+          <div class="valform">
+            <div class="optrow">
+              <label>
+                <strong>Reference raster (GeoTIFF)</strong>
+                <input id="ref-input" type="file" accept=".tif,.tiff" />
+              </label>
+              <label>
+                <strong>or bundled</strong>
+                <select id="ref-bundled"><option value="">—</option></select>
+              </label>
+              <label>
+                <strong>Type</strong>
+                <select id="ref-type">
+                  <option value="dsm">DSM (compare to dsm.tif)</option>
+                  <option value="dtm">DTM (compare to terrain layer)</option>
+                  <option value="ndsm">nDSM (compare to object height)</option>
+                </select>
+              </label>
+              <label>
+                <strong>Reference vertical CRS</strong>
+                <select id="ref-vcrs">
+                  <option value="same">same as output</option>
+                  <option value="EGM2008">EGM2008</option>
+                  <option value="EGM96">EGM96</option>
+                  <option value="ellipsoidal">WGS84 ellipsoidal</option>
+                  <option value="EPSG:5728">LN02 (EPSG:5728, swisstopo)</option>
+                  <option value="unknown">unknown</option>
+                </select>
+              </label>
+              <button id="validate-btn" class="primary inline self-end" disabled>Run validation</button>
+            </div>
+            <div class="optrow" title="Sparse independent checkpoints, e.g. NASA ICESat-2 ground and canopy heights — for regions without LiDAR rasters (India)">
+              <label>
+                <strong>Checkpoints CSV</strong> <code>id,lon,lat,h_ground[,h_canopy]</code>
+                <input id="pts-input" type="file" accept=".csv,.txt" />
+              </label>
+              <label>
+                <strong>or bundled (ICESat-2)</strong>
+                <select id="pts-bundled"><option value="">—</option></select>
+              </label>
+              <button id="validate-pts-btn" class="secondary self-end" disabled>Validate vs checkpoints</button>
+            </div>
+            <div id="val-status" class="status"></div>
+          </div>
+          <div id="pts-result" class="hidden block-gap">
+            <div class="val-verdict-card">
+              <div id="pts-title" class="val-verdict-title"></div>
+              <div id="pts-context" class="val-context"></div>
+            </div>
+            <table class="metrics" id="pts-table"></table>
+            <div id="pts-strata" class="hint note-gap"></div>
+          </div>
+
+          <div id="val-result" class="hidden block-gap">
+            <div class="val-verdict-card">
+              <div id="val-verdict-title" class="val-verdict-title"></div>
+              <div id="val-context" class="val-context"></div>
+            </div>
+            <div class="valgrid">
+              <div>
+                <table class="metrics" id="val-overall"></table>
+                <details class="sub-details">
+                  <summary>By slope class / object class / height quartile / oracle affine</summary>
+                  <div id="val-strata"></div>
+                </details>
+                <details class="sub-details">
+                  <summary>Alignment · mask · datum handling · caveats</summary>
+                  <pre id="val-json" class="code-block"></pre>
+                </details>
+              </div>
+              <figure>
+                <img id="val-residual" alt="residual map" />
+                <figcaption>Residual map (prediction − reference). Blue = below reference, red = above.</figcaption>
+              </figure>
+            </div>
+            <div id="val-history" class="hint note-gap"></div>
+          </div>
+        </section>
+      </div>
 
     </main>
 
     <footer class="foot">
-      <b>Calibration tiers:</b>
-      <b>R</b> relative (no units, no scale) ·
-      <b>T</b> absolute DSM = DEM + tiled model detail scaled against the DEM (unvalidated unless anchors / reference) ·
-      <b>A</b> anchor-refined (terrain datum + detail gain from ground control) ·
-      <b>H</b> metric heights above ground from the fine-tuned nDSM model (when installed; no absolute elevation without a DEM).
-      &emsp;Vertical reference of absolute outputs: EGM2008 unless stated.
-      &emsp;Measurements are always sampled server-side from DSM rasters — never from the rendered mesh.
-      &emsp;The 3D viewer is a visual representation only.
+      <div class="foot-inner">
+        <div class="foot-brand">
+          <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span><span class="brand-word">DepthWizard</span></a>
+          <p>Vertical reference of absolute outputs: EGM2008 unless stated. Measurements are always sampled server-side from DSM rasters — never from the rendered mesh. The 3D viewer is a visual representation only.</p>
+        </div>
+        <div class="foot-tiers">
+          <div class="foot-head">Calibration tiers</div>
+          <dl>
+            <div><dt>R</dt><dd>Relative — no units, no scale.</dd></div>
+            <div><dt>T</dt><dd>Absolute DSM = DEM + tiled model detail scaled against the DEM (unvalidated unless anchors / reference).</dd></div>
+            <div><dt>A</dt><dd>Anchor-refined — terrain datum + detail gain from ground control.</dd></div>
+            <div><dt>H</dt><dd>Metric heights above ground from the fine-tuned nDSM model (when installed; no absolute elevation without a DEM).</dd></div>
+          </dl>
+        </div>
+      </div>
     </footer>
 
     <script type="module" src="/src/main.ts"></script>
