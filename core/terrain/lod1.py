@@ -237,11 +237,13 @@ def extract_lod1_buildings(
 
         # Map to scene coordinates centered at origin
         scene_coords = []
+        pixel_coords = []
         for p in simplified:
-            col, row = p[0], p[1]
+            col, row = float(p[0]), float(p[1])
             sx = (col * gsd_m) - (extent_x / 2.0)
             sy = (extent_y / 2.0) - (row * gsd_m)
             scene_coords.append([round(sx, 2), round(sy, 2)])
+            pixel_coords.append([round(col, 1), round(row, 1)])
 
         buildings.append({
             "id": len(buildings) + 1,
@@ -254,6 +256,7 @@ def extract_lod1_buildings(
             "height_p90_m": round(float(np.percentile(valid_heights, 90)), 2),
             "n_pixels": int(valid_heights.size),
             "coords": scene_coords,
+            "pixel_coords": pixel_coords,
             "pixel_bbox": [
                 int(np.floor(pts_col.min())),
                 int(np.floor(pts_row.min())),

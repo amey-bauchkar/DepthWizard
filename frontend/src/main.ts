@@ -86,6 +86,16 @@ function resolveState(res: Result): ResultState {
 }
 
 // ──────────────────────────────────────── App state
+interface DisasterState {
+  baseLayer: "rgb" | "terrain" | "hillshade" | "dsm";
+  overlayVisible: boolean;
+  opacity: number;
+  shimmer: boolean;
+  showBuildings: boolean;
+  lastResult: any | null;
+  autoFloodVal: number;
+}
+
 interface State {
   file: File | null; dem: File | null; anchors: File | null; anchorsLabel: string;
   jobId: string | null; job: Job | null; result: Result | null; viewer: HeightfieldViewer | null;
@@ -95,6 +105,7 @@ interface State {
   viewLayer: string;
   currentHud: { state: string; tier: string; quality: string; layer: string; showNorth: boolean } | null;
   metricModel: boolean;
+  disaster: DisasterState;
 }
 const state: State = {
   file: null, dem: null, anchors: null, anchorsLabel: "",
@@ -105,6 +116,15 @@ const state: State = {
   viewLayer: "dsm",
   currentHud: null,
   metricModel: false,
+  disaster: {
+    baseLayer: "rgb",
+    overlayVisible: true,
+    opacity: 0.75,
+    shimmer: true,
+    showBuildings: true,
+    lastResult: null,
+    autoFloodVal: 0,
+  },
 };
 
 // ──────────────────────────────────────── Helpers
@@ -309,10 +329,15 @@ function showInput(file: File) {
   ($("open3d-btn") as HTMLButtonElement).disabled = true;
   ($("validate-btn") as HTMLButtonElement).disabled = true;
   ($("validate-pts-btn") as HTMLButtonElement).disabled = true;
+  ($("view-layer") as HTMLSelectElement).innerHTML = "";
   $("result-body").classList.add("hidden"); $("result-empty").classList.remove("hidden");
   $("val-result").classList.add("hidden");
   $("pts-result").classList.add("hidden");
   $("panel-buildings").classList.add("hidden");
+  $("job-progress-wrap").classList.add("hidden");
+  $("viewer-msg").textContent = "Generate surface to build 3D heightfield.";
+  $("viewer-msg").classList.remove("hidden");
+  if (state.viewer) state.viewer.clear();
   setStatus(tif ? "Ready — click Generate Calibrated Surface." : "Ready — click Generate Relative Surface.");
   void runInputCheck();
 }
@@ -321,7 +346,41 @@ function showInput(file: File) {
 async function run() {
   if (!state.file) return;
   const btn = $("run-btn") as HTMLButtonElement; btn.disabled = true;
+  ($("open3d-btn") as HTMLButtonElement).disabled = true;
+  ($("validate-btn") as HTMLButtonElement).disabled = true;
+  state.jobId = null;
+  state.result = null;
+  state.job = null;
+  ($("view-layer") as HTMLSelectElement).innerHTML = "";
+  $("viewer-msg").textContent = "Processing surface… 3D heightfield will load upon completion.";
+  $("viewer-msg").classList.remove("hidden");
+  if (state.viewer) state.viewer.clear();
+
+  const progWrap = $("job-progress-wrap");
+  const progFill = $("job-progress-fill") as HTMLElement;
+  const progPct = $("job-progress-pct");
+  const progEta = $("job-progress-eta");
+  const progLabel = $("job-progress-label");
+  const progStage = $("job-progress-stage");
+
+  const formatEta = (seconds: number | null | undefined): string => {
+    if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return "⏱️ estimating…";
+    const s = Math.max(1, Math.round(seconds));
+    if (s < 60) return `⏱️ ~${s}s left`;
+    const m = Math.floor(s / 60);
+    const remS = s % 60;
+    return `⏱️ ~${m}m ${remS}s left`;
+  };
+
   try {
+    progWrap.classList.remove("hidden");
+    progFill.style.width = "5%";
+    progFill.style.background = "";
+    progPct.textContent = "5%";
+    progEta.textContent = "⏱️ estimating…";
+    progStage.textContent = "UPLOADING";
+    progLabel.textContent = "Uploading image…";
+
     setStatus("Uploading…");
     const job = await api.createJob(state.file, {
       dem: state.dem,
@@ -330,24 +389,60 @@ async function run() {
     });
     state.jobId = job.job_id;
     await api.run(job.job_id);
+
     const stageLabels: Record<string, string> = {
       PREPROCESSING: "ingest / georeference / validate",
       INFERENCE:     "Depth Anything V2 Small — whole image + overlapping tiles (CPU: up to ~1 min)",
       CALIBRATION:   "DEM · datum · detail fusion · anchors · terrain · derivatives · LoD-1",
       RASTERIZING:   "rDSM + heightfield",
     };
-    const done = await pollUntilDone(job.job_id, (j: Job) =>
-      setStatus(`Processing: ${j.status}${stageLabels[j.status] ? " — " + stageLabels[j.status] : ""}`)
-    );
+
+    const done = await pollUntilDone(job.job_id, (j: Job) => {
+      setStatus(`Processing: ${j.status}${stageLabels[j.status] ? " — " + stageLabels[j.status] : ""}`);
+      if (j.progress) {
+        const pct = Math.min(100, Math.max(0, j.progress.percent));
+        progFill.style.width = `${pct}%`;
+        progPct.textContent = `${pct}%`;
+        progEta.textContent = formatEta(j.progress.eta_s);
+        progStage.textContent = j.progress.stage || j.status;
+        progLabel.textContent = j.progress.message || stageLabels[j.status] || "Processing…";
+      } else {
+        progStage.textContent = j.status;
+        progLabel.textContent = stageLabels[j.status] || "Processing…";
+      }
+    });
+
     state.job = done;
     if (done.status === "FAILED") {
+      progFill.style.width = "100%";
+      progFill.style.background = "var(--bad)";
+      progStage.textContent = "FAILED";
+      progEta.textContent = "Failed";
       setStatus(`${done.error?.message ?? "Processing failed."} (${done.error?.code ?? "FAILED"})${done.error?.detail ? " — " + done.error.detail : ""}`, "err");
       return;
     }
+
+    progFill.style.width = "100%";
+    progPct.textContent = "100%";
+    progEta.textContent = "✓ Done";
+    progStage.textContent = "READY";
+    progLabel.textContent = `Completed in ${done.stages_ms.total_ms ?? 0} ms`;
+    setTimeout(() => {
+      progWrap.classList.add("hidden");
+    }, 5000);
+
     const res = await api.result(job.job_id);
     state.result = res;
     state.resultState = resolveState(res);
     await renderResult(done, res);
+
+    // Automatically load 3D view once processing is done
+    try {
+      await open3d();
+    } catch (err) {
+      console.warn("Auto open3d notice:", err);
+    }
+
     const ms = done.stages_ms;
     const summary = res.mode === "B"
       ? (res.calibration_tier === "R" ? `Tier R · quality ${res.quality} — no absolute elevation (see quality card).` : `Tier ${res.calibration_tier} · ${STATE_DISPLAY[state.resultState].label} · quality ${res.quality} · ${res.vertical_reference}`)
@@ -356,7 +451,10 @@ async function run() {
       `READY in ${ms.total_ms} ms (inference ${ms.inference_ms} ms on ${done.model?.device}${ms.calibration_ms ? `, calibration ${ms.calibration_ms} ms` : ""}). ${summary}`,
       res.quality === "INVALID" ? "err" : "ok"
     );
-  } catch (e) { setStatus(userMessage(e), "err"); }
+  } catch (e) { 
+    progWrap.classList.add("hidden");
+    setStatus(userMessage(e), "err"); 
+  }
   finally { btn.disabled = false; }
 }
 
@@ -505,6 +603,25 @@ async function renderResult(job: Job, res: Result) {
 
   // ── Building intelligence panel
   loadBuildingsPanel();
+
+  // ── Disaster slider initialization based on terrain elevation
+  const tLeg = res.layers?.terrain?.legend || res.layers?.dsm?.legend;
+  const fSlider = $("flood-level-slider") as HTMLInputElement | null;
+  const fVal = $("flood-level-val");
+  if (fSlider && tLeg && typeof tLeg.lo === "number" && typeof tLeg.hi === "number") {
+    const minElev = Math.floor(tLeg.lo);
+    const maxElev = Math.ceil(tLeg.hi);
+    fSlider.min = String(minElev);
+    fSlider.max = String(maxElev + 10);
+    fSlider.step = "0.5";
+    const defaultVal = Math.min(maxElev, minElev + 2.0);
+    fSlider.value = defaultVal.toFixed(1);
+    if (fVal) fVal.textContent = defaultVal.toFixed(1);
+    state.disaster.autoFloodVal = defaultVal;
+    const minLbl = $("flood-min-lbl"); if (minLbl) minLbl.textContent = `${minElev} m`;
+    const maxLbl = $("flood-max-lbl"); if (maxLbl) maxLbl.textContent = `${maxElev + 10} m`;
+  }
+  initDisasterMap();
 
   // ── Reset readout
   const ro = $("readout-body"); ro.innerHTML = "Click a point on the image or 3D mesh."; ro.className = "readout-body empty";
@@ -748,7 +865,13 @@ function selectBuilding(id: number, fly: boolean) {
 // ──────────────────────────────────────── 3D viewer
 async function open3d() {
   if (!state.jobId || !state.result) return;
-  const msg = $("viewer-msg"); msg.classList.remove("hidden");
+  const msg = $("viewer-msg");
+  if (state.job && state.job.status !== "READY") {
+    msg.textContent = "Processing in progress… 3D view will be ready once job completes.";
+    msg.classList.remove("hidden");
+    return;
+  }
+  msg.classList.remove("hidden");
   try {
     if (!state.viewer) {
       msg.textContent = "Initialising WebGL…";
@@ -781,8 +904,12 @@ async function open3d() {
     // LoD-1 buildings sit on top with correct absolute elevation alignment.
     const actualLayer = isCity ? "terrain" : layer;
     const metric = res.mode === "B" && layer !== "relative";
-    const hfName  = res.mode === "B" ? (res.layers?.[actualLayer]?.heightfield ?? "heightfield_relative.f32") : "heightfield.f32";
-    const metaName = res.mode === "B" ? (res.layers?.[actualLayer]?.heightfield_meta ?? "heightfield_relative.json") : null;
+    const hfName = res.mode === "B"
+      ? (res.layers?.[actualLayer]?.heightfield ?? "heightfield_relative.f32")
+      : (res.artifacts?.heightfield ?? "heightfield.f32");
+    const metaName = res.mode === "B"
+      ? (res.layers?.[actualLayer]?.heightfield_meta ?? "heightfield_relative.json")
+      : null;
 
     msg.textContent = "Loading heightfield…";
     const [hf, meta] = await Promise.all([
@@ -879,6 +1006,381 @@ async function open3d() {
   } catch (e) { msg.classList.remove("hidden"); msg.textContent = userMessage(e); }
 }
 
+// ──────────────────────────────────────── Disaster 2D Map & Hydrological Screening
+let disasterDebounceTimer: any = null;
+
+function initDisasterMap() {
+  if (!state.result || !state.jobId) return;
+  const placeholder = $("disaster-map-placeholder");
+  if (placeholder) placeholder.classList.add("hidden");
+
+  updateDisasterBaseMap();
+
+  // Reset pick dot and inspector
+  const pickDot = $("disaster-pick-dot");
+  if (pickDot) pickDot.classList.add("hidden");
+  resetHudInfo();
+
+  // Auto-run baseline screening if Mode B and terrain exists
+  if (state.result.mode === "B" && (state.result.artifacts.terrain_tif || state.result.artifacts.dsm_tif)) {
+    runDisasterAnalysis(true);
+  }
+}
+
+function updateDisasterBaseMap() {
+  if (!state.result || !state.jobId) return;
+  const baseImg = $("disaster-base-img") as HTMLImageElement;
+  if (!baseImg) return;
+
+  const key = state.disaster.baseLayer;
+  let art = "input_preview";
+  if (key === "terrain" && state.result.artifacts.terrain_preview) art = "terrain_preview";
+  else if (key === "hillshade" && state.result.artifacts.hillshade_preview) art = "hillshade_preview";
+  else if (key === "dsm" && state.result.artifacts.dsm_preview) art = "dsm_preview";
+  else if (state.result.artifacts.input_preview) art = "input_preview";
+  else art = Object.keys(state.result.artifacts)[0] || "input_preview";
+
+  const filename = state.result.artifacts[art] || "input_preview.png";
+  baseImg.src = api.artifactUrl(state.jobId, filename);
+
+  document.querySelectorAll("#disaster-base-group button").forEach((btn) => {
+    btn.classList.toggle("active", (btn as HTMLButtonElement).dataset.base === key);
+  });
+}
+
+async function runDisasterAnalysis(silent = false) {
+  if (!state.jobId || !state.result) {
+    if (!silent) alert("Please generate a surface first.");
+    return;
+  }
+  const runBtn = $("run-disaster-btn") as HTMLButtonElement;
+  if (!silent && runBtn) runBtn.textContent = "⚡ Screening...";
+
+  try {
+    const disScen = $("disaster-scenario") as HTMLSelectElement;
+    const mode = disScen ? disScen.value : "flood";
+    const fLvl = $("flood-level-slider") as HTMLInputElement;
+    const aSlp = $("access-slope-slider") as HTMLInputElement;
+    const body = mode === "flood" ? { waterLevel_m: Number(fLvl.value || 0) } : { maxSlopeDeg: Number(aSlp.value || 15) };
+
+    const res = await fetch(`/api/jobs/${state.jobId}/disaster/${mode}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const resp = await res.json();
+    state.disaster.lastResult = resp;
+
+    $("disaster-result").classList.remove("hidden");
+    const placeholder = $("disaster-map-placeholder");
+    if (placeholder) placeholder.classList.add("hidden");
+
+    if (mode === "flood") {
+      $("stat-area-card").querySelector(".stat-label")!.textContent = "Inundated Area";
+      $("stat-area-val").textContent = `${(resp.affectedAreaM2 / 1000000).toFixed(3)} km²`;
+      const pctText = resp.affectedAreaPct !== undefined ? `${resp.affectedAreaPct}% of AOI` : `${Math.round(resp.affectedAreaM2).toLocaleString()} m²`;
+      $("stat-area-sub").textContent = pctText;
+
+      $("stat-buildings-card").classList.remove("hidden");
+      $("stat-buildings-val").textContent = String(resp.affectedBuildingsCount ?? 0);
+      $("stat-buildings-sub").textContent = "structures inundated";
+
+      $("stat-maxdepth-card").classList.remove("hidden");
+      $("stat-maxdepth-val").textContent = `${resp.maxDepth_m} m`;
+
+      $("stat-meandepth-card").classList.remove("hidden");
+      $("stat-meandepth-val").textContent = `${resp.meanDepth_m} m`;
+
+      const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
+      if (dlLink) {
+        dlLink.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+        dlLink.textContent = "📥 Download Depth Raster (GeoTIFF)";
+      }
+
+      const bWrap = $("disaster-buildings-wrap");
+      const bList = $("disaster-buildings-list");
+      const bCount = $("disaster-bldg-count");
+      if (bCount) bCount.textContent = String(resp.affectedBuildingsCount ?? 0);
+
+      if (resp.buildings && resp.buildings.length > 0) {
+        bWrap.classList.remove("hidden");
+        bList.innerHTML = resp.buildings.map((b: any) => `
+          <div class="disaster-bldg-item" data-bldg-id="${b.id}">
+            <div>
+              <b>Building #${b.id}</b>
+              <span class="hint" style="margin-left: 6px;">Elev: ${b.base_elev_m}m · Depth: <span style="color:#38bdf8;font-weight:700;">${b.flood_depth_m}m</span></span>
+            </div>
+            <span class="badge ${b.exposure === 'NONE' ? 'muted' : b.exposure === 'LOW' ? 'ok' : b.exposure === 'MODERATE' ? 'warn' : 'bad'}" style="font-size: 10px;">${b.exposure}</span>
+          </div>
+        `).join("");
+
+        bList.querySelectorAll(".disaster-bldg-item").forEach((item) => {
+          const el = item as HTMLElement;
+          const id = Number(el.dataset.bldgId);
+          el.addEventListener("mouseenter", () => highlightBuildingOnMap(id));
+          el.addEventListener("mouseleave", () => unhighlightBuildingOnMap(id));
+          el.addEventListener("click", () => focusBuildingOnMap(id));
+        });
+      } else {
+        bWrap.classList.add("hidden");
+      }
+
+      $("disaster-legend-title").textContent = "Water Depth (m)";
+      $("disaster-ramp-bar").style.background = "linear-gradient(to right, #add8e6, #00bfff, #0000cd, #000080)";
+      $("disaster-ramp-labels").innerHTML = `<span>0.0 m</span><span>0.5 m</span><span>1.5 m</span><span>3.0 m+</span>`;
+      $("disaster-legend-classes").innerHTML = `
+        <span class="l-item"><i style="background:#add8e6"></i>Low</span>
+        <span class="l-item"><i style="background:#00bfff"></i>Mod</span>
+        <span class="l-item"><i style="background:#0000cd"></i>High</span>
+        <span class="l-item"><i style="background:#000080"></i>Extreme</span>
+      `;
+      $("disaster-toggle-lbl").textContent = "🌊 Water Overlay";
+    } else {
+      $("stat-area-card").querySelector(".stat-label")!.textContent = "Accessible Area";
+      $("stat-area-val").textContent = `${(resp.accessibleAreaM2 / 1000000).toFixed(3)} km²`;
+      $("stat-area-sub").textContent = `${Math.round(resp.accessibleAreaM2).toLocaleString()} m²`;
+
+      $("stat-buildings-card").classList.add("hidden");
+      $("stat-maxdepth-card").classList.add("hidden");
+      $("stat-meandepth-card").classList.add("hidden");
+
+      const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
+      if (dlLink) {
+        dlLink.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+        dlLink.textContent = "📥 Download Accessibility Mask (GeoTIFF)";
+      }
+
+      $("disaster-buildings-wrap").classList.add("hidden");
+
+      $("disaster-legend-title").textContent = "Terrain Accessibility";
+      $("disaster-ramp-bar").style.background = "linear-gradient(to right, #22c55e, #ef4444)";
+      $("disaster-ramp-labels").innerHTML = `<span>≤ ${resp.maxSlopeDeg}° (Safe)</span><span>> ${resp.maxSlopeDeg}° (Hazard)</span>`;
+      $("disaster-legend-classes").innerHTML = `
+        <span class="l-item"><i style="background:#22c55e"></i>Accessible</span>
+        <span class="l-item"><i style="background:#ef4444"></i>Steep / Hazard</span>
+      `;
+      $("disaster-toggle-lbl").textContent = "🚜 Access Overlay";
+    }
+
+    // Warnings
+    const wDiv = $("disaster-warnings");
+    if (resp.warnings && resp.warnings.length > 0) {
+      wDiv.innerHTML = resp.warnings.map((w: string) => `⚠️ ${w}`).join("<br>");
+      wDiv.classList.remove("hidden");
+    } else {
+      wDiv.classList.add("hidden");
+    }
+
+    // Update 2D Water Overlay Image on top of the 2D Map!
+    if (resp.previewResult) {
+      const overlayImg = $("disaster-overlay-img") as HTMLImageElement;
+      if (overlayImg) {
+        overlayImg.src = `/api/jobs/${state.jobId}/artifact/${resp.previewResult}?t=${Date.now()}`;
+        overlayImg.style.display = state.disaster.overlayVisible ? "block" : "none";
+        overlayImg.style.opacity = String(state.disaster.opacity);
+        overlayImg.classList.toggle("water-shimmer", state.disaster.shimmer && mode === "flood");
+      }
+    }
+
+    // Render building vector layer on 2D map
+    renderDisasterSvg(resp.buildings);
+
+  } catch (e: any) {
+    if (!silent) alert("Disaster Analysis Failed: " + (e.message || String(e)));
+  } finally {
+    if (!silent && runBtn) runBtn.textContent = "⚡ Run Screening";
+  }
+}
+
+function renderDisasterSvg(buildings?: any[]) {
+  const svg = $("disaster-vector-svg") as unknown as SVGSVGElement;
+  if (!svg || !state.result) return;
+  const grid = state.result.grid;
+  const W = Number(grid.width) || 100;
+  const H = Number(grid.height) || 100;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = "";
+
+  if (!state.disaster.showBuildings || !buildings || buildings.length === 0) return;
+
+  const gsd = state.result.gsd_m || 0.5;
+  const extX2 = ((W - 1) * gsd) / 2.0;
+  const extY2 = ((H - 1) * gsd) / 2.0;
+
+  buildings.forEach((b: any) => {
+    let pts = "";
+    if (b.pixel_coords && Array.isArray(b.pixel_coords) && b.pixel_coords.length >= 3) {
+      pts = b.pixel_coords.map((c: [number, number]) => `${c[0].toFixed(1)},${c[1].toFixed(1)}`).join(" ");
+    } else if (b.coords && Array.isArray(b.coords) && b.coords.length >= 3) {
+      // Scene coordinates are in centered meters: convert back to image pixel coordinates (col, row)
+      pts = b.coords.map((c: [number, number]) => {
+        const col = (c[0] + extX2) / gsd;
+        const row = (extY2 - c[1]) / gsd;
+        return `${col.toFixed(1)},${row.toFixed(1)}`;
+      }).join(" ");
+    } else if (b.pixel_bbox && b.pixel_bbox.length === 4) {
+      const [x0, y0, x1, y1] = b.pixel_bbox;
+      pts = `${x0},${y0} ${x1},${y0} ${x1},${y1} ${x0},${y1}`;
+    }
+    if (!pts) return;
+
+    const isFlood = (b.flood_depth_m ?? 0) > 0;
+    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    poly.setAttribute("points", pts);
+    poly.setAttribute("class", isFlood ? "disaster-bldg-polygon" : "disaster-bldg-safe");
+    poly.setAttribute("data-bldg-id", String(b.id));
+
+    poly.addEventListener("mouseenter", () => {
+      highlightBuildingOnMap(b.id);
+      showHudBuildingInfo(b);
+    });
+    poly.addEventListener("mouseleave", () => {
+      unhighlightBuildingOnMap(b.id);
+      resetHudInfo();
+    });
+    poly.addEventListener("click", (e) => {
+      e.stopPropagation();
+      focusBuildingOnMap(b.id);
+    });
+
+    svg.appendChild(poly);
+  });
+}
+
+function highlightBuildingOnMap(id: number) {
+  const poly = document.querySelector(`.disaster-bldg-polygon[data-bldg-id="${id}"], .disaster-bldg-safe[data-bldg-id="${id}"]`);
+  if (poly) poly.classList.add("highlight");
+  const listItem = document.querySelector(`.disaster-bldg-item[data-bldg-id="${id}"]`);
+  if (listItem) listItem.classList.add("active");
+}
+
+function unhighlightBuildingOnMap(id: number) {
+  const poly = document.querySelector(`.disaster-bldg-polygon[data-bldg-id="${id}"], .disaster-bldg-safe[data-bldg-id="${id}"]`);
+  if (poly) poly.classList.remove("highlight");
+  const listItem = document.querySelector(`.disaster-bldg-item[data-bldg-id="${id}"]`);
+  if (listItem) listItem.classList.remove("active");
+}
+
+function focusBuildingOnMap(id: number) {
+  highlightBuildingOnMap(id);
+  const listItem = document.querySelector(`.disaster-bldg-item[data-bldg-id="${id}"]`);
+  if (listItem) listItem.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (state.disaster.lastResult?.buildings) {
+    const b = state.disaster.lastResult.buildings.find((x: any) => x.id === id);
+    if (b) showHudBuildingInfo(b);
+  }
+}
+
+function showHudBuildingInfo(b: any) {
+  const hud = $("disaster-hud-content");
+  if (!hud) return;
+  const isFlood = (b.flood_depth_m ?? 0) > 0;
+  hud.innerHTML = `
+    <b style="color:#f1f5f9;">🏢 Building #${b.id}</b><br/>
+    Base Elev: ${b.base_elev_m} m${b.height_m ? ` · Height: ${b.height_m}m` : ""}<br/>
+    Status: ${isFlood 
+      ? `<span style="color:#ef4444;font-weight:bold;">🌊 Inundated (${b.flood_depth_m}m depth)</span>` 
+      : `<span style="color:#4ade80;font-weight:bold;">🌿 Safe above flood</span>`}<br/>
+    Exposure: <span class="badge ${b.exposure === 'NONE' ? 'muted' : b.exposure === 'LOW' ? 'ok' : b.exposure === 'MODERATE' ? 'warn' : 'bad'}">${b.exposure}</span>
+  `;
+}
+
+function resetHudInfo() {
+  const hud = $("disaster-hud-content");
+  if (hud) hud.innerHTML = "Hover or click anywhere on the 2D map to inspect flood depth";
+}
+
+function classifyExposure(depth: number): string {
+  if (depth <= 0) return "NONE";
+  if (depth <= 0.5) return "LOW";
+  if (depth <= 1.5) return "MODERATE";
+  if (depth <= 3.0) return "HIGH";
+  return "VERY HIGH";
+}
+
+function wireDisasterMapInspector() {
+  const stage = $("disaster-stage-wrap");
+  const baseImg = $("disaster-base-img") as HTMLImageElement;
+  const pickDot = $("disaster-pick-dot");
+  const hud = $("disaster-hud-content");
+
+  if (!stage || !baseImg) return;
+
+  stage.addEventListener("mousemove", (e) => {
+    if (!state.result || !state.jobId) return;
+    const r = baseImg.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+
+    const g = state.result.grid;
+    const W = Number(g.width), H = Number(g.height);
+    const col = Math.floor(((e.clientX - r.left) / r.width) * W);
+    const row = Math.floor(((e.clientY - r.top) / r.height) * H);
+
+    const fLvl = Number(($("flood-level-slider") as HTMLInputElement).value || 0);
+    const scen = ($("disaster-scenario") as HTMLSelectElement).value;
+
+    if (scen === "flood") {
+      hud.innerHTML = `
+        <span style="color:#38bdf8;font-weight:700;">Pixel:</span> [${col}, ${row}]<br/>
+        <span style="color:#94a3b8;">Water Plane:</span> ${fLvl.toFixed(1)} m<br/>
+        <span class="hint" style="font-size:10px;">Click to query elevation & depth</span>
+      `;
+    } else {
+      const aSlp = Number(($("access-slope-slider") as HTMLInputElement).value || 15);
+      hud.innerHTML = `
+        <span style="color:#38bdf8;font-weight:700;">Pixel:</span> [${col}, ${row}]<br/>
+        <span style="color:#94a3b8;">Max Slope:</span> ${aSlp}°<br/>
+        <span class="hint" style="font-size:10px;">Click to query slope</span>
+      `;
+    }
+  });
+
+  stage.addEventListener("mouseleave", () => {
+    resetHudInfo();
+  });
+
+  stage.addEventListener("click", async (e) => {
+    if (!state.result || !state.jobId) return;
+    const r = baseImg.getBoundingClientRect();
+    const g = state.result.grid;
+    const W = Number(g.width), H = Number(g.height);
+    const col = Math.floor(((e.clientX - r.left) / r.width) * W);
+    const row = Math.floor(((e.clientY - r.top) / r.height) * H);
+
+    if (pickDot) {
+      pickDot.style.left = `${e.clientX - r.left}px`;
+      pickDot.style.top = `${e.clientY - r.top}px`;
+      pickDot.classList.remove("hidden");
+    }
+
+    try {
+      hud.innerHTML = `Sampling [${col}, ${row}]...`;
+      const s = await api.sample(state.jobId, col, row);
+      const fLvl = Number(($("flood-level-slider") as HTMLInputElement).value || 0);
+      const tVal = s.values?.terrain?.value ?? s.values?.dsm?.value;
+
+      if (tVal !== undefined && tVal !== null) {
+        const depth = fLvl - tVal;
+        const isFlood = depth > 0;
+        hud.innerHTML = `
+          <b>Location:</b> [${col}, ${row}]<br/>
+          <b>Ground Elev:</b> ${tVal.toFixed(2)} m<br/>
+          <b>Status:</b> ${isFlood 
+            ? `<span style="color:#38bdf8;font-weight:bold;">🌊 Inundated (${depth.toFixed(2)}m depth)` 
+            : `<span style="color:#4ade80;font-weight:bold;">🌿 Dry Ground (+${(-depth).toFixed(1)}m clear)`}</span><br/>
+          ${isFlood ? `<b>Exposure:</b> <span class="badge ${depth > 3 ? 'bad' : depth > 1.5 ? 'warn' : 'ok'}">${classifyExposure(depth)}</span>` : ""}
+        `;
+      } else {
+        hud.innerHTML = `Col ${col}, Row ${row}: Valid sample obtained.`;
+      }
+    } catch {
+      hud.innerHTML = `Col ${col}, Row ${row}`;
+    }
+  });
+}
+
 // ──────────────────────────────────────── Wire events
 function wire() {
   const dz = $("dropzone"); const input = $("file-input") as HTMLInputElement;
@@ -948,6 +1450,36 @@ function wire() {
     });
   });
 
+  // Floating Navigation Dock buttons (North, Zoom In/Out, Fit)
+  const navNorth = $("nav-north-btn");
+  if (navNorth) {
+    navNorth.addEventListener("click", () => {
+      if (state.viewer) state.viewer.alignNorth();
+    });
+  }
+  const navZoomIn = $("nav-zoom-in");
+  if (navZoomIn) {
+    navZoomIn.addEventListener("click", () => {
+      if (state.viewer) state.viewer.zoomBy(0.75);
+    });
+  }
+  const navZoomOut = $("nav-zoom-out");
+  if (navZoomOut) {
+    navZoomOut.addEventListener("click", () => {
+      if (state.viewer) state.viewer.zoomBy(1.33);
+    });
+  }
+  const navFit = $("nav-fit-btn");
+  if (navFit) {
+    navFit.addEventListener("click", () => {
+      if (state.viewer) {
+        state.viewer.resetCamera();
+        Object.keys(presetMap).forEach((k) => $(k).classList.remove("active"));
+        $("preset-oblique-btn").classList.add("active");
+      }
+    });
+  }
+
   // Shader mode buttons
   const shaderMap: Record<string, "aerial" | "heatmap" | "cyber"> = {
     "shader-aerial-btn": "aerial",
@@ -989,6 +1521,121 @@ function wire() {
 
   meshSel.addEventListener("change", applyMeshMode);
   tolInput.addEventListener("input", applyMeshMode);
+
+  // ──────────────────────────────────────── Disaster Controls Binding
+  const disScen = $("disaster-scenario") as HTMLSelectElement;
+  const fLvl = $("flood-level-slider") as HTMLInputElement;
+  const aSlp = $("access-slope-slider") as HTMLInputElement;
+
+  if (disScen) {
+    disScen.addEventListener("change", () => {
+      $("flood-controls-wrap").classList.toggle("hidden", disScen.value !== "flood");
+      $("access-slope-wrap").classList.toggle("hidden", disScen.value !== "accessibility");
+      runDisasterAnalysis();
+    });
+  }
+
+  if (fLvl) {
+    fLvl.addEventListener("input", () => {
+      $("flood-level-val").textContent = Number(fLvl.value).toFixed(1);
+      const live = ($("disaster-live-scrub") as HTMLInputElement)?.checked;
+      if (live) {
+        clearTimeout(disasterDebounceTimer);
+        disasterDebounceTimer = setTimeout(() => runDisasterAnalysis(true), 160);
+      }
+    });
+    fLvl.addEventListener("change", () => runDisasterAnalysis());
+  }
+
+  if (aSlp) {
+    aSlp.addEventListener("input", () => {
+      $("access-slope-val").textContent = aSlp.value;
+      const live = ($("disaster-live-scrub") as HTMLInputElement)?.checked;
+      if (live) {
+        clearTimeout(disasterDebounceTimer);
+        disasterDebounceTimer = setTimeout(() => runDisasterAnalysis(true), 160);
+      }
+    });
+    aSlp.addEventListener("change", () => runDisasterAnalysis());
+  }
+
+  // Step buttons (-1m, +1m, Auto)
+  $("flood-minus-1")?.addEventListener("click", () => {
+    fLvl.value = String(Math.max(Number(fLvl.min), Number(fLvl.value) - 1.0));
+    $("flood-level-val").textContent = Number(fLvl.value).toFixed(1);
+    runDisasterAnalysis();
+  });
+  $("flood-plus-1")?.addEventListener("click", () => {
+    fLvl.value = String(Math.min(Number(fLvl.max), Number(fLvl.value) + 1.0));
+    $("flood-level-val").textContent = Number(fLvl.value).toFixed(1);
+    runDisasterAnalysis();
+  });
+  $("flood-auto-btn")?.addEventListener("click", () => {
+    if (state.disaster.autoFloodVal) {
+      fLvl.value = state.disaster.autoFloodVal.toFixed(1);
+      $("flood-level-val").textContent = fLvl.value;
+      runDisasterAnalysis();
+    }
+  });
+
+  $("run-disaster-btn")?.addEventListener("click", () => runDisasterAnalysis());
+
+  // Base map buttons
+  document.querySelectorAll("#disaster-base-group button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const base = (btn as HTMLButtonElement).dataset.base as "rgb" | "terrain" | "hillshade" | "dsm";
+      state.disaster.baseLayer = base;
+      updateDisasterBaseMap();
+    });
+  });
+
+  // Overlay toggle
+  const overToggle = $("disaster-overlay-toggle") as HTMLInputElement;
+  if (overToggle) {
+    overToggle.addEventListener("change", () => {
+      state.disaster.overlayVisible = overToggle.checked;
+      const img = $("disaster-overlay-img") as HTMLImageElement;
+      if (img) img.style.display = overToggle.checked ? "block" : "none";
+    });
+  }
+
+  // Overlay opacity
+  const opSlider = $("disaster-overlay-opacity") as HTMLInputElement;
+  if (opSlider) {
+    opSlider.addEventListener("input", () => {
+      state.disaster.opacity = Number(opSlider.value) / 100;
+      $("disaster-opacity-val").textContent = `${opSlider.value}%`;
+      const img = $("disaster-overlay-img") as HTMLImageElement;
+      if (img) img.style.opacity = String(state.disaster.opacity);
+    });
+  }
+
+  // Shimmer button
+  const shimBtn = $("disaster-shimmer-btn") as HTMLButtonElement;
+  if (shimBtn) {
+    shimBtn.addEventListener("click", () => {
+      state.disaster.shimmer = !state.disaster.shimmer;
+      shimBtn.classList.toggle("active", state.disaster.shimmer);
+      const img = $("disaster-overlay-img") as HTMLImageElement;
+      if (img) img.classList.toggle("water-shimmer", state.disaster.shimmer);
+    });
+  }
+
+  // Buildings toggle button
+  const bldgBtn = $("disaster-bldg-toggle-btn") as HTMLButtonElement;
+  if (bldgBtn) {
+    bldgBtn.addEventListener("click", () => {
+      state.disaster.showBuildings = !state.disaster.showBuildings;
+      bldgBtn.classList.toggle("active", state.disaster.showBuildings);
+      const svg = $("disaster-vector-svg");
+      if (svg) svg.style.display = state.disaster.showBuildings ? "block" : "none";
+      if (state.disaster.showBuildings && state.disaster.lastResult?.buildings) {
+        renderDisasterSvg(state.disaster.lastResult.buildings);
+      }
+    });
+  }
+
+  wireDisasterMapInspector();
 
   wireImagePick();
   updateOptSummary();

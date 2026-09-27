@@ -1,8 +1,18 @@
 export interface ApiError { code: string; message: string; detail?: string; recoverable?: boolean }
+export interface JobProgress {
+  percent: number;
+  stage: string;
+  message?: string;
+  current?: number;
+  total?: number;
+  eta_s?: number | null;
+  elapsed_s?: number;
+}
 export interface Job {
   job_id: string; status: string; created_at: string; updated_at: string; input_filename?: string | null;
   input_sha256?: string | null; mode?: string | null; inputs?: Record<string, string>; stages_ms: Record<string, number>;
   error?: ApiError | null; model?: Record<string, unknown> | null;
+  progress?: JobProgress | null;
 }
 export interface HeightfieldMeta {
   width: number; height: number; source_width: number; source_height: number; downsample_factor: number; method: string;

@@ -76,6 +76,17 @@ export class HeightfieldViewer {
   private flythroughSpeed = 0.0032;
   private onFlythroughToggleCb: ((active: boolean) => void) | null = null;
 
+  // Smooth Camera Flight Transition
+  private cameraTransition: {
+    startPos: THREE.Vector3;
+    endPos: THREE.Vector3;
+    startTarget: THREE.Vector3;
+    endTarget: THREE.Vector3;
+    startTime: number;
+    duration: number;
+    onComplete?: () => void;
+  } | null = null;
+
   private meshMode: "regular" | "rtin" = "regular";
   private rtinTolerance = 0.5;
   private onCameraModeChangeCb: ((mode: "orbit" | "walk") => void) | null = null;
@@ -109,20 +120,35 @@ export class HeightfieldViewer {
     this.renderer.shadowMap.enabled = false;
     container.appendChild(this.renderer.domElement);
 
-    // Camera
+    // Camera — standard Z-up cartographic coordinate system
     this.camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 200000);
+    this.camera.up.set(0, 0, 1);
 
-    // Controls
+    // Controls: intuitive standard GIS / 3D navigation
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.screenSpacePanning = true;
     this.controls.minDistance = 0.5;
     this.controls.maxDistance = 150000;
-    this.controls.maxPolarAngle = Math.PI * 0.88;
+    this.controls.minPolarAngle = 0.01;
+    // Constrain camera strictly to horizon and above (never tilt below ground plane / horizon)
+    this.controls.maxPolarAngle = Math.PI / 2 - 0.02; // ~88.8 deg, prevents going below horizon
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    this.controls.touches = {
+      ONE: THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_PAN,
+    };
     this.controls.addEventListener("start", () => {
       if (this.flythroughActive) {
         this.setFlythrough(false);
+      }
+      if (this.cameraTransition) {
+        this.cameraTransition = null;
       }
     });
 
@@ -163,7 +189,10 @@ export class HeightfieldViewer {
       if (!this.downAt) return;
       const moved = Math.hypot(e.clientX - this.downAt[0], e.clientY - this.downAt[1]);
       this.downAt = null;
-      if (moved < 4) this.pick(e);
+      if (moved < 4 && e.button === 0) this.pick(e);
+    });
+    el.addEventListener("dblclick", (e) => {
+      this.focusOnPoint(e);
     });
 
     // First-person pointer lock & mouse look
@@ -191,6 +220,17 @@ export class HeightfieldViewer {
         this.keys[e.code] = true;
         if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight"].includes(e.code)) {
           e.preventDefault();
+        }
+      } else {
+        // Intuitive keyboard shortcuts in Orbit mode
+        if (e.code === "KeyN") {
+          this.alignNorth();
+        } else if (e.code === "Equal" || e.code === "NumpadAdd") {
+          this.zoomBy(0.75);
+        } else if (e.code === "Minus" || e.code === "NumpadSubtract") {
+          this.zoomBy(1.33);
+        } else if (e.code === "KeyF" && !e.ctrlKey && !e.metaKey) {
+          this.resetCamera();
         }
       }
     });
@@ -303,16 +343,157 @@ export class HeightfieldViewer {
 
   private animate = () => {
     this.raf = requestAnimationFrame(this.animate);
-    if (this.cameraMode === "walk") {
+    if (this.cameraTransition) {
+      this.updateCameraTransition();
+    } else if (this.cameraMode === "walk") {
       this.updateWalk();
     } else if (this.flythroughActive) {
       this.updateFlythrough();
     } else {
       this.controls.update();
+      // Enforce camera stays above ground and never drops below the horizon
+      if (this.mesh && this.baseZ) {
+        const minZ = Math.max(
+          this.controls.target.z,
+          this.getGroundZ(this.camera.position.x, this.camera.position.y) + 0.8
+        );
+        if (this.camera.position.z < minZ) {
+          this.camera.position.z = minZ;
+        }
+      }
     }
     if ((this.frame++ & 7) === 0) this.updateDynamicHud();
     this.renderer.render(this.scene, this.camera);
   };
+
+  /**
+   * Smoothly animates camera position and orbit target to a new location.
+   */
+  flyTo(
+    endPos: THREE.Vector3,
+    endTarget: THREE.Vector3,
+    durationMs = 600,
+    onComplete?: () => void
+  ) {
+    if (this.cameraMode === "walk") {
+      this.setCameraMode("orbit");
+    }
+    if (this.flythroughActive) {
+      this.setFlythrough(false);
+    }
+    this.cameraTransition = {
+      startPos: this.camera.position.clone(),
+      endPos: endPos.clone(),
+      startTarget: this.controls.target.clone(),
+      endTarget: endTarget.clone(),
+      startTime: performance.now(),
+      duration: Math.max(150, durationMs),
+      onComplete,
+    };
+  }
+
+  private updateCameraTransition() {
+    if (!this.cameraTransition) return;
+    const now = performance.now();
+    const elapsed = now - this.cameraTransition.startTime;
+    const progress = Math.min(1.0, elapsed / this.cameraTransition.duration);
+    // Smooth cubic ease-in-out curve
+    const t = progress < 0.5
+      ? 4 * progress * progress * progress
+      : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+    this.camera.position.lerpVectors(this.cameraTransition.startPos, this.cameraTransition.endPos, t);
+    this.controls.target.lerpVectors(this.cameraTransition.startTarget, this.cameraTransition.endTarget, t);
+
+    // Keep camera above horizon of target and above terrain surface during flight
+    if (this.mesh && this.baseZ) {
+      const minZ = Math.max(
+        this.controls.target.z + 0.5,
+        this.getGroundZ(this.camera.position.x, this.camera.position.y) + 1.0
+      );
+      if (this.camera.position.z < minZ) {
+        this.camera.position.z = minZ;
+      }
+    }
+
+    this.controls.update();
+
+    if (progress >= 1.0) {
+      const cb = this.cameraTransition.onComplete;
+      this.cameraTransition = null;
+      if (cb) cb();
+    }
+  }
+
+  /**
+   * Focuses and centers the camera orbit pivot directly on the clicked building or terrain point.
+   */
+  focusOnPoint(e: MouseEvent) {
+    if (this.cameraMode === "walk" || !this.mesh) return;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(nd, this.camera);
+    const objectsToIntersect: THREE.Object3D[] = [this.mesh];
+    if (this.buildingsGroup && this.lod1Visible) {
+      objectsToIntersect.push(this.buildingsGroup);
+    }
+    const hits = this.raycaster.intersectObjects(objectsToIntersect, true);
+    if (!hits || hits.length === 0) return;
+    const hitPoint = hits[0].point;
+
+    // Glide target to hit point, preserve current viewing angle
+    const currentOffset = this.camera.position.clone().sub(this.controls.target);
+    const currentDist = currentOffset.length();
+    const maxDim = Math.max(this.extentX, this.extentY);
+    const comfortableDist = Math.max(25, maxDim * 0.30);
+    if (currentDist > comfortableDist * 1.5) {
+      currentOffset.setLength(comfortableDist);
+    }
+    // Prevent camera offset from dipping below horizon of the focus target
+    if (currentOffset.z < 2.0) {
+      currentOffset.z = 2.0;
+    }
+    const newPos = hitPoint.clone().add(currentOffset);
+    const groundZ = this.getGroundZ(newPos.x, newPos.y);
+    if (newPos.z < groundZ + 2) {
+      newPos.z = groundZ + 2;
+    }
+
+    this.placeMarker(hitPoint);
+    this.flyTo(newPos, hitPoint, 550);
+  }
+
+  /**
+   * Smoothly zooms camera in or out by a scaling factor.
+   */
+  zoomBy(factor: number) {
+    if (this.cameraMode === "walk") return;
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const currentDist = offset.length();
+    const targetDist = Math.max(this.controls.minDistance, Math.min(this.controls.maxDistance, currentDist * factor));
+    offset.setLength(targetDist);
+    const newPos = this.controls.target.clone().add(offset);
+    this.flyTo(newPos, this.controls.target, 280);
+  }
+
+  /**
+   * Smoothly aligns camera heading to due North (+Y) while maintaining current tilt and distance.
+   */
+  alignNorth() {
+    if (this.cameraMode === "walk") {
+      this.yaw = 0;
+      return;
+    }
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const horizDist = Math.max(1.0, Math.hypot(offset.x, offset.y));
+    const newPos = new THREE.Vector3(
+      this.controls.target.x,
+      this.controls.target.y - horizDist,
+      Math.max(this.controls.target.z + 1.0, this.camera.position.z)
+    );
+    this.camera.up.set(0, 0, 1);
+    this.flyTo(newPos, this.controls.target, 500);
+  }
 
   private frame = 0;
 
@@ -320,13 +501,18 @@ export class HeightfieldViewer {
   private updateDynamicHud() {
     const dir = new THREE.Vector3();
     this.camera.getWorldDirection(dir);
+    const horiz = Math.hypot(dir.x, dir.y) > 0.15 ? dir : new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+    const heading = Math.atan2(horiz.x, horiz.y); // 0 = looking north (+Y)
+
     const arrow = this.hudBR.querySelector(".hud-north") as HTMLElement | null;
     if (arrow) {
-      // heading of the view projected on the ground plane; top-down views use the camera "up" vector instead
-      const horiz = Math.hypot(dir.x, dir.y) > 0.15 ? dir : new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
-      const heading = Math.atan2(horiz.x, horiz.y); // 0 = looking north (+Y)
       arrow.style.transform = `rotate(${(-heading * 180) / Math.PI}deg)`;
     }
+    const navNeedle = document.getElementById("nav-compass-needle") as HTMLElement | null;
+    if (navNeedle) {
+      navNeedle.style.transform = `rotate(${(-heading * 180) / Math.PI}deg)`;
+    }
+
     const bar = this.hudBR.querySelector(".hud-scalebar-bar") as HTMLElement | null;
     const label = this.hudBR.querySelector(".hud-scalebar-label") as HTMLElement | null;
     if (!bar || !label || !this.metric) return;
@@ -944,19 +1130,21 @@ export class HeightfieldViewer {
     if (this.cameraMode === "walk") this.setCameraMode("orbit");
     const d = Math.max(this.extentX, this.extentY);
     const targetZ = this.metric ? (this.zMax - this.zMin) * this.exaggeration * 0.25 : 0;
-    this.controls.target.set(0, 0, targetZ);
+    const target = new THREE.Vector3(0, 0, targetZ);
+    const endPos = new THREE.Vector3();
+
+    this.camera.up.set(0, 0, 1);
 
     if (preset === "nadir") {
-      this.camera.position.set(0, 0, d * 1.35);
-      this.camera.up.set(0, 1, 0);
+      // Offset slightly south (-Y) so North (+Y) is straight up on screen, avoiding zenith singularity
+      endPos.set(0, -Math.max(1, d * 0.001), d * 1.35);
     } else if (preset === "oblique") {
-      this.camera.position.set(0, -d * 0.65, d * 0.70);
-      this.camera.up.set(0, 0, 1);
+      endPos.set(0, -d * 0.65, d * 0.70);
     } else if (preset === "horizon") {
-      this.camera.position.set(-d * 0.60, -d * 0.60, Math.max(30, d * 0.22));
-      this.camera.up.set(0, 0, 1);
+      // Perspective positioned comfortably above the horizon line
+      endPos.set(-d * 0.60, -d * 0.60, Math.max(targetZ + 15, d * 0.22));
     }
-    this.controls.update();
+    this.flyTo(endPos, target, 650);
   }
 
   setAntiSmear(enabled: boolean) {

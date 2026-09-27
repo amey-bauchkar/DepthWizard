@@ -115,17 +115,37 @@ def plan_upsample(h: int, w: int, desired: float, *, tile: int, overlap: float, 
     return up
 
 
-def tiled_relative(predict: Callable[[np.ndarray], np.ndarray], rgb: np.ndarray, *, upsample: float = 1.0, tile: int = 518, overlap: float = 0.25, inference_gsd_m: float | None = None) -> TiledPrediction:
+def tiled_relative(
+    predict: Callable[[np.ndarray], np.ndarray],
+    rgb: np.ndarray,
+    *,
+    upsample: float = 1.0,
+    tile: int = 518,
+    overlap: float = 0.25,
+    inference_gsd_m: float | None = None,
+    progress_cb: Callable[[int, int, float], None] | None = None,
+) -> TiledPrediction:
     """Run `predict` (HxWx3 uint8 -> HxW relative depth) on overlapping tiles of `rgb` resampled by `upsample`."""
     t0 = time.perf_counter()
     h, w = rgb.shape[:2]
     hb, wb = max(tile, int(round(h * upsample))), max(tile, int(round(w * upsample)))
     big = rgb if (hb, wb) == (h, w) else np.asarray(Image.fromarray(rgb).resize((wb, hb), Image.Resampling.BICUBIC))
     step = max(1, int(tile * (1 - overlap)))
+    origins_r = list(_tile_origins(hb, tile, step))
+    origins_c = list(_tile_origins(wb, tile, step))
+    total_tiles = len(origins_r) * len(origins_c)
     tiles = []
-    for r0 in _tile_origins(hb, tile, step):
-        for c0 in _tile_origins(wb, tile, step):
-            tiles.append((r0, c0, np.asarray(predict(big[r0 : r0 + tile, c0 : c0 + tile]), dtype=np.float64)))
+    done_count = 0
+    for r0 in origins_r:
+        for c0 in origins_c:
+            tile_img = big[r0 : r0 + tile, c0 : c0 + tile]
+            tiles.append((r0, c0, np.asarray(predict(tile_img), dtype=np.float64)))
+            done_count += 1
+            if progress_cb is not None:
+                try:
+                    progress_cb(done_count, total_tiles, time.perf_counter() - t0)
+                except Exception:
+                    pass
     return TiledPrediction(tiles, (hb, wb), (h, w), hb / h, tile, overlap, (time.perf_counter() - t0) * 1000.0, inference_gsd_m)
 
 

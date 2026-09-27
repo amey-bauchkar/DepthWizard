@@ -49,6 +49,7 @@ class Job:
     model: dict[str, Any] | None = None
     config_hash: str | None = None
     warnings: list[str] = field(default_factory=list)
+    progress: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -191,9 +192,11 @@ class JobManager:
         with self._lock:
             self._jobs.pop(job_id, None)
 
-    def _set(self, job: Job, status: str) -> None:
+    def _set(self, job: Job, status: str, progress: dict[str, Any] | None = None) -> None:
         job.status = status
         job.timestamps[status] = _now()
+        if progress is not None:
+            job.progress = progress
         self._save(job)
 
     # ---- worker ------------------------------------------------------------
@@ -207,6 +210,12 @@ class JobManager:
                 raise DepthWizardError("no input file attached")
             src = inputs[0]
             t0 = time.perf_counter()
+            self._set(job, "PREPROCESSING", {
+                "percent": 5,
+                "stage": "PREPROCESSING",
+                "message": "Ingesting and validating input…",
+                "eta_s": 50.0,
+            })
             mode_b = src.suffix.lower() in (".tif", ".tiff") and is_georeferenced_tiff(src)
             job.mode = "B" if mode_b else "A"
             if mode_b:
@@ -217,7 +226,12 @@ class JobManager:
                 rgb, valid_mask, meta_sha = ing_a.rgb, ing_a.valid_mask, ing_a.meta.sha256
             job.input_sha256 = meta_sha
             job.stages_ms["preprocessing_ms"] = round((time.perf_counter() - t0) * 1000, 1)
-            self._set(job, "INFERENCE")
+            self._set(job, "INFERENCE", {
+                "percent": 15,
+                "stage": "INFERENCE",
+                "message": "Depth Anything V2 — whole image pass…",
+                "eta_s": 45.0,
+            })
             predictor = self.predictor()
             job.model = {"name": predictor.card.name, "version": predictor.card.version, "sha256": predictor.card.sha256_actual, "device": predictor.device}
             t1 = time.perf_counter()
@@ -233,22 +247,56 @@ class JobManager:
                 tile_pred = (self.metric_predictor() or predictor) if mode_b else predictor
                 if tile_pred is not predictor:
                     job.model["tiles"] = {"name": tile_pred.card.name, "version": tile_pred.card.version, "sha256": tile_pred.card.sha256_actual, "output_quantity": tile_pred.card.output_quantity}
-                tiled = pipeline_b.stage_tiled_inference(d, rgb, ing.meta.gsd_m if mode_b else None, tile_pred, self.settings, log)
+
+                def on_tile_progress(done_n: int, total_n: int, elapsed_s: float) -> None:
+                    # Scale tile progress linearly from 20% to 80%
+                    pct = int(20 + round((done_n / max(total_n, 1)) * 60))
+                    avg_per_tile = elapsed_s / max(done_n, 1)
+                    rem_tiles = total_n - done_n
+                    calib_est_s = 5.0 if mode_b else 1.0
+                    eta_s = max(1.0, round(rem_tiles * avg_per_tile + calib_est_s, 1))
+                    job.progress = {
+                        "percent": pct,
+                        "current": done_n,
+                        "total": total_n,
+                        "eta_s": eta_s,
+                        "elapsed_s": round(elapsed_s, 1),
+                        "stage": "INFERENCE",
+                        "message": f"Tile {done_n}/{total_n} · Depth Anything V2",
+                    }
+                    self._save(job)
+
+                tiled = pipeline_b.stage_tiled_inference(d, rgb, ing.meta.gsd_m if mode_b else None, tile_pred, self.settings, log, progress_cb=on_tile_progress)
                 job.stages_ms["tiled_inference_ms"] = round((time.perf_counter() - t_tiles) * 1000, 1)
             job.stages_ms["inference_ms"] = round((time.perf_counter() - t1) * 1000, 1)
             t2 = time.perf_counter()
             if mode_b:
-                self._set(job, "CALIBRATION")
+                self._set(job, "CALIBRATION", {
+                    "percent": 85,
+                    "stage": "CALIBRATION",
+                    "eta_s": 5.0,
+                    "message": "DEM fusion, ground separation & LoD-1 buildings…",
+                })
                 dem_file = d / job.inputs["dem"] if "dem" in job.inputs else None
                 anchors_file = d / job.inputs["anchors"] if "anchors" in job.inputs else None
                 pipeline_b.stage_calibrate_and_compose(d, ing, rel_depth, prov, self.settings, log, tiled=tiled, user_dem=dem_file, user_dem_vcrs=job.inputs.get("dem_vcrs", "EGM2008"), anchors_path=anchors_file)
                 job.stages_ms["calibration_ms"] = round((time.perf_counter() - t2) * 1000, 1)
             else:
-                self._set(job, "RASTERIZING")
+                self._set(job, "RASTERIZING", {
+                    "percent": 85,
+                    "stage": "RASTERIZING",
+                    "eta_s": 2.0,
+                    "message": "Generating relative surface & heightfield…",
+                })
                 pipeline.stage_rasterize(d, ing_a, rel_depth, prov, self.settings, log, tiled=tiled)
                 job.stages_ms["raster_ms"] = round((time.perf_counter() - t2) * 1000, 1)
             job.stages_ms["total_ms"] = round((time.perf_counter() - t0) * 1000, 1)
-            self._set(job, "READY")
+            self._set(job, "READY", {
+                "percent": 100,
+                "stage": "READY",
+                "eta_s": 0.0,
+                "message": "Complete",
+            })
             log.event("READY", "job complete", mode=job.mode, **job.stages_ms)
         except DepthWizardError as e:
             job.error = e.to_dict()

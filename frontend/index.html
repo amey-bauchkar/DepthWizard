@@ -86,6 +86,19 @@
         <div id="input-check" class="input-check hidden"></div>
 
         <button id="run-btn" class="primary" disabled>Generate Surface</button>
+        <div id="job-progress-wrap" class="job-progress-wrap hidden">
+          <div class="progress-header">
+            <span id="job-progress-stage" class="progress-stage">INFERENCE</span>
+            <span id="job-progress-eta" class="progress-eta">⏱️ estimating…</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="job-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+          <div class="progress-meta">
+            <span id="job-progress-label" class="progress-label">Starting inference…</span>
+            <span id="job-progress-pct" class="progress-pct">0%</span>
+          </div>
+        </div>
         <div id="status" class="status"></div>
       </section>
 
@@ -247,10 +260,200 @@
         </div>
       </section>
 
-      <!-- ══════════════════════════════════════ PANEL 4: 3D VIEWER -->
-      <section class="panel wide" id="panel-3d">
+      <!-- ══════════════════════════════════════ PANEL 4: DISASTER MANAGEMENT -->
+      <section class="panel wide" id="panel-disaster">
         <div class="panel-header">
           <span class="panel-step">4</span>
+          <span class="panel-title">Disaster Management &amp; Hydrological Screening</span>
+          <span class="badge ok" id="disaster-badge">2D Flood Map Overlay</span>
+          <span class="badge muted">Elevation-based screening only · Non-hydrodynamic</span>
+        </div>
+
+        <div class="disaster-layout">
+          <!-- Left Column: Controls & Analytics -->
+          <div class="disaster-sidebar">
+            <div class="disaster-controls-box">
+              <div class="optrow">
+                <label style="flex: 1;">
+                  <strong>Scenario</strong>
+                  <select id="disaster-scenario">
+                    <option value="flood">🌊 Flood Screening (Inundation)</option>
+                    <option value="accessibility">🚜 Terrain Accessibility (Slope)</option>
+                  </select>
+                </label>
+              </div>
+
+              <!-- Flood Controls -->
+              <div id="flood-controls-wrap">
+                <div class="slider-header-row">
+                  <label for="flood-level-slider">
+                    <strong>Water Level: <span id="flood-level-val" class="highlight-val">0</span> m</strong>
+                  </label>
+                  <div class="slider-quick-btns">
+                    <button type="button" class="micro-btn" id="flood-minus-1" title="Decrease by 1m">-1m</button>
+                    <button type="button" class="micro-btn" id="flood-plus-1" title="Increase by 1m">+1m</button>
+                    <button type="button" class="micro-btn" id="flood-auto-btn" title="Reset to auto flood level">Auto</button>
+                  </div>
+                </div>
+                <input id="flood-level-slider" type="range" min="0" max="100" step="0.1" value="0" />
+                <div class="slider-range-labels">
+                  <span id="flood-min-lbl">0 m</span>
+                  <span id="flood-max-lbl">100 m</span>
+                </div>
+              </div>
+
+              <!-- Accessibility Controls -->
+              <div id="access-slope-wrap" class="hidden">
+                <div class="slider-header-row">
+                  <label for="access-slope-slider">
+                    <strong>Max Traverse Slope: <span id="access-slope-val" class="highlight-val">15</span>°</strong>
+                  </label>
+                </div>
+                <input id="access-slope-slider" type="range" min="0" max="60" step="1" value="15" />
+                <div class="slider-range-labels">
+                  <span>0° (Flat)</span>
+                  <span>60° (Steep)</span>
+                </div>
+              </div>
+
+              <div class="optrow" style="margin-top: 14px; gap: 10px; align-items: center;">
+                <button id="run-disaster-btn" class="primary" style="flex: 1; margin-top:0;">⚡ Run Screening</button>
+                <label class="toggle-wrap" title="Auto-run analysis when slider is released">
+                  <input type="checkbox" id="disaster-live-scrub" checked />
+                  <span style="font-size: 11px;">Live Scrub</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Analysis Results / Metrics Card -->
+            <div id="disaster-result" class="hidden" style="margin-top: 14px;">
+              <div class="disaster-stats-grid">
+                <div class="stat-card" id="stat-area-card">
+                  <div class="stat-label">Inundated Area</div>
+                  <div class="stat-value" id="stat-area-val">—</div>
+                  <div class="stat-sub" id="stat-area-sub">—</div>
+                </div>
+                <div class="stat-card" id="stat-buildings-card">
+                  <div class="stat-label">Affected Buildings</div>
+                  <div class="stat-value" id="stat-buildings-val">—</div>
+                  <div class="stat-sub" id="stat-buildings-sub">structures at risk</div>
+                </div>
+                <div class="stat-card" id="stat-maxdepth-card">
+                  <div class="stat-label">Max Depth</div>
+                  <div class="stat-value" id="stat-maxdepth-val">—</div>
+                  <div class="stat-sub">crest flood point</div>
+                </div>
+                <div class="stat-card" id="stat-meandepth-card">
+                  <div class="stat-label">Mean Depth</div>
+                  <div class="stat-value" id="stat-meandepth-val">—</div>
+                  <div class="stat-sub">average water pool</div>
+                </div>
+              </div>
+
+              <div class="disaster-downloads-row" style="margin-top: 10px;">
+                <a id="disaster-download-raster" href="#" class="linkbtn" download>📥 Download Depth Raster (GeoTIFF)</a>
+              </div>
+
+              <!-- Affected Buildings List -->
+              <div id="disaster-buildings-wrap" class="hidden" style="margin-top: 12px;">
+                <div class="result-secondary-title" style="display: flex; justify-content: space-between; align-items: center;">
+                  <span>Affected Buildings (<span id="disaster-bldg-count">0</span>)</span>
+                  <span class="hint" style="font-size: 10px;">Hover/click to locate</span>
+                </div>
+                <div id="disaster-buildings-list" class="disaster-bldg-scrollbox"></div>
+              </div>
+
+              <div id="disaster-warnings" class="disaster-warning-box" style="margin-top: 10px;"></div>
+            </div>
+          </div>
+
+          <!-- Right Column: 2D Disaster Map Viewer -->
+          <div class="disaster-map-column">
+            <!-- Map Top Toolbar -->
+            <div class="disaster-map-toolbar">
+              <div class="toolbar-left">
+                <span class="group-label">2D BASE MAP</span>
+                <div class="btn-group" id="disaster-base-group">
+                  <button type="button" class="sub-btn active" data-base="rgb" title="Aerial Orthophoto (RGB)">🛰️ Aerial</button>
+                  <button type="button" class="sub-btn" data-base="terrain" title="Ground Terrain Model">🏔️ Terrain</button>
+                  <button type="button" class="sub-btn" data-base="hillshade" title="Relief Hillshade">⛰️ Hillshade</button>
+                  <button type="button" class="sub-btn" data-base="dsm" title="Digital Surface Model">🗺️ DSM</button>
+                </div>
+              </div>
+
+              <div class="toolbar-right">
+                <label class="toolbar-toggle" title="Show or hide the water layer overlay">
+                  <input type="checkbox" id="disaster-overlay-toggle" checked />
+                  <span id="disaster-toggle-lbl">🌊 Water Overlay</span>
+                </label>
+
+                <div class="opacity-control" title="Adjust water layer transparency">
+                  <span class="opacity-label">Opacity</span>
+                  <input id="disaster-overlay-opacity" type="range" min="10" max="100" value="75" step="5" />
+                  <span id="disaster-opacity-val">75%</span>
+                </div>
+
+                <button type="button" class="sub-btn active" id="disaster-shimmer-btn" title="Toggle fluid water ripple & shimmer animation">✨ Shimmer</button>
+                <button type="button" class="sub-btn active" id="disaster-bldg-toggle-btn" title="Toggle building polygon footprints on map">🏙️ Buildings</button>
+              </div>
+            </div>
+
+            <!-- Map Display Area -->
+            <div class="disaster-map-viewport" id="disaster-map-viewport">
+              <div class="disaster-stage-wrap" id="disaster-stage-wrap">
+                <!-- Base 2D Map -->
+                <img id="disaster-base-img" alt="2D Map Base Layer" />
+                
+                <!-- Water Overlay Layer (Directly on top of 2D map) -->
+                <img id="disaster-overlay-img" class="water-shimmer" alt="Water / Disaster Overlay" />
+
+                <!-- Vector SVG for building footprints, hover highlights, pins -->
+                <svg id="disaster-vector-svg" class="disaster-svg-layer"></svg>
+
+                <!-- Point Pick Dot Marker -->
+                <div id="disaster-pick-dot" class="disaster-pick-dot hidden"></div>
+
+                <!-- Map Hover / Click Inspection HUD (Floating Card Top-Right) -->
+                <div id="disaster-hover-hud" class="disaster-map-hud">
+                  <div class="hud-title">2D Map Inspector</div>
+                  <div id="disaster-hud-content" class="hud-body">Hover or click anywhere on the 2D map to inspect flood depth</div>
+                </div>
+
+                <!-- Water Depth Legend (Floating Card Bottom-Left) -->
+                <div id="disaster-map-legend" class="disaster-map-legend">
+                  <div class="legend-header" id="disaster-legend-title">Water Depth (m)</div>
+                  <div class="legend-ramp">
+                    <div class="ramp-bar" id="disaster-ramp-bar"></div>
+                    <div class="ramp-labels" id="disaster-ramp-labels">
+                      <span>0.0 m</span>
+                      <span>0.5 m</span>
+                      <span>1.5 m</span>
+                      <span>3.0 m+</span>
+                    </div>
+                  </div>
+                  <div class="legend-classes" id="disaster-legend-classes">
+                    <span class="l-item"><i style="background:#add8e6"></i>Low</span>
+                    <span class="l-item"><i style="background:#00bfff"></i>Mod</span>
+                    <span class="l-item"><i style="background:#0000cd"></i>High</span>
+                    <span class="l-item"><i style="background:#000080"></i>Extreme</span>
+                  </div>
+                </div>
+
+                <!-- Empty / Pending Overlay Placeholder -->
+                <div id="disaster-map-placeholder" class="disaster-map-placeholder">
+                  <div class="placeholder-icon">🌊</div>
+                  <div class="placeholder-text">Load a dataset or click "Run Screening" to display the 2D Map and Water Overlay</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════ PANEL 5: 3D VIEWER -->
+      <section class="panel wide" id="panel-3d">
+        <div class="panel-header">
+          <span class="panel-step">5</span>
           <span class="panel-title">3D Surface Explorer</span>
           <span class="badge muted" id="view-badge">Open a result to load the heightfield</span>
         </div>
@@ -344,6 +547,41 @@
 
         <div id="viewer" class="viewer">
           <div id="viewer-msg" class="viewer-msg">Open a result to build the heightfield — geometry is derived from the DSM raster.</div>
+
+          <!-- Floating Navigation Dock (North, Recenter, Zoom In/Out) -->
+          <div id="viewer-nav-dock" class="viewer-nav-dock">
+            <button id="nav-north-btn" class="nav-dock-btn" type="button" title="Align Heading Due North (N)">
+              <div class="compass-dial">
+                <div id="nav-compass-needle" class="compass-needle"></div>
+                <span class="compass-n">N</span>
+              </div>
+            </button>
+            <div class="nav-dock-divider"></div>
+            <button id="nav-zoom-in" class="nav-dock-btn" type="button" title="Zoom in (+)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <button id="nav-zoom-out" class="nav-dock-btn" type="button" title="Zoom out (−)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <div class="nav-dock-divider"></div>
+            <button id="nav-fit-btn" class="nav-dock-btn" type="button" title="Reset View / Fit (F)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Bottom Floating Controls Helper Pill -->
+          <div id="viewer-hint-pill" class="viewer-hint-pill">
+            <span class="hint-item"><span class="hint-mouse hint-left"></span> Left-drag: Orbit</span>
+            <span class="hint-sep">·</span>
+            <span class="hint-item"><span class="hint-mouse hint-right"></span> Right / <kbd>Shift</kbd>+drag: Pan</span>
+            <span class="hint-sep">·</span>
+            <span class="hint-item"><span class="hint-mouse hint-scroll"></span> Scroll: Zoom</span>
+            <span class="hint-sep">·</span>
+            <span class="hint-item"><span class="hint-tag">Double-click</span> Center on point</span>
+          </div>
+
           <!-- First-Person Walk HUD Overlay -->
           <div id="walk-hud" class="walk-hud hidden">
             <div class="walk-crosshair"></div>

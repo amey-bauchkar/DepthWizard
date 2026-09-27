@@ -52,14 +52,22 @@ def stage_ingest_geotiff(job_dir: Path, input_path: Path, settings: Settings, lo
     return res
 
 
-def stage_tiled_inference(job_dir: Path, rgb: np.ndarray, gsd_m: float | None, predictor: BasePredictor, settings: Settings, log: JobLogger) -> TiledPrediction:
+def stage_tiled_inference(job_dir: Path, rgb: np.ndarray, gsd_m: float | None, predictor: BasePredictor, settings: Settings, log: JobLogger, progress_cb: Any | None = None) -> TiledPrediction:
     """Overlapping-tile inference at the configured inference GSD (Mode B) or at native resolution (Mode A)."""
     f = settings.fusion
     h, w = rgb.shape[:2]
     desired = (gsd_m / f.inference_gsd_m) if gsd_m else 1.0
     desired = float(min(max(desired, f.min_upsample), f.max_upsample))
     up = plan_upsample(h, w, desired, tile=f.tile_px, overlap=f.overlap, max_tiles=f.max_tiles)
-    tp = tiled_relative(lambda x: predictor.predict(x).relative_depth, rgb, upsample=up, tile=f.tile_px, overlap=f.overlap, inference_gsd_m=(gsd_m / up) if gsd_m else None)
+    tp = tiled_relative(
+        lambda x: predictor.predict(x).relative_depth,
+        rgb,
+        upsample=up,
+        tile=f.tile_px,
+        overlap=f.overlap,
+        inference_gsd_m=(gsd_m / up) if gsd_m else None,
+        progress_cb=progress_cb,
+    )
     tp.quantity = predictor.card.output_quantity
     val = (predictor.card.extra or {}).get("validation") or {}
     ft = val.get("finetuned") if isinstance(val, dict) else None
