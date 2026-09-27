@@ -1551,3 +1551,37 @@ select { max-width: 100%; text-overflow: ellipsis; }
 }
 .placeholder-icon { color: var(--teal-500); margin-bottom: 10px; line-height: 0; }
 .placeholder-text { font-size: 13px; max-width: 340px; }
+
+/* ============================================================ Share & export card */
+.export-card { margin-top: 14px; padding: 12px; background: var(--mint-50); border: 1px solid var(--line); border-radius: var(--radius); }
+.export-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.export-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.export-btn { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; font-family: inherit; }
+.export-btn:hover:not(:disabled) { border-color: var(--teal-500); }
+.export-btn.primary { background: var(--forest-700); border-color: var(--forest-700); color: #fff; }
+.export-btn.primary:hover:not(:disabled) { background: var(--forest-600); }
+.export-btn:disabled { opacity: .6; cursor: progress; }
+.export-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.export-title { font-weight: 600; font-size: 13px; }
+.export-sub { font-size: 11.5px; line-height: 1.4; opacity: .85; }
+.export-foot { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+
+/* ============================================================ Before / after change screening */
+.chg-select { max-width: 420px; }
+.chg-summary { margin: 10px 0 12px; }
+.chg-stage { position: relative; width: min(100%, 760px); aspect-ratio: 1 / 1; margin: 6px 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius); overflow: hidden; background: var(--surface-2); user-select: none; }
+.chg-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+.chg-after-clip { position: absolute; inset: 0; clip-path: inset(0 0 0 50%); }
+.chg-overlay { pointer-events: none; }
+.chg-divider { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(7, 42, 32, .5); pointer-events: none; }
+.chg-tag { position: absolute; top: 8px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; padding: 2px 7px; border-radius: var(--radius-sm); background: rgba(255, 255, 255, .92); border: 1px solid var(--line-strong); color: var(--ink-80); }
+.chg-tag-l { left: 8px; } .chg-tag-r { right: 8px; }
+.chg-key { display: inline-flex; gap: 4px; align-items: center; margin-left: 6px; color: var(--ink-60); }
+.chg-key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.chg-k-loss { background: rgb(225, 0, 145); } .chg-k-gain { background: rgb(0, 175, 235); }
+.chg-badge { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: var(--radius-sm); white-space: nowrap; }
+.chg-MAJOR_HEIGHT_LOSS { background: var(--bad); color: #fff; }
+.chg-HEIGHT_LOSS { background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad-line); }
+.chg-HEIGHT_GAIN { background: var(--info-bg); color: var(--info); border: 1px solid var(--info-line); }
+.chg-NO_SIGNIFICANT_CHANGE, .chg-NOT_COMPARABLE { background: var(--muted-bg); color: var(--ink-60); }
+.chg-role { display: inline-flex; gap: 10px; align-items: center; font-size: 12px; color: var(--ink-60); }

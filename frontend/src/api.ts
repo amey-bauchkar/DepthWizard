@@ -45,7 +45,12 @@ export interface InputCheck {
   expected_accuracy?: { height_above_ground?: { objects_m: number; ground_m: number; source: string }; terrain_m?: number; dsm_m?: number; elevation_source?: string } | null;
 }
 export interface Measure { mode: string; calibration_tier: string; points: Sample[]; segments: Record<string, any>[]; authority: string }
-export interface DemoItem { id: string; label: string; file: string; mode: string; anchors?: string; reference_dsm?: string; reference_dtm?: string; reference_vertical_crs?: string; reference_points?: string; country?: string; source?: string }
+export interface DemoItem {
+  id: string; label: string; file: string; mode: string; anchors?: string;
+  reference_dsm?: string; reference_dtm?: string; reference_vertical_crs?: string;
+  reference_points?: string; country?: string; source?: string;
+  pair?: string; role?: string; date?: string;
+}
 
 export class ApiFailure extends Error {
   constructor(public status: number, public err: ApiError) { super(err.message); }
@@ -75,11 +80,14 @@ export const api = {
     fd.append("has_dem", String(hasDem)); fd.append("has_anchors", String(hasAnchors));
     return handle<InputCheck>(await fetch("/api/inspect", { method: "POST", body: fd }));
   },
+  changeCandidates: async (id: string) => handle<{ candidates: { job_id: string; input_filename?: string | null; created_at: string; overlap_fraction: number; calibration_tier?: string }[] }>(await fetch(`/api/jobs/${id}/change/candidates`)),
+  change: async (id: string, after: string) => handle<{ summary: Record<string, any>; buildings: Record<string, any>[] }>(await fetch(`/api/jobs/${id}/change`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ after }) })),
   run: async (id: string) => handle<Job>(await fetch(`/api/jobs/${id}/run`, { method: "POST" })),
   job: async (id: string) => handle<Job>(await fetch(`/api/jobs/${id}`)),
   result: async (id: string) => handle<Result>(await fetch(`/api/jobs/${id}/result`)),
   metadata: async (id: string) => handle<Record<string, any>>(await fetch(`/api/jobs/${id}/metadata`)),
   artifactUrl: (id: string, name: string) => `/api/jobs/${id}/artifact/${name}`,
+  exportUrl: (id: string, kind: "scene.html" | "package.zip", inline = false) => `/api/jobs/${id}/export/${kind}${inline ? "?inline=1" : ""}`,
   sample: async (id: string, x: number, y: number, crs = "pixel") => handle<Sample>(await fetch(`/api/jobs/${id}/sample?x=${x}&y=${y}&crs=${crs}`)),
   measure: async (id: string, points: { x: number; y: number }[], crs = "pixel") =>
     handle<Measure>(await fetch(`/api/jobs/${id}/measure`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ points, crs }) })),

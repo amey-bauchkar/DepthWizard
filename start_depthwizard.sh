@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")"
 PY=python3
 [ -x .venv/bin/python ] && PY=.venv/bin/python
-if [ ! -f frontend/dist/index.html ]; then
+if [ ! -f frontend/dist/index.html ] || [ ! -f frontend/dist/standalone/standalone.js ]; then
   echo "[DepthWizard] frontend not built - building it now (needs Node.js 20+)..."
   (cd frontend && npm ci && npm run build)
 fi

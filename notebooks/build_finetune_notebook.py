@@ -35,7 +35,7 @@ md(r"""
 6. Exports `depthwizard_ndsm_model_v2.zip` (weights + `training_report.json` with the measured numbers and the uncertainty calibration).
 
 **Before running:** Runtime → Change runtime type → **T4 GPU** (or better). Then Runtime → Run all.
-If the session disconnects, set `USE_DRIVE = True` (checkpoints + dataset survive in Google Drive) and re-run: finished steps are skipped.
+If the session disconnects: reconnect and Runtime → Run all. Checkpoints live in Google Drive (`USE_DRIVE = True`, the default), the dataset is re-downloaded automatically and training resumes where it stopped. Never run a single cell after a reset: each cell checks this and tells you.
 
 **Optional warm start:** upload v1 `depth_anything_v2_ndsm_s.pth` (from `models/da-v2-small-ndsm/1.0.0/` in DepthWizard) to `/content/` before running.
 
@@ -56,7 +56,7 @@ subprocess.run([sys.executable, "-m", "pip", "install", "-q", "rasterio", "pypro
 
 code(r"""
 # 2. Settings (edit here)
-USE_DRIVE = False          # True: keep checkpoints in Google Drive (needs ~1 GB free) so training resumes after a disconnect
+USE_DRIVE = True           # keep checkpoints in Google Drive (~1 GB free needed) so training resumes after a disconnect
 CFG = dict(
     gsd=0.5,               # training GSD (m/px) = DepthWizard Mode B inference GSD
     crop=518,              # DA-V2 native tile size (multiple of 14)
@@ -79,7 +79,7 @@ CFG = dict(
     init_from="/content/depth_anything_v2_ndsm_s.pth",  # v1 weights for a warm start (skipped if the file is absent)
     model_version="2.0.0",
     run_name="v2b",        # checkpoints and cached tile lists live under this name: a NEW name = a fresh run
-    workers=8,
+    workers=3,             # parallel downloads; more than 3 can exhaust the 12.7 GB RAM of a free Colab runtime
     seed=0,
 )
 # DepthWizard's own validation tiles (LV95 km). Never used for training, validation or model selection.
@@ -124,6 +124,8 @@ if os.path.exists(f"{CKPT}/last.pt"):
 
 code(r"""
 # 3. Depth Anything V2 code (pinned upstream commit, same as DepthWizard's vendored copy) + baseline weights
+_missing = [n for n in ("CFG",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 import os, subprocess, sys
 if not os.path.exists("/content/Depth-Anything-V2"):
     subprocess.run(["git", "clone", "-q", "https://github.com/DepthAnything/Depth-Anything-V2", "/content/Depth-Anything-V2"], check=True)
@@ -137,6 +139,8 @@ print("baseline weights sha256:", hashlib.sha256(open(BASE_W, "rb").read()).hexd
 
 code(r"""
 # 4. Find tiles via the swisstopo STAC API and pair RGB / DSM / DTM acquisitions
+_missing = [n for n in ("CFG",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 import json, math, re, urllib.request
 from pyproj import Transformer
 
@@ -192,7 +196,10 @@ else:
             if n_ok >= CFG["tiles_per_region"]:
                 break
         print(f"{name:14s} {split:5s} tiles: {n_ok}")
-    json.dump(TILES, open(TILES_JSON, "w"), indent=1)
+    if len(TILES) >= 150:
+        json.dump(TILES, open(TILES_JSON, "w"), indent=1)
+    else:
+        print(f"only {len(TILES)} Swiss tiles found (swisstopo STAC unreachable?) - list NOT cached, re-run this cell")
 from collections import Counter
 print("total:", len(TILES), Counter(t["split"] for t in TILES))
 assert not any(near_validation(*map(int, t["key"].split("-"))) for t in TILES)
@@ -200,11 +207,13 @@ assert not any(near_validation(*map(int, t["key"].split("-"))) for t in TILES)
 
 code(r"""
 # 5. Download + prepare tiles: RGB read at 0.5 m from the COG overviews, nDSM = DSM - DTM (both LN02, datum cancels)
+_missing = [n for n in ("TILES",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 import rasterio, numpy as np, time
 from rasterio.enums import Resampling
 from concurrent.futures import ThreadPoolExecutor
 os.environ.update(GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR", CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif",
-                  GDAL_HTTP_MULTIRANGE="YES", GDAL_HTTP_MERGE_CONSECUTIVE_RANGES="YES", GDAL_HTTP_MAX_RETRY="5", GDAL_HTTP_RETRY_DELAY="2")
+                  GDAL_HTTP_MULTIRANGE="YES", GDAL_HTTP_MERGE_CONSECUTIVE_RANGES="YES", GDAL_HTTP_MAX_RETRY="5", GDAL_HTTP_RETRY_DELAY="2", GDAL_CACHEMAX="256")
 N = int(1000 / CFG["gsd"])   # 2000 px per 1 km tile
 
 def prepare(t):
@@ -231,11 +240,25 @@ def prepare(t):
     except Exception as e:
         return t["key"], f"FAILED {type(e).__name__}: {e}"
 
-t0 = time.time()
-with ThreadPoolExecutor(CFG["workers"]) as ex:
-    for i, (k, st) in enumerate(ex.map(prepare, TILES)):
-        if st != "cached" or i % 20 == 0:
-            print(f"[{i + 1}/{len(TILES)}] {k}: {st}  ({time.time() - t0:.0f}s)")
+def download_all(fn, tiles, tag, passes=3):
+    # several passes: tiles that FAILED (timeouts, rate limits) are retried after a pause; finished tiles are skipped
+    t0, todo = time.time(), list(tiles)
+    for ps in range(passes):
+        failed = []
+        with ThreadPoolExecutor(CFG["workers"]) as ex:
+            for i, (t, (k, st)) in enumerate(zip(todo, ex.map(fn, todo))):
+                if st.startswith("FAILED"):
+                    failed.append(t)
+                if st != "cached" or i % 20 == 0:
+                    print(f"[{tag} pass {ps + 1}: {i + 1}/{len(todo)}] {k}: {st}  ({time.time() - t0:.0f}s)")
+        if not failed:
+            break
+        todo = failed
+        if ps < passes - 1:
+            print(f"{len(failed)} {tag} tiles failed - retrying them in 60 s"); time.sleep(60)
+    print(f"{tag}: {len(tiles) - len(failed) if failed else len(tiles)} / {len(tiles)} tiles ready or skipped as nodata")
+
+download_all(prepare, TILES, "CH")
 READY = [t for t in TILES if os.path.exists(f"{DATA}/{t['key']}_ndsm.npy")]
 SPLIT = {s: [t for t in READY if t["split"] == s] for s in ("train", "val", "test")}
 print({s: len(v) for s, v in SPLIT.items()})
@@ -243,6 +266,8 @@ print({s: len(v) for s, v in SPLIT.items()})
 
 code(r"""
 # 5b. USA: NAIP RGB + USGS 3DEP LiDAR nDSM = DSM - DTM (2 m) via Microsoft Planetary Computer (anonymous SAS tokens)
+_missing = [n for n in ("TILES", "prepare",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 # Regions with USGS 3DEP LiDAR (2017+) height-above-ground on Planetary Computer and matching NAIP (surveyed 2026-09-27)
 US_REGIONS = {
     # train
@@ -258,14 +283,29 @@ US_REGIONS = {
 }
 import rasterio, requests
 from rasterio.warp import reproject, Resampling
+from rasterio.vrt import WarpedVRT
 from rasterio.transform import from_origin
 from pyproj import Transformer
 PC = "https://planetarycomputer.microsoft.com/api"
-_tok = {}
+import threading
+_tok, _tok_lock = {}, threading.Lock()
 def sign(href, coll):
-    if coll not in _tok:
-        _tok[coll] = requests.get(f"{PC}/sas/v1/token/{coll}", timeout=60).json()["token"]
-    return f"{href}?{_tok[coll]}"
+  with _tok_lock:
+    # anonymous SAS token, cached 40 min, one request at a time; Planetary Computer rate-limits tokens (HTTP 429) -> wait, retry
+    if coll not in _tok or time.time() - _tok[coll][1] > 2400:
+        for attempt in range(10):
+            try:
+                r = requests.get(f"{PC}/sas/v1/token/{coll}", timeout=60)
+                j = r.json() if r.ok else {}
+            except Exception as e:  # network hiccup / non-JSON reply
+                r, j = None, {}
+            if "token" in j:
+                _tok[coll] = (j["token"], time.time()); break
+            wait = int((r.headers.get("Retry-After", 0) if r is not None else 0) or 0) or min(300, 30 * (attempt + 1))
+            print(f"  SAS token for {coll}: HTTP {getattr(r, 'status_code', '-')} -> waiting {wait}s (rate limit; normal, it recovers)"); time.sleep(wait)
+        else:
+            raise RuntimeError(f"Planetary Computer refused SAS tokens for {coll} for ~25 min; wait 15 min and re-run this cell")
+    return f"{href}?{_tok[coll][0]}"
 def pc_search(coll, bbox, limit=20):
     r = requests.post(f"{PC}/stac/v1/search", json={"collections": [coll], "bbox": bbox, "limit": limit}, timeout=120)
     r.raise_for_status(); return r.json()["features"]
@@ -312,7 +352,10 @@ if CFG["use_us"]:
                 print(f"{name:16s} {split:5s} tiles: {n_ok}")
             except Exception as e:
                 print(f"{name:16s} skipped: {type(e).__name__}: {e}")
-        json.dump(US_TILES, open(US_JSON, "w"), indent=1)
+        if len(US_TILES) >= 60:
+            json.dump(US_TILES, open(US_JSON, "w"), indent=1)   # cached only when complete enough; a failed search is retried next run
+        else:
+            print(f"only {len(US_TILES)} US tiles found (network / rate limit?) - list NOT cached, re-run this cell in 10-15 min")
 
 def prepare_us(t):
     out_rgb, out_h = f"{DATA}/{t['key']}_rgb.npy", f"{DATA}/{t['key']}_ndsm.npy"
@@ -327,15 +370,17 @@ def prepare_us(t):
             a = np.full((N, N), np.nan, np.float32)
             href = t["hag"].replace("/hag/", f"/{kind}/").replace("-hag-", f"-{kind}-")
             with rasterio.open(sign(href, f"3dep-lidar-{kind}")) as ds:
-                reproject(rasterio.band(ds, 1), a, src_transform=ds.transform, src_crs=ds.crs, dst_transform=tr, dst_crs=t["crs"], resampling=Resampling.bilinear, src_nodata=ds.nodata, dst_nodata=np.nan)
+                # WarpedVRT reads only the 1 km output window (memory ~ output size), never the whole remote tile
+                with WarpedVRT(ds, crs=t["crs"], transform=tr, width=N, height=N, resampling=Resampling.bilinear, src_nodata=ds.nodata, nodata=np.nan, dtype="float32") as v:
+                    a = v.read(1).astype(np.float32)
             hs.append(a)
         h = hs[0] - hs[1]
         rgb = np.zeros((3, N, N), np.uint8); got = np.zeros((N, N), bool)
         for href in t["naip"]:
             tmp = np.zeros((3, N, N), np.uint8)
             with rasterio.open(sign(href, "naip")) as ds:
-                for i in range(3):
-                    reproject(rasterio.band(ds, i + 1), tmp[i], src_transform=ds.transform, src_crs=ds.crs, dst_transform=tr, dst_crs=t["crs"], resampling=Resampling.average, src_nodata=0, dst_nodata=0)
+                with WarpedVRT(ds, crs=t["crs"], transform=tr, width=N, height=N, resampling=Resampling.average, src_nodata=0, nodata=0) as v:
+                    tmp = v.read((1, 2, 3))
             m = (tmp.max(axis=0) > 0) & ~got; rgb[:, m] = tmp[:, m]; got |= m
             if got.mean() > 0.99:
                 break
@@ -347,11 +392,7 @@ def prepare_us(t):
     except Exception as e:
         return t["key"], f"FAILED {type(e).__name__}: {e}"
 
-t0 = time.time()
-with ThreadPoolExecutor(CFG["workers"]) as ex:
-    for i, (k, st) in enumerate(ex.map(prepare_us, US_TILES)):
-        if st != "cached" or i % 20 == 0:
-            print(f"[US {i + 1}/{len(US_TILES)}] {k}: {st}  ({time.time() - t0:.0f}s)")
+download_all(prepare_us, US_TILES, "US")
 for t in TILES:
     t.setdefault("source", "swiss"); t["sharp"] = True
 for t in US_TILES:
@@ -362,10 +403,15 @@ print({s: (len([t for t in v if t["source"] == "swiss"]), len([t for t in v if t
 _n_sw = sum(t["source"] == "swiss" for t in SPLIT["train"])
 assert _n_sw >= 60, (f"only {_n_sw} Swiss training tiles are on disk in {DATA} (after a disconnect the local disk is empty): re-run cell 5 and check its output for FAILED lines "
                      "before training - the Swiss 0.5 m LiDAR is the core of the training set")
+_n_us = sum(t["source"] == "us" for t in SPLIT["train"])
+assert not CFG["use_us"] or _n_us >= 30, (f"only {_n_us} US training tiles on disk: the US download failed (see FAILED lines above). "
+                     "Re-run cell 5b (after 10-15 min if Planetary Computer was rate-limiting) - training without them would silently differ from the resumed run")
 """)
 
 code(r"""
 # 6. Quick look at one training pair
+_missing = [n for n in ("SPLIT",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 import matplotlib.pyplot as plt
 t = SPLIT["train"][0]
 rgb = np.load(f"{DATA}/{t['key']}_rgb.npy", mmap_mode="r"); h = np.load(f"{DATA}/{t['key']}_ndsm.npy", mmap_mode="r")
@@ -377,6 +423,8 @@ plt.show()
 
 code(r"""
 # 7. Dataset with augmentations that match how DepthWizard feeds the model
+_missing = [n for n in ("SPLIT",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 import cv2, torch, torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 MEAN = np.array([0.485, 0.456, 0.406], np.float32); STD = np.array([0.229, 0.224, 0.225], np.float32)
@@ -426,6 +474,8 @@ xb, yb, mb, sb = next(iter(train_dl)); print(xb.shape, yb.shape, float(yb[mb].me
 
 code(r"""
 # 8. Model, loss, optimiser
+_missing = [n for n in ("SPLIT", "BASE_W", "to_input",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 from depth_anything_v2.dpt import DepthAnythingV2
 dev = "cuda"
 model = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384])
@@ -474,6 +524,8 @@ print("params (M):", round(sum(p.numel() for p in model.parameters()) / 1e6, 1))
 
 code(r"""
 # 9. Full-tile inference exactly like DepthWizard (518 px tiles, 25 % overlap, Hann feathering) + metrics
+_missing = [n for n in ("model",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 @torch.no_grad()
 def predict_tile(net, rgb, tile=518, overlap=0.25):
     net.eval(); H, W = rgb.shape[:2]; step = int(tile * (1 - overlap))
@@ -521,6 +573,8 @@ def evaluate(net, tiles, center=None):
 
 code(r"""
 # 10. Train (resumes from the last checkpoint if the session restarted)
+_missing = [n for n in ("model", "evaluate", "train_dl",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 import time
 LAST, BEST = f"{CKPT}/last.pt", f"{CKPT}/best.pth"
 start, best = 0, float("inf"); history = []
@@ -562,6 +616,8 @@ print("done. best val RMSE:", round(best, 3))
 
 code(r"""
 # 11. Test on held-out REGIONS: fine-tuned vs zero-shot baseline (baseline gets an oracle per-tile affine fit = its best case)
+_missing = [n for n in ("BEST", "evaluate",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 import matplotlib.pyplot as plt
 ft = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384]); ft.load_state_dict(torch.load(BEST, map_location="cpu")); ft.to(dev)
 base = DepthAnythingV2(encoder="vits", features=64, out_channels=[48, 96, 192, 384]); base.load_state_dict(torch.load(BASE_W, map_location="cpu")); base.to(dev)
@@ -638,6 +694,8 @@ ax[2].imshow(g[::4, ::4], vmin=0, vmax=30); ax[2].set_title("LiDAR nDSM (m)"); p
 
 code(r"""
 # 12. Export weights + measured report and download
+_missing = [n for n in ("ft", "UNC",) if n not in globals()]
+assert not _missing, f"Runtime was reset or earlier cells were skipped (missing {_missing}): use Runtime -> Run all. Checkpoints in Drive are kept; training resumes."
 import zipfile, hashlib, datetime
 W = f"{ROOT}/depth_anything_v2_ndsm_s_v2.pth"
 torch.save({k: v.detach().cpu() for k, v in ft.state_dict().items()}, W)

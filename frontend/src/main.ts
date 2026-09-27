@@ -12,78 +12,9 @@
  */
 import { api, ApiFailure, pollUntilDone, type DemoItem, type Job, type Result, type Sample } from "./api";
 import { HeightfieldViewer } from "./viewer";
+import { resolveState, STATE_DISPLAY, type ResultState } from "./resultState";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-
-// ──────────────────────────────────────── Result state model
-type ResultState = "RELATIVE" | "TERRAIN_ONLY" | "TERRAIN_SCALED" | "ANCHOR_REFINED" | "METRIC_MODEL" | "METRIC_HEIGHTS";
-
-interface StateDisplay {
-  label: string;      // short badge label
-  full: string;       // longer description
-  cssClass: string;   // state-RELATIVE etc.
-  hudState: string;   // HUD top-left
-  hudTier: string;    // HUD tier line
-}
-
-const STATE_DISPLAY: Record<ResultState, StateDisplay> = {
-  RELATIVE: {
-    label: "RELATIVE SURFACE",
-    full:  "Relative Surface Structure — no units, no scale, no elevation. Upload a GeoTIFF for absolute output.",
-    cssClass: "state-RELATIVE",
-    hudState: "RELATIVE SURFACE STRUCTURE",
-    hudTier:  "Tier R · non-metric",
-  },
-  TERRAIN_ONLY: {
-    label: "DEM RELIEF ONLY",
-    full:  "Absolute elevation from the DEM (datum-checked). No model detail could be calibrated for this scene, so sub-30 m structure (buildings, tree crowns) is not added.",
-    cssClass: "state-TERRAIN_ONLY",
-    hudState: "DEM RELIEF ONLY",
-    hudTier:  "",  // filled dynamically
-  },
-  TERRAIN_SCALED: {
-    label: "DEM + CALIBRATED MODEL DETAIL",
-    full:  "Absolute DSM: the DEM keeps everything it resolves (≥ 30 m); Depth Anything V2 (tiled) adds the finer detail, scaled per tile against the DEM. Without anchors or a reference this scale is unvalidated — quality ≤ LIMITED.",
-    cssClass: "state-TERRAIN_SCALED",
-    hudState: "DEM + MODEL DETAIL",
-    hudTier:  "",
-  },
-  ANCHOR_REFINED: {
-    label: "DEM + ANCHOR-CALIBRATED DETAIL",
-    full:  "Absolute DSM: DEM + tiled model detail whose gain was fitted to ground-control anchors (accepted only when leave-one-out error improves). Ground anchors also correct the terrain datum.",
-    cssClass: "state-ANCHOR_REFINED",
-    hudState: "ANCHOR-CALIBRATED DSM",
-    hudTier:  "",
-  },
-  METRIC_MODEL: {
-    label: "DEM + FINE-TUNED METRIC HEIGHTS",
-    full:  "Absolute DSM: the DEM keeps everything ≥ 30 m; the fine-tuned DepthWizard nDSM model (heights in metres, validated on held-out regions) adds building and tree structure. Terrain = DSM − model heights.",
-    cssClass: "state-TERRAIN_SCALED",
-    hudState: "DEM + METRIC nDSM MODEL",
-    hudTier:  "",
-  },
-  METRIC_HEIGHTS: {
-    label: "METRIC HEIGHTS · NO ELEVATION (TIER H)",
-    full:  "Heights above ground in metres from the fine-tuned nDSM model. No DEM (or no safe datum) for this area, so there is no absolute elevation — upload a DEM or anchors for tier T/A.",
-    cssClass: "state-TERRAIN_ONLY",
-    hudState: "METRIC HEIGHTS ABOVE GROUND",
-    hudTier:  "",
-  },
-};
-
-function resolveState(res: Result): ResultState {
-  if (res.mode === "B" && res.calibration_tier === "H") return "METRIC_HEIGHTS";
-  if (res.mode !== "B" || res.calibration_tier === "R") return "RELATIVE"; // Mode B without DEM / safe datum stays relative
-  const flags = res.flags ?? [];
-  if (flags.includes("METRIC_NDSM_MODEL") && !flags.includes("OBJECT_SCALE_ANCHORS")) return "METRIC_MODEL";
-  if (flags.includes("NO_OBJECT_SCALE")) return "TERRAIN_ONLY";
-  if (flags.includes("OBJECT_SCALE_ANCHORS")) return "ANCHOR_REFINED";
-  if (flags.includes("OBJECT_SCALE_DEM_FIT")) return "TERRAIN_SCALED";
-  // Fallback: if scale source exists use it, else terrain-only
-  if (res.object_scale_source?.includes("anchor")) return "ANCHOR_REFINED";
-  if (res.object_scale_source) return "TERRAIN_SCALED";
-  return "TERRAIN_ONLY";
-}
 
 // ──────────────────────────────────────── App state
 interface DisasterState {
@@ -196,21 +127,37 @@ async function initDemo() {
     const d = await api.demo();
     state.demo = d.items; state.references = d.references;
     const wrap = $("demo-buttons"); wrap.innerHTML = "";
-    // Indian scenes first (SIH / ISRO context), then the Swiss LiDAR benchmark tiles
-    [...d.items].sort((x, y) => Number(y.country === "IN") - Number(x.country === "IN")).forEach((it) => {
+    // Priority order: Indian scenes first (SIH / ISRO), then Change / Disaster screening scenes, then Swiss benchmark tiles
+    const priority = (it: DemoItem) => (it.country === "IN" ? 0 : (it.country === "TR" || it.pair || it.id.startsWith("change_")) ? 1 : 2);
+    [...d.items].sort((x, y) => priority(x) - priority(y)).forEach((it) => {
       const pill = document.createElement("button");
       pill.type = "button";
       pill.className = `demo-pill demo-mode-${it.mode.toLowerCase()}`;
       const isHD = it.id.includes("hd");
       const isRural = it.id.includes("rural");
+      const isChange = Boolean(it.pair || it.country === "TR" || it.id.startsWith("change_"));
       const india = it.country === "IN";
-      const icon = india ? "🇮🇳" : isRural ? (it.mode === "B" ? "🌲" : "🏞️") : (it.mode === "B" ? "🏙️" : "📷");
-      const title = india
-        ? it.id.replace(/^india_/, "").split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ").replace(/^North Sikkim /, "N. Sikkim ")
-        : isRural
-          ? (it.mode === "B" ? "Emmental Ridge" : "Emmental Photo")
-          : (it.mode === "B" ? (isHD ? "Zürich Core HD" : "Zürich City 2m") : (isHD ? "Zürich Photo HD" : "Zürich Photo"));
-      const tag = india ? "0.5m · ICESat-2" : it.mode === "B" ? (isHD ? "0.5m DSM" : "2m DSM") : "Mode A";
+      const icon = isChange
+        ? (it.role === "before" ? "🏛️" : "🏚️")
+        : india
+          ? "🇮🇳"
+          : isRural
+            ? (it.mode === "B" ? "🌲" : "🏞️")
+            : (it.mode === "B" ? (isHD ? "🏙️" : "🏢") : "📷");
+      const title = isChange
+        ? (it.role === "before" ? "Islahiye, Türkiye · BEFORE" : "Islahiye, Türkiye · AFTER")
+        : india
+          ? it.id.replace(/^india_/, "").split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ").replace(/^North Sikkim /, "N. Sikkim ")
+          : isRural
+            ? (it.mode === "B" ? "Emmental Ridge" : "Emmental Photo")
+            : (it.mode === "B" ? (isHD ? "Zürich Core HD" : "Zürich City 2m") : (isHD ? "Zürich Photo HD" : "Zürich Photo"));
+      const tag = isChange
+        ? (it.role === "before" ? "0.5m · Pre" : "0.5m · Post")
+        : india
+          ? "0.5m · ICESat-2"
+          : it.mode === "B"
+            ? (isHD ? "0.5m DSM" : "2m DSM")
+            : "Mode A";
 
       pill.innerHTML = `<span class="demo-icon">${icon}</span><span class="demo-name">${title}</span><span class="demo-tag">${tag}</span>`;
       pill.title = `${it.label} — ${it.source ?? ""}`;
@@ -334,6 +281,8 @@ function showInput(file: File) {
   $("val-result").classList.add("hidden");
   $("pts-result").classList.add("hidden");
   $("panel-buildings").classList.add("hidden");
+  $("export-card").classList.add("hidden");
+  $("panel-change").classList.add("hidden");
   $("job-progress-wrap").classList.add("hidden");
   $("viewer-msg").textContent = "Generate surface to build 3D heightfield.";
   $("viewer-msg").classList.remove("hidden");
@@ -580,6 +529,9 @@ async function renderResult(job: Job, res: Result) {
     a.textContent = l; a.className = "linkbtn"; dl.appendChild(a);
   });
 
+  // ── Share & export
+  setupExport(id, res);
+
   // ── Technical details (collapsed)
   const md = await api.metadata(id);
   $("result-json").textContent = JSON.stringify({ job: { stages_ms: job.stages_ms, model: job.model, inputs: job.inputs }, result: { ...res, layers: undefined, artifacts: undefined }, calib_report: md.calib_report, prep: md.prep, input: md.meta }, null, 2);
@@ -603,6 +555,7 @@ async function renderResult(job: Job, res: Result) {
 
   // ── Building intelligence panel
   loadBuildingsPanel();
+  void loadChangePanel();
 
   // ── Disaster slider initialization based on terrain elevation
   const tLeg = res.layers?.terrain?.legend || res.layers?.dsm?.legend;
@@ -628,6 +581,123 @@ async function renderResult(job: Job, res: Result) {
   $("measure-out").textContent = "";
   state.measurePts = []; state.measuring = false;
   $("measure-btn").classList.remove("active");
+}
+
+// ──────────────────────────────────────── Before / after change screening
+const CHANGE_LABEL: Record<string, string> = {
+  MAJOR_HEIGHT_LOSS: "Major height loss", HEIGHT_LOSS: "Height loss", HEIGHT_GAIN: "Height gain",
+  NO_SIGNIFICANT_CHANGE: "No significant change", NOT_COMPARABLE: "Not comparable",
+};
+
+async function loadChangePanel() {
+  const panel = $("panel-change");
+  $("chg-body").classList.add("hidden");
+  $("chg-status").textContent = "";
+  if (!state.jobId || state.result?.mode !== "B") { panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+  const sel = $("chg-after") as HTMLSelectElement;
+  sel.innerHTML = "";
+  try {
+    const { candidates } = await api.changeCandidates(state.jobId);
+    for (const c of candidates) {
+      const o = document.createElement("option");
+      o.value = c.job_id;
+      o.textContent = `${c.input_filename ?? c.job_id} · processed ${c.created_at.replace("T", " ").slice(0, 16)} · ${Math.round(c.overlap_fraction * 100)} % overlap`;
+      sel.appendChild(o);
+    }
+    ($("chg-run") as HTMLButtonElement).disabled = candidates.length === 0;
+    // smart default: a file named like a post-event image is the "after" of the pair
+    const isAfter = /(after|post)[^a-z]/i.test(state.job?.input_filename ?? "");
+    ($(isAfter ? "chg-role-after" : "chg-role-before") as HTMLInputElement).checked = true;
+    $("chg-other-lbl").textContent = isAfter ? "Before image" : "After image";
+    const want = isAfter ? /(before|pre)[^a-z]/i : /(after|post)[^a-z]/i;
+    const pick = candidates.find((c) => want.test(c.input_filename ?? ""));
+    if (pick) sel.value = pick.job_id;
+    if (!candidates.length) $("chg-status").textContent = "No other processed image covers this area yet: process an image of the same place from another date, then compare.";
+  } catch (e) { $("chg-status").textContent = userMessage(e); }
+}
+
+function setSwipe(v: number) {
+  $("chg-after-clip").style.clipPath = `inset(0 0 0 ${v}%)`;
+  $("chg-divider").style.left = `${v}%`;
+}
+
+async function runChange() {
+  if (!state.jobId) return;
+  const other = ($("chg-after") as HTMLSelectElement).value;
+  if (!other) return;
+  const currentIsAfter = ($("chg-role-after") as HTMLInputElement).checked;
+  const beforeId = currentIsAfter ? other : state.jobId;
+  const after = currentIsAfter ? state.jobId : other;
+  const btn = $("chg-run") as HTMLButtonElement;
+  btn.disabled = true; $("chg-status").textContent = "Aligning the two images and comparing heights…";
+  try {
+    const r = await api.change(beforeId, after);
+    const s = r.summary, a = s.artifacts, id = beforeId;
+    const c = s.buildings.counts ?? {};
+    const reg = s.registration ?? {};
+    const fields: [string, string][] = [
+      ["Buildings flagged", `${c.MAJOR_HEIGHT_LOSS ?? 0} major loss · ${c.HEIGHT_LOSS ?? 0} loss · ${c.HEIGHT_GAIN ?? 0} gain`],
+      ["Unchanged / not comparable", `${c.NO_SIGNIFICANT_CHANGE ?? 0} / ${c.NOT_COMPARABLE ?? 0} of ${s.buildings.n}`],
+      ["Height-loss area · volume", `${(s.pixels.loss_area_m2 / 1e4).toFixed(2)} ha · ${Math.round(-s.pixels.loss_volume_m3).toLocaleString()} m³`],
+      ["Detection threshold", `pixels ${fmt(s.noise.threshold_pixels_m, 1)} m · buildings ${fmt(s.noise.threshold_buildings_m, 1)} m`],
+      ["Pair noise (NMAD)", `pixels ${fmt(s.noise.nmad_pixels_m, 2)} m · buildings ${s.noise.nmad_buildings_m != null ? fmt(s.noise.nmad_buildings_m, 2) + " m" : "—"}`],
+      ["Alignment", reg.applied ? `shifted ${fmt(reg.shift_m, 1)} m to match` : (reg.reason ?? "not applied")],
+      ["Compared area", `${fmt(s.compared_area_km2, 2)} km² (${Math.round(s.valid_fraction * 100)} % of before)`],
+    ];
+    $("chg-summary").innerHTML = fields.map(([l, v]) => `<div class="result-field"><div class="result-field-label">${l}</div><div class="result-field-value">${esc(v)}</div></div>`).join("");
+    ($("chg-before-img") as HTMLImageElement).src = api.artifactUrl(id, "input_preview.png");
+    ($("chg-after-img") as HTMLImageElement).src = api.artifactUrl(id, a.after_png) + `?t=${Date.now()}`;
+    ($("chg-overlay") as HTMLImageElement).src = api.artifactUrl(id, a.overlay_png) + `?t=${Date.now()}`;
+    setSwipe(Number(($("chg-swipe") as HTMLInputElement).value));
+    const flagged = r.buildings.filter((b) => b.class !== "NO_SIGNIFICANT_CHANGE" && b.class !== "NOT_COMPARABLE").slice(0, 300);
+    $("chg-table").innerHTML = flagged.length
+      ? `<thead><tr><th>#</th><th>Screening flag</th><th>Before (m)</th><th>After (m)</th><th>Δ height (m)</th><th>Robust z</th><th>Footprint (m²)</th><th>Volume change (m³)</th></tr></thead><tbody>` +
+        flagged.map((b) => `<tr data-bid="${b.id}" style="cursor:pointer"><td>${b.id}</td><td><span class="chg-badge chg-${b.class}">${CHANGE_LABEL[b.class]}</span></td><td>${fmt(b.height_before_m, 1)}</td><td>${fmt(b.height_after_m, 1)}</td><td><b>${b.dh_m > 0 ? "+" : ""}${fmt(b.dh_m, 1)}</b></td><td>${b.z != null ? fmt(b.z, 1) : "—"}</td><td>${fmt(b.area_m2, 0)}</td><td>${Math.round(b.volume_change_m3 ?? 0).toLocaleString()}</td></tr>`).join("") + "</tbody>"
+      : `<tbody><tr><td class="hint">No building changed by more than the thresholds above.</td></tr></tbody>`;
+    if (!currentIsAfter) $("chg-table").querySelectorAll<HTMLTableRowElement>("tr[data-bid]").forEach((tr) => tr.addEventListener("click", () => selectBuilding(Number(tr.dataset.bid), true)));
+    ($("chg-dl-geojson") as HTMLAnchorElement).href = api.artifactUrl(id, a.buildings_geojson);
+    ($("chg-dl-csv") as HTMLAnchorElement).href = api.artifactUrl(id, a.buildings_csv);
+    ($("chg-dl-tif") as HTMLAnchorElement).href = api.artifactUrl(id, a.dh_tif);
+    ($("chg-dl-class") as HTMLAnchorElement).href = api.artifactUrl(id, a.class_tif);
+    $("chg-notes").innerHTML = [`<b>Rules</b>: ${esc(s.rules.pixel)}; ${esc(s.rules.building)}.`, ...s.caveats.map((x: string) => esc(x))].join("<br>");
+    $("chg-body").classList.remove("hidden");
+    $("chg-status").textContent = `Compared with ${s.labels?.after ?? after}.`;
+  } catch (e) { $("chg-status").textContent = userMessage(e); }
+  finally { btn.disabled = false; }
+}
+
+// ──────────────────────────────────────── Share & export
+async function downloadExport(btn: HTMLButtonElement, url: string, busy: string) {
+  const st = $("export-status");
+  btn.disabled = true; st.textContent = busy;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) {
+      let msg = `${r.status}`;
+      try { const j = await r.json(); msg = j?.error?.message ?? j?.message ?? msg; } catch { /* not JSON */ }
+      throw new Error(msg);
+    }
+    const name = /filename="?([^";]+)"?/.exec(r.headers.get("content-disposition") ?? "")?.[1] ?? url.split("/").pop()!;
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+    st.textContent = `Saved ${name} (${(blob.size / 1e6).toFixed(1)} MB).`;
+  } catch (e) {
+    st.textContent = `Export failed: ${e instanceof Error ? e.message : String(e)}`;
+  } finally { btn.disabled = false; }
+}
+
+function setupExport(id: string, res: Result) {
+  $("export-card").classList.remove("hidden");
+  $("export-status").textContent = "";
+  ($("export-preview") as HTMLAnchorElement).href = api.exportUrl(id, "scene.html", true);
+  const pkg = $("export-package") as HTMLButtonElement;
+  pkg.classList.toggle("hidden", res.mode !== "B");
+  $("export-scene").onclick = () => downloadExport($("export-scene") as HTMLButtonElement, api.exportUrl(id, "scene.html"), "Packing the 3D scene into one file…");
+  pkg.onclick = () => downloadExport(pkg, api.exportUrl(id, "package.zip"), "Building the GIS package (COG rasters, GeoPackage, 3D model; about 15 s the first time)…");
 }
 
 // ──────────────────────────────────────── Layer display
@@ -1401,6 +1471,12 @@ function wire() {
   $("anchors-clear").addEventListener("click", () => { state.anchors = null; state.anchorsLabel = ""; ($("anchors-input") as HTMLInputElement).value = ""; updateOptSummary(); });
   $("run-btn").addEventListener("click", run);
   $("open3d-btn").addEventListener("click", open3d);
+  $("chg-run").addEventListener("click", () => void runChange());
+  document.querySelectorAll<HTMLInputElement>('input[name="chg-role"]').forEach((r) => r.addEventListener("change", () => {
+    $("chg-other-lbl").textContent = ($("chg-role-after") as HTMLInputElement).checked ? "Before image" : "After image";
+  }));
+  $("chg-swipe").addEventListener("input", (e) => setSwipe(Number((e.target as HTMLInputElement).value)));
+  $("chg-ovl").addEventListener("change", (e) => $("chg-overlay").classList.toggle("hidden", !(e.target as HTMLInputElement).checked));
   ($("view-layer") as HTMLSelectElement).addEventListener("change", () => { if (state.viewer && state.result) open3d(); });
   $("validate-btn").addEventListener("click", runValidation);
   $("validate-pts-btn").addEventListener("click", runPointValidation);

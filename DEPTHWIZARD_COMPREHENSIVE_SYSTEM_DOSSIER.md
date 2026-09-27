@@ -17,7 +17,7 @@
 | Texture projected on a 3D mesh in a rendering engine | Three.js heightfield (regular grid or adaptive RTIN), aerial texture drape with anisotropic filtering, anti-smear facade shader, heat-map + contour and blueprint shaders, LoD-1 extruded buildings | `frontend/src/viewer.ts`, `lod1.ts`, `martini.ts` |
 | First-person navigation, heights and slopes from any viewpoint | Orbit, 🚶 walk (pointer lock, WASD, sprint, terrain-following at 1.7 m eye height, LoD-1 wall collision), 🎬 drone orbit, preset views; heading-aware north arrow, live scale bar. Clicks are sampled **server-side** from the GeoTIFFs (elevation, terrain, nDSM, slope, aspect, flags); two-point measure gives distance, ΔZ and grade | `frontend/src/viewer.ts`, `backend/jobs/query.py` |
 | Upload imagery, visualise, validate against reference | Browser UI: upload or one-click demo, optional DEM / anchors; validation panel for any reference raster (DSM / DTM / nDSM, any vertical CRS) | `frontend/`, `core/validate/harness.py` |
-| Standalone deployment | Single local server (FastAPI serves API + built viewer), `run_server.py` / `start_depthwizard.bat` / `start_depthwizard.sh`, `scripts/doctor.py` environment check, fully offline after setup | repository root |
+| Standalone deployment | Single local server (FastAPI serves API + built viewer), `run_server.py` / `start_depthwizard.bat` / `start_depthwizard.sh`, `scripts/doctor.py` environment check, fully offline after setup. **Every result also exports as a standalone offline 3D scene**: one HTML file (viewer + heightfields + texture + LoD-1 + provenance) that runs by double-click with no server, Python or internet — the interactive session needs no live backend | repository root, `core/export/scene.py`, `frontend/src/standalone.ts` |
 
 ## 2. Mode B method (TL-CSM v1.0)
 
@@ -95,7 +95,9 @@ The in-app validation panel reproduces these comparisons for any job. It shows t
 * **LoD-1 city:** extruded blocks on the terrain layer with roof texture from the aerial image and height-classed facades. Blocks are offered only over absolute layers (terrain / DSM), where their base elevations are meaningful.
 * **Navigation:** orbit (damped), preset nadir / oblique / horizon views, drone orbit, first-person walk with terrain following and wall collision.
 * **HUD:** state, tier + datum, quality, vertical exaggeration ("true scale" at 1.0×), z-range, live scale bar measured at the view centre, north arrow that rotates with the camera.
-* **Truthfulness:** every number shown comes from the server rasters, never from the mesh.
+* **Truthfulness:** every number shown comes from the server rasters, never from the mesh. Point readings carry the measured typical error (±, with its source), and an input check card states the expected tier and accuracy before a job runs.
+* **Exports:** the offline 3D scene (single HTML; readings are cell means of the full-resolution rasters, not the display mesh) and a GIS package (COG rasters with QGIS styles, buildings GeoPackage with an embedded style, GeoJSON / CSV, textured GLB validated with the Khronos glTF validator, STAC 1.0 item, provenance, README). The GeoPackage and GLB writers have no dependencies (`core/export/gpkg.py`, `glb.py`).
+* **Before / after change screening** (`core/change/detect.py`): two results of the same place are reprojected to one grid and co-registered by phase correlation. The difference of the nDSMs is thresholded at 3 × the pair's own robust noise (NMAD), with 3 m tolerance to building lean. Buildings are flagged as major height loss (≥ half the height gone), loss or gain. The Islahiye (Türkiye, 2023 earthquake) demo is described in `docs/change_screening.md`: 69 of 2,429 buildings flagged; a random audit found 19 of 24 collapsed, 2 uncertain and 3 tree canopies, so precision is about 80–88 %. Recall is not measured.
 
 ## 6. Engineering
 
@@ -109,5 +111,6 @@ The in-app validation panel reproduces these comparisons for any job. It shows t
 
 1. **More / broader training.** Validation RMSE was still falling at 8000 iterations (4.92 → 4.25 m); a longer run, a larger backbone (ViT-B, CC-BY-NC) and non-Swiss data (Indian imagery with an independent reference) are the next accuracy steps.
 2. **Indian validation sites.** Evaluate on Cartosat or other Indian imagery against an independent reference.
-3. **Learned building segmentation** to replace the rule-based LoD-1 footprint mask.
+3. **Learned building segmentation** to replace the rule-based LoD-1 footprint mask. Tree canopies counted as buildings are the main source of false alarms in both the building table and the change screening.
+5. **Recall of the change screening** against an official damage grading (Copernicus EMS / UNOSAT) for the Islahiye demo.
 4. **Better DEM products** such as FABDEM or NASADEM as selectable baselines. They can already be uploaded as a user DEM with their vertical CRS.

@@ -113,6 +113,28 @@
       "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 10300100CF621C00; High-altitude barren and glacial terrain in the South Lhonak region (near-nadir image, off-nadir 2 deg).",
       "reference_points": "india/north_sikkim_alpine_icesat2.csv",
       "reference_points_vertical_crs": "ellipsoidal"
+    },
+    {
+      "id": "change_islahiye_before",
+      "mode": "B",
+      "country": "TR",
+      "pair": "islahiye",
+      "role": "before",
+      "date": "2022-12-27",
+      "label": "Islahiye, Türkiye · BEFORE 2022-12-27 · Maxar WorldView · 0.5 m · Mode B (change demo)",
+      "file": "change/islahiye_before_2022-12-27_0.5m.tif",
+      "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 10300100E0287700 (2022-12-27, 14.8 deg off-nadir); Town centre of Islahiye (Gaziantep), heavily damaged by the Mw 7.8 Kahramanmaras earthquake of 6 Feb 2023."
+    },
+    {
+      "id": "change_islahiye_after",
+      "mode": "B",
+      "country": "TR",
+      "pair": "islahiye",
+      "role": "after",
+      "date": "2023-02-07",
+      "label": "Islahiye, Türkiye · AFTER 2023-02-07 · Maxar WorldView · 0.5 m · Mode B (change demo)",
+      "file": "change/islahiye_after_2023-02-07_0.5m.tif",
+      "source": "Maxar Open Data Program (CC BY-NC 4.0), acquisition 1040010082698700 (2023-02-07, 5.7 deg off-nadir); Town centre of Islahiye (Gaziantep), heavily damaged by the Mw 7.8 Kahramanmaras earthquake of 6 Feb 2023."
     }
   ]
 }

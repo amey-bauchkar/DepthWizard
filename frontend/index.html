@@ -94,7 +94,7 @@
             </div>
 
             <div class="demo-showcase">
-              <div class="demo-showcase-title">One-click demos <span>Sikkim (Maxar 0.5 m + NASA ICESat-2) · Switzerland (swisstopo LiDAR)</span></div>
+              <div class="demo-showcase-title">One-click demos <span>Sikkim (ICESat-2) · Islahiye, Türkiye (Disaster Change) · Switzerland (LiDAR)</span></div>
               <div id="demo-buttons" class="demo-grid"></div>
             </div>
 
@@ -218,6 +218,22 @@
                   </div>
                 </div>
                 <div id="layer-legend" class="hint layer-legend"></div>
+              </div>
+
+              <!-- SHARE & EXPORT: take the result out of the app -->
+              <div id="export-card" class="export-card hidden">
+                <div class="export-head"><b>Share &amp; export</b><span class="hint">opens anywhere, nothing to install</span></div>
+                <div class="export-actions">
+                  <button id="export-scene" class="export-btn primary" type="button">
+                    <span class="export-title">Offline 3D scene (.html)</span>
+                    <span class="export-sub">One file for the whole 3D flythrough: double-click to open, no server, no internet</span>
+                  </button>
+                  <button id="export-package" class="export-btn" type="button">
+                    <span class="export-title">GIS data package (.zip)</span>
+                    <span class="export-sub">COG rasters with QGIS styles · buildings GeoPackage · GLB 3D model · STAC metadata · README</span>
+                  </button>
+                </div>
+                <div class="export-foot"><a id="export-preview" class="linkbtn" href="#" target="_blank" rel="noopener">Preview the offline scene in a new tab</a><span id="export-status" class="hint" role="status" aria-live="polite"></span></div>
               </div>
 
               <!-- DOWNLOADS -->
@@ -600,6 +616,48 @@
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- PANEL: BEFORE / AFTER CHANGE -->
+        <section class="panel wide hidden" id="panel-change">
+          <div class="panel-header">
+            <span class="panel-step">04b</span>
+            <span class="panel-title">Before / after change screening</span>
+            <span class="badge warn">Screening · verify flagged buildings on the imagery</span>
+          </div>
+          <p class="hint">Compare this result (<b>before</b>) with another processed image of the same place (<b>after</b>, e.g. after an earthquake, landslide or flood). Collapsed or removed structures show as <b>height loss</b>, new structures or debris as <b>height gain</b>. Thresholds are measured on the image pair itself, not assumed.</p>
+          <div class="optrow">
+            <span class="chg-role" role="radiogroup" aria-label="This result is">This result is the
+              <label class="check"><input type="radio" name="chg-role" id="chg-role-before" value="before" checked /> before</label>
+              <label class="check"><input type="radio" name="chg-role" id="chg-role-after" value="after" /> after image</label>
+            </span>
+            <label><span id="chg-other-lbl">After image</span> <select id="chg-after" class="chg-select"></select></label>
+            <button id="chg-run" class="secondary" type="button">Compare</button>
+            <span id="chg-status" class="hint" role="status" aria-live="polite"></span>
+          </div>
+          <div id="chg-body" class="hidden">
+            <div id="chg-summary" class="result-grid chg-summary"></div>
+            <div class="chg-stage" id="chg-stage">
+              <img id="chg-before-img" alt="Before image" draggable="false" />
+              <div class="chg-after-clip" id="chg-after-clip"><img id="chg-after-img" alt="After image, aligned to the before image" draggable="false" /></div>
+              <img id="chg-overlay" class="chg-overlay" alt="Height change: red = loss, blue = gain" draggable="false" />
+              <div class="chg-divider" id="chg-divider"></div>
+              <span class="chg-tag chg-tag-l">BEFORE</span><span class="chg-tag chg-tag-r">AFTER</span>
+            </div>
+            <div class="optrow">
+              <label>Swipe before ↔ after <input type="range" id="chg-swipe" min="0" max="100" value="50" /></label>
+              <label class="check"><input type="checkbox" id="chg-ovl" checked /> Height-change overlay <span class="chg-key"><i class="chg-k-loss"></i> loss <i class="chg-k-gain"></i> gain</span></label>
+            </div>
+            <div class="table-scroll"><table class="metrics" id="chg-table"></table></div>
+            <div class="actions">
+              <b>Download:</b>
+              <a id="chg-dl-geojson" class="linkbtn" href="#" download>Building changes (GeoJSON)</a>
+              <a id="chg-dl-csv" class="linkbtn" href="#" download>CSV</a>
+              <a id="chg-dl-tif" class="linkbtn" href="#" download>Height change (GeoTIFF)</a>
+              <a id="chg-dl-class" class="linkbtn" href="#" download>Change classes (GeoTIFF)</a>
+            </div>
+            <div id="chg-notes" class="hint note-gap"></div>
           </div>
         </section>
 

@@ -79,6 +79,28 @@ In the app, the six Sikkim scenes are one-click demos. **Validate vs checkpoints
   * Whether its heights are geoid or ellipsoidal is decided automatically, by comparison with Copernicus.
   * If neither fits, CartoDEM is refused for that scene and the reason is reported, rather than risking a silent 40–90 m datum error.
 
+## Take the result out of the app (offline 3D scene, GIS package)
+
+The **Share & export** card on every result has two buttons:
+
+* **Offline 3D scene (.html)**
+  * **What it is:** one file of about 7–11 MB holding the full 3D explorer (orbit, walk, fly-through, LoD-1 city, layers, point readout with ± typical error, 2-point measure, building cards, provenance).
+  * **How it runs:** it opens by double-click in any current browser with **no server, no Python and no internet**. This meets the problem statement's "deployable without a live backend".
+  * **Where readings come from:** the mean of the full-resolution rasters on the embedded 2 m grid, never the display mesh. In testing they matched the server's rasters exactly.
+* **GIS data package (.zip)**, for QGIS, ArcGIS, Blender or a STAC catalogue:
+  * Cloud-Optimized GeoTIFFs (DSM, terrain, nDSM, slope, flags, orthophoto), each with a QGIS style that applies automatically;
+  * the buildings as a GeoPackage (heights, error band, volume, floors range, style embedded), GeoJSON and CSV;
+  * a textured **GLB 3D model** of terrain and LoD-1 blocks; it passes the Khronos glTF validator with 0 errors and 0 warnings;
+  * a **STAC 1.0 item** (valid against the projection, raster and processing extensions), a provenance record, and a README with datum, tier, measured accuracy and licences.
+  * Written without extra dependencies. GDAL reads the GeoPackage.
+  * The CartoDEM input raster itself is not redistributed.
+
+## Before / after change screening (disasters)
+
+This compares two processed images of the same place at two dates. It aligns them automatically and measures the noise of the pair to set its thresholds. It then flags buildings with **major height loss** (consistent with collapse), height loss or gain, with a swipe view, an overlay, a table that links to the 3D view, and GeoTIFF / GeoJSON / CSV downloads.
+
+The demo is **Islahiye, Türkiye (earthquake of 6 Feb 2023)**, with Maxar pre- and post-event images: `python scripts/fetch_change_demo.py`. Of 2,429 buildings, 69 were flagged "major height loss". In a random visual audit of 24 flags, 19 were collapsed buildings, 2 uncertain and 3 false alarms (tree canopies); **precision is about 80–88%**. Recall is not measured. See [docs/change_screening.md](docs/change_screening.md). It is labelled a screening, never a damage grading.
+
 ## How Mode B produces metres
 
 ```
@@ -142,6 +164,8 @@ After setup, **`start_depthwizard.bat`** (Windows) or **`./start_depthwizard.sh`
 3. **Run validation** (bundled swissSURFACE3D, LN02 is pre-selected) → metrics next to "input DEM alone", with a residual map.
 4. **Open 3D View** → orbit, 🎬 Drone Fly, 🚶 Walk (WASD, Shift, mouse; walls block you), 🌈 Heatmap, Adaptive RTIN mesh, layer switch (LoD-1 city / DSM / terrain / nDSM / relative).
 5. Load **Emmental Ridge** for forest and hills, and **Zürich Photo HD** (JPEG) for Mode A.
+6. **Share & export** → **Offline 3D scene**: send the single HTML file to anyone; it opens by double-click, offline. **GIS data package** → drag the folder into QGIS.
+7. Disaster story: process **Islahiye BEFORE** and **Islahiye AFTER** (change demo) → **Before / after change screening** → collapsed buildings outlined in magenta; drag the swipe; click a row to fly the 3D view there.
 
 ---
 
@@ -159,6 +183,11 @@ After setup, **`start_depthwizard.bat`** (Windows) or **`./start_depthwizard.sh`
 | `GET` | `/api/jobs/{id}/sample?x=&y=&crs=pixel\|job\|wgs84` | server-side sampling of every layer at a point |
 | `POST` | `/api/jobs/{id}/measure` | distance, ΔZ and grade between points |
 | `POST` | `/api/jobs/{id}/validate` · `GET …/validation` | validate against an uploaded or bundled reference (dsm / dtm / ndsm, any vertical CRS) · history |
+| `POST` | `/api/inspect` | input check before a job: resolution fit, DEM coverage, expected tier and measured accuracy |
+| `GET` | `/api/jobs/{id}/export/scene.html[?inline=1]` | standalone offline 3D scene (one HTML file) |
+| `GET` | `/api/jobs/{id}/export/package.zip` | GIS data package (COG + QGIS styles, GeoPackage, GLB, STAC, README) |
+| `GET` | `/api/jobs/{id}/change/candidates` | other finished results overlapping this one |
+| `POST` | `/api/jobs/{id}/change` | before/after change screening, body `{"after": "<job id>"}` |
 | `DELETE` | `/api/jobs/{id}` | delete a job |
 
 Anchors CSV: `id,x,y,z,type[,sigma]` with optional `# crs=EPSG:xxxx` and `# vcrs=EGM2008|EGM96|ellipsoidal|EPSG:code` comment lines (`type` = `ground` or `object`). Minimum 5 anchors.
@@ -166,7 +195,7 @@ Anchors CSV: `id,x,y,z,type[,sigma]` with optional `# crs=EPSG:xxxx` and `# vcrs
 ## Repository layout
 
 * `backend/` — FastAPI app, job manager (single worker, filesystem jobs), Mode A / Mode B pipelines, server-side sampling and validation.
-* `core/` — ingest, geodesy (datum guard, reprojection), inference wrapper, calibration (`calib/fusion.py`: tiled inference + detail fusion; `terrain.py`; `anchors.py`; `tier.py`), DSM derivatives, heightfields, LoD-1, validation harness.
+* `core/` — ingest, geodesy (datum guard, reprojection), inference wrapper, calibration (`calib/fusion.py`: tiled inference + detail fusion; `terrain.py`; `anchors.py`; `tier.py`), DSM derivatives, heightfields, LoD-1, validation harness, `export/` (offline scene, GeoPackage / GLB writers, GIS package), `change/` (before/after screening).
 * `ml/registry/` — model registry and the vendored Depth Anything V2 code (Apache-2.0). `notebooks/` — the Colab fine-tuning notebook (and its generator). `ml/train/` — an older training scaffold (the notebook is the tested path).
 * `models/` — `da-v2-small-baseline` (zero-shot, fetched) and `da-v2-small-ndsm` (fine-tuned; model card + training report committed, weights installed from the zip).
 * `frontend/` — TypeScript + Three.js viewer (Vite).
@@ -174,4 +203,4 @@ Anchors CSV: `id,x,y,z,type[,sigma]` with optional `# crs=EPSG:xxxx` and `# vcrs
 * `configs/default.yaml` — every parameter (override with `DW_CONFIG=<file>` or `DW_<SECTION>_<KEY>` environment variables).
 * `SIH26175-Phase*.md` — the research and design record (Phases 1–10). `DEPTHWIZARD_COMPREHENSIVE_SYSTEM_DOSSIER.md` — the technical description of the built system.
 
-Licences: Depth Anything V2 Small weights and code are Apache-2.0. swisstopo data is Open Government Data (attribution "© swisstopo"). Copernicus DEM GLO-30 is © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA.
+Licences: Depth Anything V2 Small weights and code are Apache-2.0. Maxar Open Data Program imagery (Sikkim and Islahiye demos) is CC BY-NC 4.0, attribution "Maxar Technologies, Maxar Open Data Program". swisstopo data is Open Government Data (attribution "© swisstopo"). Copernicus DEM GLO-30 is © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA.

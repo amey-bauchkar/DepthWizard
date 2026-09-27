@@ -84,3 +84,10 @@ class VerticalTransformUnsafeError(DepthWizardError):
 
 class GridsMissingError(VerticalTransformUnsafeError):
     code = "GEOID_GRIDS_MISSING"
+
+
+class ExportUnavailableError(DepthWizardError):
+    code = "EXPORT_UNAVAILABLE"
+    user_message = "This export is not available for this job."
+    recoverable = True
+    http_status = 409

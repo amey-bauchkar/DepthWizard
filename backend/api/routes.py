@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import platform
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from fastapi import APIRouter, Body, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from backend.config.settings import REPO_ROOT
-from backend.errors import DepthWizardError, InvalidFileError, JobNotFoundError, UnsupportedFormatError
+from backend.errors import DepthWizardError, ExportUnavailableError, InvalidFileError, JobNotFoundError, UnsupportedFormatError
 from backend.jobs import query
 from backend.jobs.manager import JobManager
 from core.geo.vertical import grid_status
@@ -249,6 +250,102 @@ def job_artifact(request: Request, job_id: str, name: str):
     p = _mgr(request).artifact_path(job_id, name)
     media = {".png": "image/png", ".jpg": "image/jpeg", ".tif": "image/tiff", ".json": "application/json", ".f32": "application/octet-stream", ".npy": "application/octet-stream", ".jsonl": "application/x-ndjson"}.get(p.suffix.lower(), "application/octet-stream")
     return FileResponse(p, media_type=media, filename=p.name)
+
+
+def _stale(out: Path, deps: list[Path]) -> bool:
+    return not out.exists() or any(d.exists() and d.stat().st_mtime > out.stat().st_mtime for d in deps)
+
+
+_EXPORT_LOCKS: dict[str, threading.Lock] = {}
+
+
+def _export_lock(job_id: str) -> threading.Lock:
+    return _EXPORT_LOCKS.setdefault(job_id, threading.Lock())
+
+
+@router.get("/api/jobs/{job_id}/export/scene.html")
+def export_scene(request: Request, job_id: str, inline: bool = Query(False)):
+    """Standalone offline 3D explorer: ONE html file (viewer + heightfields + texture + buildings + provenance) that
+    opens by double-click with no server, Python or internet."""
+    from core.export.package import _safe_name as _n
+    from core.export.scene import scene_payload, standalone_html
+
+    mgr = _mgr(request)
+    result, job = mgr.result(job_id), mgr.get(job_id).to_dict()
+    job_dir = mgr._job_dir(job_id)
+    bundle = REPO_ROOT / mgr.settings.server.frontend_dist / "standalone"
+    out = job_dir / "export" / "scene_3d_offline.html"
+    with _export_lock(job_id):
+        if _stale(out, [job_dir / "result.json", job_dir / "validation.json", bundle / "standalone.js"]):
+            out.parent.mkdir(exist_ok=True)
+            try:
+                html = standalone_html(scene_payload(job_dir, result, job, app_version=request.app.version, manifest_path=DEMO_DIR / "manifest.json"), bundle)
+            except (FileNotFoundError, ValueError) as e:
+                raise ExportUnavailableError(str(e), user_message=str(e)) from e
+            out.write_text(html, encoding="utf-8")
+    return FileResponse(out, media_type="text/html", filename=f"DepthWizard_{_n(job.get('input_filename') or job_id)}_3D_offline.html", content_disposition_type="inline" if inline else "attachment")
+
+
+@router.get("/api/jobs/{job_id}/export/package.zip")
+def export_package(request: Request, job_id: str):
+    """GIS data package: COG rasters + QGIS styles, buildings GeoPackage / GeoJSON / CSV, GLB 3D model, STAC item,
+    provenance, README and the offline 3D scene, in one zip."""
+    from core.export.package import _safe_name as _n, build_package
+
+    mgr = _mgr(request)
+    result, job = mgr.result(job_id), mgr.get(job_id).to_dict()
+    job_dir = mgr._job_dir(job_id)
+    bundle = REPO_ROOT / mgr.settings.server.frontend_dist / "standalone"
+    out = job_dir / "export" / "package.zip"
+    with _export_lock(job_id):
+        if _stale(out, [job_dir / "result.json", job_dir / "validation.json", bundle / "standalone.js"]):
+            out.parent.mkdir(exist_ok=True)
+            try:
+                build_package(job_dir, result, job, out_zip=out, app_version=request.app.version, manifest_path=DEMO_DIR / "manifest.json", bundle_dir=bundle)
+            except ValueError as e:
+                raise ExportUnavailableError(str(e), user_message=str(e)) from e
+    return FileResponse(out, media_type="application/zip", filename=f"DepthWizard_{_n(job.get('input_filename') or job_id)}_GIS_package.zip")
+
+
+@router.get("/api/jobs/{job_id}/change/candidates")
+def change_candidates(request: Request, job_id: str):
+    """Other finished georeferenced results that overlap this one ("after" images for change screening)."""
+    from core.change.detect import overlap_fraction
+
+    mgr = _mgr(request)
+    pre = mgr.result(job_id)
+    out = []
+    for j in mgr.list():
+        if j.job_id == job_id or j.status != "READY":
+            continue
+        try:
+            r = mgr.result(j.job_id)
+        except DepthWizardError:
+            continue
+        if r.get("mode") != "B" or pre.get("mode") != "B":
+            continue
+        ov = overlap_fraction(pre, r)
+        if ov >= 0.1:
+            out.append({"job_id": j.job_id, "input_filename": j.input_filename, "created_at": j.created_at, "overlap_fraction": round(ov, 3), "calibration_tier": r.get("calibration_tier")})
+    return {"candidates": sorted(out, key=lambda c: -c["overlap_fraction"])}
+
+
+@router.post("/api/jobs/{job_id}/change")
+def change_run(request: Request, job_id: str, body: dict[str, Any] = Body(...)):
+    """Before/after 3D change screening: this job = before, body.after = the other job. Synchronous (seconds)."""
+    from core.change.detect import screen_change
+
+    mgr = _mgr(request)
+    after = str(body.get("after") or "")
+    if not after or after == job_id:
+        raise InvalidFileError("choose a different finished job as the 'after' image")
+    pre_job, post_job = mgr.get(job_id), mgr.get(after)
+    labels = {"before": str(body.get("before_label") or pre_job.input_filename or job_id), "after": str(body.get("after_label") or post_job.input_filename or after)}
+    try:
+        res = screen_change(mgr._job_dir(job_id), mgr.result(job_id), mgr._job_dir(after), mgr.result(after), prefix=f"change_{after}", labels=labels)
+    except ValueError as e:
+        raise InvalidFileError(str(e), user_message=str(e)) from e
+    return {"summary": res["summary"], "buildings": [{k: v for k, v in b.items() if k != "coords"} for b in res["buildings"][:1000]]}
 
 
 @router.delete("/api/jobs/{job_id}", status_code=204)

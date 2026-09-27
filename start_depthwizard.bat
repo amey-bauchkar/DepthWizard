@@ -3,7 +3,10 @@ rem DepthWizard one-click launcher (Windows). Serves the API + 3D viewer on http
 cd /d "%~dp0"
 set "PY=python"
 if exist ".venv\Scripts\python.exe" set "PY=.venv\Scripts\python.exe"
-if not exist "frontend\dist\index.html" (
+set "DW_BUILD="
+if not exist "frontend\dist\index.html" set "DW_BUILD=1"
+if not exist "frontend\dist\standalone\standalone.js" set "DW_BUILD=1"
+if defined DW_BUILD (
   echo [DepthWizard] frontend not built - building it now ^(needs Node.js 20+^)...
   pushd frontend
   call npm ci
