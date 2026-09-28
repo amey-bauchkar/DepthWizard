@@ -223,6 +223,10 @@ def run_flood_screening(job_dir: Path, water_level_m: float, result: dict[str, A
 
 
 def _generate_flood_preview(path: Path, depth: np.ndarray, mask: np.ndarray, max_depth_ramp: float = 5.0) -> None:
+    import os
+    import time
+    import uuid
+
     # Colors: shallow = light cyan, deep = dark blue (display only; the ramp saturates at max_depth_ramp metres)
     ramp = np.array([[int(c[i:i + 2], 16) for i in (1, 3, 5)] + [200] for c in PREVIEW_COLOURS], dtype=np.float32)
     h, w = depth.shape
@@ -233,4 +237,28 @@ def _generate_flood_preview(path: Path, depth: np.ndarray, mask: np.ndarray, max
         i1 = np.clip(i0 + 1, 0, len(ramp) - 1)
         fr = (idx - i0)[..., None]
         rgba[mask] = (ramp[i0] * (1 - fr) + ramp[i1] * fr).astype(np.uint8)
-    Image.fromarray(rgba, "RGBA").save(path)
+
+    tmp_path = path.with_name(f".{path.stem}_{uuid.uuid4().hex[:8]}.tmp.png")
+    try:
+        Image.fromarray(rgba, "RGBA").save(tmp_path)
+        for attempt in range(5):
+            try:
+                os.replace(tmp_path, path)
+                break
+            except (PermissionError, OSError):
+                if attempt == 4:
+                    try:
+                        if path.exists():
+                            os.remove(path)
+                        os.replace(tmp_path, path)
+                    except Exception:
+                        pass
+                else:
+                    time.sleep(0.04 * (attempt + 1))
+    finally:
+        if tmp_path.exists():
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+

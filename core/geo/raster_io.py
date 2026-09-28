@@ -92,6 +92,10 @@ def read_raster_on_grid(path: str | Path, grid: Grid, *, resampling: Resampling 
 
 
 def write_raster(path: str | Path, array: np.ndarray, grid: Grid, tags: dict[str, Any] | None = None, *, dtype: str = "float32") -> Path:
+    import os
+    import time
+    import uuid
+
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     nodata = grid.nodata
@@ -105,12 +109,38 @@ def write_raster(path: str | Path, array: np.ndarray, grid: Grid, tags: dict[str
         profile["transform"] = grid.transform
     if grid.crs is not None:
         profile["crs"] = grid.crs
-    with rasterio.open(path, "w", **profile) as ds:
-        ds.write(arr, 1)
-        base = {"UNITS": grid.units, "METRIC": str(grid.metric).lower(), "CALIBRATION_TIER": grid.tier, "VERTICAL_CRS": grid.vertical_reference or "none"}
-        if tags:
-            base.update({k: str(v) for k, v in tags.items()})
-        ds.update_tags(**base)
+
+    # Write to a unique temporary file first, then atomically replace.
+    # This prevents Windows file-locking crashes when readers or OneDrive sync are accessing the destination file.
+    tmp_path = path.with_name(f".{path.stem}_{uuid.uuid4().hex[:8]}.tmp.tif")
+    try:
+        with rasterio.open(tmp_path, "w", **profile) as ds:
+            ds.write(arr, 1)
+            base = {"UNITS": grid.units, "METRIC": str(grid.metric).lower(), "CALIBRATION_TIER": grid.tier, "VERTICAL_CRS": grid.vertical_reference or "none"}
+            if tags:
+                base.update({k: str(v) for k, v in tags.items()})
+            ds.update_tags(**base)
+
+        for attempt in range(5):
+            try:
+                os.replace(tmp_path, path)
+                break
+            except (PermissionError, OSError):
+                if attempt == 4:
+                    try:
+                        if path.exists():
+                            os.remove(path)
+                        os.replace(tmp_path, path)
+                    except Exception:
+                        pass
+                else:
+                    time.sleep(0.04 * (attempt + 1))
+    finally:
+        if tmp_path.exists():
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
     return path
 
 

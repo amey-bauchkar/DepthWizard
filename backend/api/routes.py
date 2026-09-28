@@ -20,7 +20,8 @@ from backend.jobs.manager import JobManager
 from core.geo.vertical import grid_status
 from core.disaster.flood import run_flood_screening
 from core.disaster.accessibility import run_accessibility_screening
-from core.screening_params import DEFAULT_MAX_SLOPE_DEG
+from core.disaster.landing_zones import run_landing_zone_screening
+from core.screening_params import DEFAULT_MAX_SLOPE_DEG, HLZ_DEFAULT_SIZE
 
 REFERENCE_DIR = REPO_ROOT / "assets" / "reference"
 DEMO_DIR = REPO_ROOT / "assets" / "demo"
@@ -385,6 +386,19 @@ def job_disaster_accessibility(request: Request, job_id: str, body: dict[str, An
     except ValueError as e:
         return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
 
+
+
+@router.post("/api/jobs/{job_id}/disaster/landing_zones")
+def job_disaster_landing_zones(request: Request, job_id: str, body: dict[str, Any] = Body(...)):
+    mgr = _mgr(request)
+    job_dir = mgr._job_dir(job_id)
+    result = mgr.result(job_id)
+    try:
+        size = int(body.get("size", HLZ_DEFAULT_SIZE))
+        max_slope = body.get("maxSlopeDeg")
+        return run_landing_zone_screening(job_dir, result, size=size, max_slope_deg=None if max_slope is None else float(max_slope), exclude_flooded=bool(body.get("excludeFlooded", False)))
+    except (ValueError, TypeError) as e:
+        return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
 
 
 def error_response(exc: DepthWizardError) -> JSONResponse:

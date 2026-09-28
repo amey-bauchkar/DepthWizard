@@ -55,3 +55,103 @@ EXPOSURE_LABELS = ("LOW", "MODERATE", "HIGH", "VERY HIGH")
 # ---------------------------------------------------------------- accessibility
 DEFAULT_MAX_SLOPE_DEG = 15.0
 """POLICY. Default traversable-slope threshold for the UI slider; the user sets the value used."""
+
+# ---------------------------------------------------------------- helicopter landing-zone (HLZ) screening
+# Doctrine source: US Army FM 3-21.38 "Pathfinder Operations" (April 2006), ch. 4, verified 2026-09-27 at
+# globalsecurity.org/military/library/policy/army/fm/3-21-38/ch4.htm. Its landing-zone content matches the older
+# FM 57-38 ch. 4. DGCA CAR Section 4 Series B Part III (ICAO Annex 14 Vol II) governs certified heliports, not
+# field landing zones, and is not used here.
+
+HLZ_SIZES = {
+    1: {"diameter_m": 25.0, "label": "Size 1 · 25 m", "category": "observation / light"},
+    2: {"diameter_m": 35.0, "label": "Size 2 · 35 m", "category": "utility"},
+    3: {"diameter_m": 50.0, "label": "Size 3 · 50 m", "category": "large utility"},
+    4: {"diameter_m": 80.0, "label": "Size 4 · 80 m", "category": "cargo"},
+    5: {"diameter_m": 100.0, "label": "Size 5 · 100 m", "category": "sling load / unknown aircraft"},
+}
+"""PHYSICAL (doctrine). Landing-point diameters, FM 3-21.38 para 4-3.d ('Size 1 landing point, 25 meters' ... 'Size 5,
+100 meters'). The same values are the minimum centre-to-centre spacing between landing points, which is why sites
+are separated by at least one diameter. The manual lists sizes, not aircraft; the category column is the common
+training mapping, and the operator must match the actual aircraft."""
+
+HLZ_DEFAULT_SIZE = 3
+"""POLICY. Default selection in the UI (50 m). Conservative middle choice; the user selects the aircraft size."""
+
+HLZ_SLOPE_ALL_DEG = 7.0
+"""PHYSICAL (doctrine). FM 3-21.38 para 4-1.d: 'All helicopters can land where ground slope measures 7 degrees or
+less.' Slope <= this value -> eligible for SUITABLE."""
+
+HLZ_SLOPE_ADVISORY_DEG = 15.0
+"""PHYSICAL (doctrine). FM 3-21.38 para 4-1.d: above 7 degrees 'observation and utility helicopters must terminate at
+a hover'; 'between 7 and 15 degrees, pathfinders advise the pilots of large utility and cargo helicopters' (land
+upslope). So 7 < slope <= 15 is MARGINAL (UPSLOPE_ADVISORY) for sizes >= HLZ_ADVISORY_MIN_SIZE and excluded for
+smaller sizes. The manual gives no touchdown guidance above 15 degrees; DepthWizard therefore never offers it."""
+
+HLZ_ADVISORY_MIN_SIZE = 3
+"""PHYSICAL (doctrine mapping). Sizes 3-5 correspond to large utility / cargo aircraft, the only classes the manual
+allows in the 7-15 degree band."""
+
+HLZ_OBSTACLE_RATIO = 10.0
+"""PHYSICAL (doctrine). FM 3-21.38 para 4-1.i: 'obstacle ratio of 10 to 1' for approach and departure: an obstacle
+of height H above the landing point needs 10 H of horizontal clearance."""
+
+HLZ_APPROACH_LENGTH_M = 300.0
+"""POLICY. Corridor length checked beyond the pad edge. At 10:1 it covers obstacles up to 30 m above the pad
+(taller trees, most buildings). The manual gives no length. Terrain rising further out is NOT checked, and every
+result says so. Where a corridor leaves the scene before this length, the bearing is UNVERIFIED, never CLEAR."""
+
+HLZ_BEARINGS = 16
+"""ALGORITHMIC. Candidate approach directions (22.5 degree step). Each bearing's status is exact for a corridor along
+that bearing; directions between the bearings are not claimed."""
+
+HLZ_CORRIDOR_WIDTH_FACTOR = 1.0
+"""POLICY. The corridor width is this factor times the pad diameter, and constant along its length. The manual
+specifies no corridor width or divergence. A width of one pad diameter is the narrowest a helicopter centred on the
+pad can use; this is a DepthWizard choice."""
+
+HLZ_OBJECT_MARGIN_SIGMA = 1.0
+"""STATISTICAL. In the approach test, every object cell (nDSM > object threshold) is raised by this many times the
+job's measured object-height RMSE (result.uncertainty.ndsm.object_m; 5.5 m for model da-v2-small-ndsm@1.0.0 on
+held-out Swiss LiDAR). The model is not unbiased per object, so a 1-sigma margin is a minimum, not a guarantee."""
+
+HLZ_ROUGHNESS_MAX_M = 0.70
+"""STATISTICAL (dataset-derived, docs/landing_zones_results.md section 2). Largest allowed RMS residual of the DSM
+about the least-squares plane over the pad: the P95 of that residual on LiDAR-landable Size-1 pad centres in the
+Swiss urban and rural test scenes (n = 27 973), so that 95 % of truly landable pads pass the roughness test."""
+
+HLZ_MIN_PAD_PIXELS_ACROSS = 10
+"""ALGORITHMIC. With fewer than 10 pixels across the pad, the disk, slope and obstacle tests are too coarse to mean
+anything, and the request is refused."""
+
+HLZ_SITE_LATTICE_FRACTION = 0.1
+"""ALGORITHMIC. Candidate pad centres are evaluated on a lattice of spacing (this x diameter), at least one pixel.
+Each centre's clear/slope/roughness test is exact; the lattice only limits where the centres may lie
+(2.5 m for Size 1)."""
+
+HLZ_MAX_SITES = 50
+"""ALGORITHMIC. Maximum number of reported sites; bounds the approach-check cost and the list length."""
+
+HLZ_MAX_EVALUATED = 200
+"""ALGORITHMIC. Maximum number of ranked candidates whose corridors are checked while looking for HLZ_MAX_SITES
+sites that are not fully blocked."""
+
+HLZ_CORRIDOR_CELL_M = 1.0
+"""ALGORITHMIC. Before the corridor check, heights are max-pooled to cells of about this size (never finer than a
+pixel) and dilated by one cell. Corridors are then sampled with spacing <= one pooled cell in pixel space, so every
+cell that intersects a corridor is seen: the check is conservative, and an obstacle can appear up to ~2 cells
+earlier or wider, never later."""
+
+HLZ_OBJECT_BUFFER_M = 10.0
+"""STATISTICAL (dataset-derived, docs/landing_zones_results.md section 1). Detected obstacles must lie at least this far
+outside the pad edge, and in the corridor check their heights are spread this far sideways. The model misplaces and
+under-segments obstacle edges: with no buffer, 29 % of pad centres accepted in the Zurich urban scene had a LiDAR
+object > 2.5 m inside the pad. Chosen on the urban scene as the smallest buffer giving <= 2 % false clear; on the
+rural scene (not used for the choice) the Size-1 rate is 1.3 %. It cannot fix obstacles the model misses entirely
+(Size-3 rural: 8.8 %)."""
+
+HLZ_SLOPE_MARGIN_DEG = 2.0
+"""STATISTICAL (dataset-derived, docs/landing_zones_results.md section 1b). Measured pad slopes must be this much
+below the doctrine limits (7 / 15 degrees), because the pad slope error has an NMAD of ~1 degree and a P95 of 2-3
+degrees against LiDAR. With no margin, 10 % of rural pads accepted as <= 7 degrees were steeper on LiDAR; with 2
+degrees it is <= 1.4 % in both scenes. Chosen on the rural scene (the urban scene is nearly flat and cannot constrain
+it), so no independent scene has tested this value."""
