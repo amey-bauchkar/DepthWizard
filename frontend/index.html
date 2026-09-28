@@ -428,6 +428,7 @@
                     <select id="disaster-scenario">
                       <option value="flood">Flood screening (inundation)</option>
                       <option value="accessibility">Terrain accessibility (slope)</option>
+                      <option value="landing_zones">Helicopter landing zones (candidates)</option>
                     </select>
                   </label>
                 </div>
@@ -463,6 +464,24 @@
                     <span>0° flat</span>
                     <span>60° steep</span>
                   </div>
+                </div>
+
+                <!-- Helicopter landing-zone Controls -->
+                <div id="hlz-controls-wrap" class="hidden">
+                  <label class="grow">
+                    <strong>Landing-point size (FM 3-21.38)</strong>
+                    <select id="hlz-size">
+                      <option value="1">Size 1 · 25 m · observation / light</option>
+                      <option value="2">Size 2 · 35 m · utility</option>
+                      <option value="3" selected>Size 3 · 50 m · large utility</option>
+                      <option value="4">Size 4 · 80 m · cargo</option>
+                      <option value="5">Size 5 · 100 m · sling load / unknown</option>
+                    </select>
+                  </label>
+                  <label class="toggle-wrap hlz-flood-toggle">
+                    <input type="checkbox" id="hlz-exclude-flooded" />
+                    <span>Exclude ground flooded in the last flood run</span>
+                  </label>
                 </div>
 
                 <div class="run-row">
@@ -501,6 +520,7 @@
 
                 <div class="disaster-downloads-row">
                   <a id="disaster-download-raster" href="#" class="linkbtn" download>Download depth raster (GeoTIFF)</a>
+                  <a id="disaster-download-extra" href="#" class="linkbtn hidden" download></a>
                 </div>
 
                 <!-- Affected Buildings List -->
@@ -510,6 +530,15 @@
                     <span class="hint">Hover / click to locate</span>
                   </div>
                   <div id="disaster-buildings-list" class="disaster-bldg-scrollbox"></div>
+                </div>
+
+                <!-- Candidate landing sites -->
+                <div id="hlz-sites-wrap" class="hidden">
+                  <div class="result-secondary-title split">
+                    <span>Candidate landing sites (<span id="hlz-site-count">0</span>)</span>
+                    <span class="hint">Hover / click to locate</span>
+                  </div>
+                  <div id="hlz-sites-list" class="disaster-bldg-scrollbox"></div>
                 </div>
 
                 <div id="disaster-warnings" class="disaster-warning-box"></div>
@@ -560,6 +589,7 @@
 
                   <!-- Vector SVG for building footprints, hover highlights, pins -->
                   <svg id="disaster-vector-svg" class="disaster-svg-layer"></svg>
+                  <svg id="hlz-vector-svg" class="disaster-svg-layer hlz-layer"></svg>
 
                   <!-- Point Pick Dot Marker -->
                   <div id="disaster-pick-dot" class="disaster-pick-dot hidden"></div>

@@ -1551,3 +1551,23 @@ select { max-width: 100%; text-overflow: ellipsis; }
 }
 .placeholder-icon { color: var(--teal-500); margin-bottom: 10px; line-height: 0; }
 .placeholder-text { font-size: 13px; max-width: 340px; }
+
+/* ── Helicopter landing-zone screening ─────────────────────────────── */
+.hlz-layer { pointer-events: none; }
+.hlz-layer .hlz-pad { pointer-events: visiblePainted; cursor: pointer; }
+.hlz-pad { fill: rgba(29, 122, 79, 0.18); stroke: var(--ok); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.hlz-marginal .hlz-pad { fill: rgba(154, 91, 0, 0.16); stroke: var(--warn); stroke-dasharray: 5 3; }
+.hlz-appr-clear { stroke: var(--ok); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.hlz-appr-unverified { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.hlz-site.highlight .hlz-pad { fill: rgba(255, 255, 255, 0.35); stroke-width: 3; }
+.hlz-site.highlight line { stroke-width: 3; }
+#hlz-controls-wrap { display: grid; gap: 8px; margin-top: 10px; }
+#hlz-controls-wrap.hidden { display: none; }
+.hlz-flood-toggle { font-size: 12px; }
+.hlz-item-meta { margin-left: 6px; }
+.hlz-empty { padding: 10px 12px; }
+.badge-xs { font-size: 10px; }
+.l-item i.hlz-sw-candidate { background: rgba(29, 122, 79, 0.18); border: 2px solid var(--ok); }
+.l-item i.hlz-sw-marginal { background: rgba(154, 91, 0, 0.16); border: 2px dashed var(--warn); }
+.l-item i.hlz-sw-clear { background: var(--ok); height: 2px; }
+.l-item i.hlz-sw-unverified { background: repeating-linear-gradient(90deg, var(--warn) 0 4px, transparent 4px 7px); height: 2px; }

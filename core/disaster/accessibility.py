@@ -90,8 +90,36 @@ def run_accessibility_screening(job_dir: Path, max_slope_deg: float, result: dic
 
 
 def _generate_accessibility_preview(path: Path, accessible: np.ndarray, steep: np.ndarray, building: np.ndarray) -> None:
+    import os
+    import time
+    import uuid
+
     rgba = np.zeros((*accessible.shape, 4), dtype=np.uint8)
     rgba[accessible] = (0, 200, 0, 100)
     rgba[steep] = (220, 0, 0, 150)
     rgba[building] = (90, 90, 90, 120)
-    Image.fromarray(rgba, "RGBA").save(path)
+
+    tmp_path = path.with_name(f".{path.stem}_{uuid.uuid4().hex[:8]}.tmp.png")
+    try:
+        Image.fromarray(rgba, "RGBA").save(tmp_path)
+        for attempt in range(5):
+            try:
+                os.replace(tmp_path, path)
+                break
+            except (PermissionError, OSError):
+                if attempt == 4:
+                    try:
+                        if path.exists():
+                            os.remove(path)
+                        os.replace(tmp_path, path)
+                    except Exception:
+                        pass
+                else:
+                    time.sleep(0.04 * (attempt + 1))
+    finally:
+        if tmp_path.exists():
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+

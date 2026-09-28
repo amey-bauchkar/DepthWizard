@@ -1061,7 +1061,9 @@ async function runDisasterAnalysis(silent = false) {
     const mode = disScen ? disScen.value : "flood";
     const fLvl = $("flood-level-slider") as HTMLInputElement;
     const aSlp = $("access-slope-slider") as HTMLInputElement;
-    const body = mode === "flood" ? { waterLevel_m: Number(fLvl.value || 0) } : { maxSlopeDeg: Number(aSlp.value || 15) };
+    const body = mode === "flood" ? { waterLevel_m: Number(fLvl.value || 0) }
+      : mode === "landing_zones" ? { size: Number(($("hlz-size") as HTMLSelectElement).value), excludeFlooded: ($("hlz-exclude-flooded") as HTMLInputElement).checked }
+      : { maxSlopeDeg: Number(aSlp.value || 15) };
 
     const res = await fetch(`/api/jobs/${state.jobId}/disaster/${mode}`, {
       method: "POST",
@@ -1076,21 +1078,16 @@ async function runDisasterAnalysis(silent = false) {
     const placeholder = $("disaster-map-placeholder");
     if (placeholder) placeholder.classList.add("hidden");
 
+    $("hlz-sites-wrap").classList.toggle("hidden", mode !== "landing_zones");
+    $("disaster-download-extra").classList.toggle("hidden", mode !== "landing_zones");
+    if (mode !== "landing_zones") $("hlz-vector-svg").innerHTML = "";
+
     if (mode === "flood") {
-      $("stat-area-card").querySelector(".stat-label")!.textContent = "Inundated Area";
-      $("stat-area-val").textContent = fmtArea(resp.affectedAreaM2);
       const iso = resp.isolatedAreaM2 ? ` · ${fmtArea(resp.isolatedAreaM2)} isolated` : "";
-      $("stat-area-sub").textContent = `${resp.affectedAreaPct}% of valid terrain${iso}`;
-
-      $("stat-buildings-card").classList.remove("hidden");
-      $("stat-buildings-val").textContent = String(resp.affectedBuildingsCount ?? 0);
-      $("stat-buildings-sub").textContent = `exposed · ${resp.contactBuildingsCount ?? 0} in contact`;
-
-      $("stat-maxdepth-card").classList.remove("hidden");
-      $("stat-maxdepth-val").textContent = `${resp.maxDepth_m} m`;
-
-      $("stat-meandepth-card").classList.remove("hidden");
-      $("stat-meandepth-val").textContent = `${resp.meanDepth_m} m`;
+      setStat("stat-area-card", "Inundated Area", fmtArea(resp.affectedAreaM2), `${resp.affectedAreaPct}% of valid terrain${iso}`);
+      setStat("stat-buildings-card", "Affected Buildings", String(resp.affectedBuildingsCount ?? 0), `exposed · ${resp.contactBuildingsCount ?? 0} in contact`);
+      setStat("stat-maxdepth-card", "Max Depth", `${resp.maxDepth_m} m`, "deepest flooded cell");
+      setStat("stat-meandepth-card", "Mean Depth", `${resp.meanDepth_m} m`, "over flooded area");
 
       const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
       if (dlLink) {
@@ -1134,6 +1131,50 @@ async function runDisasterAnalysis(silent = false) {
       $("disaster-legend-classes").innerHTML = (resp.exposureRules ?? []).map((r: any) =>
         `<span class="l-item">${r.label} ${r.le_m == null ? `> ${r.gt_m}` : `≤ ${r.le_m}`}</span>`).join("");
       $("disaster-toggle-lbl").textContent = "Water overlay";
+    } else if (mode === "landing_zones") {
+      const r = resp.rules;
+      const nClear = resp.sites.reduce((n: number, s: any) => n + s.clearBearings.length, 0);
+      setStat("stat-area-card", "Candidate sites", String(resp.nSites), `${resp.nCandidate} with a clear approach · ${resp.blockedSites} rejected, all approaches blocked`);
+      setStat("stat-buildings-card", "Pad", `${resp.padDiameterM} m`, `Size ${resp.size} · slope ≤ ${fmtNum(r.slopeMaxDegApplied - r.slopeMarginDeg)}° measured`);
+      setStat("stat-maxdepth-card", "Feasible pad centres", fmtArea(resp.feasibleCentreAreaM2), `pad clear of detected obstacles + ${r.objectBufferM} m`);
+      setStat("stat-meandepth-card", "Clear approach bearings", String(nClear), `of ${r.bearings} per site · 10:1 checked to ${r.approachLengthM} m`);
+
+      const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
+      dlLink.href = resp.vectorResult ? `/api/jobs/${state.jobId}/artifact/${resp.vectorResult}` : "#";
+      dlLink.textContent = "Download sites (GeoJSON, WGS84)";
+      const dlExtra = $("disaster-download-extra") as HTMLAnchorElement;
+      dlExtra.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+      dlExtra.textContent = "Download reason raster (GeoTIFF)";
+
+      $("disaster-buildings-wrap").classList.add("hidden");
+      $("hlz-site-count").textContent = String(resp.nSites);
+      const list = $("hlz-sites-list");
+      list.innerHTML = resp.sites.length ? resp.sites.map((s: any) => `
+        <div class="disaster-bldg-item" data-hlz-id="${s.id}">
+          <div>
+            <b>Site ${s.id}</b>
+            <span class="hint hlz-item-meta">slope ${fmtNum(s.slopeDeg)}° · rough ${fmtNum(s.roughnessM)} m · ${s.clearBearings.length ? `clear ${s.clearBearings.map((b: number) => `${b}°`).join(", ")}` : "no clear bearing"}</span>
+          </div>
+          <span class="badge ${s.class === "CANDIDATE" ? "ok" : "warn"} badge-xs">${s.class}</span>
+        </div>`).join("") : `<div class="hint hlz-empty">No site meets the pad rules in this scene.</div>`;
+      list.querySelectorAll<HTMLElement>(".disaster-bldg-item").forEach((el) => {
+        const id = Number(el.dataset.hlzId);
+        el.addEventListener("mouseenter", () => highlightSite(id, true));
+        el.addEventListener("mouseleave", () => highlightSite(id, false));
+        el.addEventListener("click", () => showHudSiteInfo(id));
+      });
+
+      $("disaster-legend-title").textContent = "Landing-zone screening";
+      $("disaster-ramp-bar").style.background = "rgba(29, 122, 79, 0.47)";
+      $("disaster-ramp-labels").innerHTML = `<span>Feasible pad centres</span><span>${r.obstacleRatio}:1 · ${r.approachLengthM} m</span>`;
+      $("disaster-legend-classes").innerHTML = `
+        <span class="l-item"><i class="hlz-sw-candidate"></i>Candidate</span>
+        <span class="l-item"><i class="hlz-sw-marginal"></i>Marginal</span>
+        <span class="l-item"><i class="hlz-sw-clear"></i>Clear bearing</span>
+        <span class="l-item"><i class="hlz-sw-unverified"></i>Unverified</span>
+        <span class="l-item"><i style="background:#5a5a5a"></i>Detected obstacle</span>
+      `;
+      $("disaster-toggle-lbl").textContent = "Feasible-centre overlay";
     } else {
       $("stat-area-card").querySelector(".stat-label")!.textContent = "Accessible Area";
       $("stat-area-val").textContent = fmtArea(resp.accessibleAreaM2);
@@ -1184,6 +1225,7 @@ async function runDisasterAnalysis(silent = false) {
 
     // Render building vector layer on 2D map
     renderDisasterSvg(resp.buildings);
+    if (mode === "landing_zones") renderLandingSvg(resp.sites);
 
   } catch (e: any) {
     if (!silent) alert("Disaster Analysis Failed: " + (e.message || String(e)));
@@ -1285,6 +1327,76 @@ function showHudBuildingInfo(b: any) {
   `;
 }
 
+function setStat(cardId: string, label: string, value: string, sub: string) {
+  const c = $(cardId);
+  c.classList.remove("hidden");
+  c.querySelector(".stat-label")!.textContent = label;
+  c.querySelector(".stat-value")!.textContent = value;
+  c.querySelector(".stat-sub")!.textContent = sub;
+}
+
+function fmtNum(v: number): string {
+  return String(Math.round(v * 100) / 100);
+}
+
+/** Pads and non-blocked approach corridors; the geometry comes from the API in pixel coordinates. */
+function renderLandingSvg(sites: any[]) {
+  const svg = $("hlz-vector-svg") as unknown as SVGSVGElement;
+  if (!svg || !state.result) return;
+  const g = state.result.grid;
+  svg.setAttribute("viewBox", `0 0 ${Number(g.width) || 100} ${Number(g.height) || 100}`);
+  const ns = "http://www.w3.org/2000/svg";
+  svg.innerHTML = "";
+  for (const s of sites) {
+    const grp = document.createElementNS(ns, "g");
+    grp.setAttribute("data-hlz-id", String(s.id));
+    grp.setAttribute("class", `hlz-site ${s.class === "CANDIDATE" ? "hlz-candidate" : "hlz-marginal"}`);
+    for (const a of s.approachPixelLines) {
+      const ln = document.createElementNS(ns, "line");
+      const [[x1, y1], [x2, y2]] = a.line;
+      ln.setAttribute("x1", String(x1)); ln.setAttribute("y1", String(y1));
+      ln.setAttribute("x2", String(x2)); ln.setAttribute("y2", String(y2));
+      ln.setAttribute("class", a.status === "CLEAR" ? "hlz-appr-clear" : "hlz-appr-unverified");
+      grp.appendChild(ln);
+    }
+    const pad = document.createElementNS(ns, "polygon");
+    pad.setAttribute("points", s.padPixelRing.map((p: number[]) => `${p[0]},${p[1]}`).join(" "));
+    pad.setAttribute("class", "hlz-pad");
+    pad.addEventListener("mouseenter", () => highlightSite(s.id, true));
+    pad.addEventListener("mouseleave", () => highlightSite(s.id, false));
+    pad.addEventListener("click", (e) => { e.stopPropagation(); showHudSiteInfo(s.id); });
+    grp.appendChild(pad);
+    svg.appendChild(grp);
+  }
+}
+
+function highlightSite(id: number, on: boolean) {
+  document.querySelector(`#hlz-vector-svg g[data-hlz-id="${id}"]`)?.classList.toggle("highlight", on);
+  document.querySelector(`#hlz-sites-list .disaster-bldg-item[data-hlz-id="${id}"]`)?.classList.toggle("active", on);
+}
+
+function showHudSiteInfo(id: number) {
+  const resp = state.disaster.lastResult;
+  const s = resp?.sites?.find((x: any) => x.id === id);
+  const hud = $("disaster-hud-content");
+  if (!s || !hud) return;
+  document.querySelector(`#hlz-sites-list .disaster-bldg-item[data-hlz-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  const byStatus = (st: string) => s.approaches.filter((a: any) => a.status === st);
+  const blocked = byStatus("BLOCKED");
+  const nearest = blocked.reduce((m: any, a: any) => (!m || a.firstObstacle.distanceM < m.firstObstacle.distanceM ? a : m), null);
+  hud.innerHTML = `
+    <b>Site ${s.id}</b> <span class="badge ${s.class === "CANDIDATE" ? "ok" : "warn"}">${s.class}</span><br/>
+    ${s.lat != null ? `${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}<br/>` : ""}
+    <span class="hud-k">Elevation</span> ${s.elevationM} m ${esc(resp.verticalCrs ?? "")}<br/>
+    <span class="hud-k">Slope</span> ${fmtNum(s.slopeDeg)}° (${s.slopePct} %)${s.upslopeBearingDeg != null && s.flags.includes("UPSLOPE_ADVISORY") ? ` · land upslope, toward ${s.upslopeBearingDeg}°` : ""}<br/>
+    <span class="hud-k">Roughness</span> ${fmtNum(s.roughnessM)} m RMS<br/>
+    <span class="hud-k">Clear</span> ${byStatus("CLEAR").map((a: any) => `${a.bearingDeg}°`).join(", ") || "none"}<br/>
+    <span class="hud-k">Unverified</span> ${byStatus("UNVERIFIED").map((a: any) => `${a.bearingDeg}°`).join(", ") || "none"}<br/>
+    <span class="hud-k">Blocked</span> ${blocked.length} of ${s.approaches.length}${nearest ? ` · nearest ${nearest.firstObstacle.heightAbovePadM} m high at ${nearest.firstObstacle.distanceM} m` : ""}<br/>
+    ${s.flags.length ? `<span class="hint">${s.flags.map(esc).join(" · ")}</span>` : ""}
+  `;
+}
+
 function resetHudInfo() {
   const hud = $("disaster-hud-content");
   if (hud) hud.innerHTML = "Hover or click anywhere on the 2D map to inspect flood depth";
@@ -1333,6 +1445,11 @@ function wireDisasterMapInspector() {
         <span class="hud-k">Pixel</span> [${col}, ${row}]<br/>
         <span class="hud-k">Water plane</span> ${fLvl.toFixed(1)} m<br/>
         <span class="hint" style="font-size:10px;">Click to query elevation & depth</span>
+      `;
+    } else if (scen === "landing_zones") {
+      hud.innerHTML = `
+        <span class="hud-k">Pixel</span> [${col}, ${row}]<br/>
+        <span class="hint" style="font-size:10px;">Hover or click a pad for its details</span>
       `;
     } else {
       const aSlp = Number(($("access-slope-slider") as HTMLInputElement).value || 15);
@@ -1538,6 +1655,7 @@ function wire() {
     disScen.addEventListener("change", () => {
       $("flood-controls-wrap").classList.toggle("hidden", disScen.value !== "flood");
       $("access-slope-wrap").classList.toggle("hidden", disScen.value !== "accessibility");
+      $("hlz-controls-wrap").classList.toggle("hidden", disScen.value !== "landing_zones");
       runDisasterAnalysis();
     });
   }
