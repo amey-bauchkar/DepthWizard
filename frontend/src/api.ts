@@ -63,7 +63,7 @@ async function handle<T>(r: Response): Promise<T> {
   throw new ApiFailure(r.status, err);
 }
 
-export interface CreateOptions { dem?: File | null; demVerticalCrs?: string; anchors?: File | null }
+export interface CreateOptions { dem?: File | null; demVerticalCrs?: string; anchors?: File | null; footprints?: File | null }
 
 export const api = {
   health: () => fetch("/health").then((r) => handle<Record<string, any>>(r)),
@@ -73,6 +73,7 @@ export const api = {
     const fd = new FormData(); fd.append("file", file, file.name);
     if (opts.dem) { fd.append("dem", opts.dem, opts.dem.name); fd.append("dem_vertical_crs", opts.demVerticalCrs ?? "EGM2008"); }
     if (opts.anchors) fd.append("anchors", opts.anchors, opts.anchors.name);
+    if (opts.footprints) fd.append("footprints", opts.footprints, opts.footprints.name);
     return handle<Job>(await fetch("/api/jobs", { method: "POST", body: fd }));
   },
   inspect: async (file: File, hasDem: boolean, hasAnchors: boolean) => {

@@ -28,7 +28,7 @@ interface DisasterState {
 }
 
 interface State {
-  file: File | null; dem: File | null; anchors: File | null; anchorsLabel: string;
+  file: File | null; dem: File | null; anchors: File | null; anchorsLabel: string; footprints: File | null;
   jobId: string | null; job: Job | null; result: Result | null; viewer: HeightfieldViewer | null;
   resultState: ResultState;
   layer: string; measuring: boolean; measurePts: { x: number; y: number }[];
@@ -39,7 +39,7 @@ interface State {
   disaster: DisasterState;
 }
 const state: State = {
-  file: null, dem: null, anchors: null, anchorsLabel: "",
+  file: null, dem: null, anchors: null, anchorsLabel: "", footprints: null,
   jobId: null, job: null, result: null, viewer: null,
   resultState: "RELATIVE",
   layer: "rgb", measuring: false, measurePts: [],
@@ -249,6 +249,7 @@ function updateOptSummary() {
   const parts: string[] = [];
   if (state.dem) parts.push(`user DEM: ${state.dem.name} (${($("dem-vcrs") as HTMLSelectElement).value})`);
   if (state.anchors) parts.push(`anchors: ${state.anchorsLabel || state.anchors.name}`);
+  if (state.footprints) parts.push(`building footprints: ${state.footprints.name}`);
   $("opt-summary").textContent = parts.length ? parts.join(" · ") : "none (bundled Copernicus GLO-30 DEM auto-used when AOI is covered)";
 }
 
@@ -335,6 +336,7 @@ async function run() {
       dem: state.dem,
       demVerticalCrs: ($("dem-vcrs") as HTMLSelectElement).value,
       anchors: state.anchors,
+      footprints: state.footprints,
     });
     state.jobId = job.job_id;
     await api.run(job.job_id);
@@ -909,11 +911,15 @@ async function loadBuildingsPanel() {
       ["Low · mid · high-rise", `${cls.low_lt10m ?? 0} · ${cls.mid_10_25m ?? 0} · ${cls.high_ge25m ?? 0}`],
       ["Footprint · volume", `${(s.total_footprint_m2 / 1e4).toFixed(2)} ha · ${(s.total_volume_m3 / 1e6).toFixed(2)} Mm³`],
       ["Height error", errTxt],
+      ["Footprints from", s.footprints?.source ? `${s.footprints.source}${s.footprints.licence ? ` (${s.footprints.licence})` : ""}` : "detected from the image"],
     ];
+    $("bld-badge").textContent = s.footprints?.note
+      ? "LoD-1 blocks · outlines DETECTED from the image (approximate) · heights from the nDSM"
+      : "LoD-1 blocks · outlines from building footprints · heights from the nDSM";
     $("bld-summary").innerHTML = fields.map(([l, v]) => `<div class="result-field"><div class="result-field-label">${l}</div><div class="result-field-value">${esc(v)}</div></div>`).join("");
     $("bld-table").innerHTML = `<thead><tr><th>#</th><th>Height (m)</th><th>Roof spread p10–p90</th><th>Floors (approx.)</th><th>Footprint (m²)</th><th>Volume (m³)</th><th>Ground elev. (m)</th></tr></thead><tbody>` +
       bldRows.map((b) => `<tr data-bid="${b.id}" style="cursor:pointer"><td>${b.id}</td><td><b>${fmt(b.height_m, 1)}</b>${b.height_interval_m ? ` <span class="hint">(${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)})</span>` : ""}</td><td>${fmt(b.height_p10_m, 1)}–${fmt(b.height_p90_m, 1)}</td><td>${b.floors_range[0]}–${b.floors_range[1]}</td><td>${fmt(b.area_m2, 0)}</td><td>${b.volume_m3.toLocaleString()}</td><td>${fmt(b.ground_elev_m, 1)}</td></tr>`).join("") + "</tbody>";
-    $("bld-notes").innerHTML = [err.source ? `Height error source: ${esc(err.source)}` : "", ...(s.notes ?? []).map((n: string) => esc(n))].filter(Boolean).join("<br>");
+    $("bld-notes").innerHTML = [s.footprints?.note ? `<b>Outlines:</b> ${esc(s.footprints.note)}` : "", err.source ? `Height error source: ${esc(err.source)}` : "", ...(s.notes ?? []).map((n: string) => esc(n))].filter(Boolean).join("<br>");
     $("bld-table").querySelectorAll<HTMLTableRowElement>("tr[data-bid]").forEach((tr) => tr.addEventListener("click", () => selectBuilding(Number(tr.dataset.bid), true)));
   } catch (e) { $("bld-summary").textContent = userMessage(e); }
 }
@@ -1469,6 +1475,8 @@ function wire() {
   ($("dem-vcrs") as HTMLSelectElement).addEventListener("change", updateOptSummary);
   ($("anchors-input") as HTMLInputElement).addEventListener("change", (e) => { state.anchors = (e.target as HTMLInputElement).files?.[0] ?? null; state.anchorsLabel = ""; updateOptSummary(); });
   $("anchors-clear").addEventListener("click", () => { state.anchors = null; state.anchorsLabel = ""; ($("anchors-input") as HTMLInputElement).value = ""; updateOptSummary(); });
+  ($("fp-input") as HTMLInputElement).addEventListener("change", (e) => { state.footprints = (e.target as HTMLInputElement).files?.[0] ?? null; updateOptSummary(); });
+  $("fp-clear").addEventListener("click", () => { state.footprints = null; ($("fp-input") as HTMLInputElement).value = ""; updateOptSummary(); });
   $("run-btn").addEventListener("click", run);
   $("open3d-btn").addEventListener("click", open3d);
   $("chg-run").addEventListener("click", () => void runChange());

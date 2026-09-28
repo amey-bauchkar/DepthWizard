@@ -157,7 +157,7 @@ class JobManager:
         return job
 
     def attach_extra(self, job_id: str, kind: str, filename: str, data: bytes) -> Job:
-        """Attach optional calibration/validation inputs: kind in {dem, anchors, reference}."""
+        """Attach optional calibration/validation inputs: kind in {dem, anchors, footprints, reference}."""
         job = self.get(job_id)
         if job.status in IN_FLIGHT:
             raise JobStateError("job is running")
@@ -279,7 +279,8 @@ class JobManager:
                 })
                 dem_file = d / job.inputs["dem"] if "dem" in job.inputs else None
                 anchors_file = d / job.inputs["anchors"] if "anchors" in job.inputs else None
-                pipeline_b.stage_calibrate_and_compose(d, ing, rel_depth, prov, self.settings, log, tiled=tiled, user_dem=dem_file, user_dem_vcrs=job.inputs.get("dem_vcrs", "EGM2008"), anchors_path=anchors_file)
+                footprints_file = d / job.inputs["footprints"] if "footprints" in job.inputs else None
+                pipeline_b.stage_calibrate_and_compose(d, ing, rel_depth, prov, self.settings, log, tiled=tiled, user_dem=dem_file, user_dem_vcrs=job.inputs.get("dem_vcrs", "EGM2008"), anchors_path=anchors_file, footprints_path=footprints_file)
                 job.stages_ms["calibration_ms"] = round((time.perf_counter() - t2) * 1000, 1)
             else:
                 self._set(job, "RASTERIZING", {

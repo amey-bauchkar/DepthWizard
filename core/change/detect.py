@@ -279,6 +279,7 @@ def screen_change(pre_dir: Path, pre_res: dict[str, Any], post_dir: Path, post_r
         "caveats": ["Screening, not a damage assessment: verify flagged buildings on the imagery.",
                     "Different view angles (building lean), seasonal vegetation, snow, shadows and construction between the dates cause false alarms; tree canopies mistaken for buildings are the most common one.",
                     "A height GAIN on an existing building is usually a disagreement between the two single-image height maps (different sun or view angle), not real growth; genuine gains are new structures, tents or debris piles.",
+                    "The building table covers the 'before' footprints only: a building missing from the footprint dataset is not listed, but its collapse still shows in the pixel height-loss map (magenta).",
                     "Single-image heights have metre-level errors; changes smaller than the reported thresholds are not detectable, and missed collapses (recall) are not measured by this screening."],
         "artifacts": names,
     }

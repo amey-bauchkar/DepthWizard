@@ -1,0 +1,136 @@
+{
+ "files": [
+  {
+   "file": "swissimage_2019_2682-1247_0.5m.geojson",
+   "bounds_wgs84": [
+    8.522267,
+    47.366614,
+    8.53969,
+    47.379732
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 591
+  },
+  {
+   "file": "swissimage_2019_2682-1247_2m.geojson",
+   "bounds_wgs84": [
+    8.522267,
+    47.366614,
+    8.53969,
+    47.379732
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 591
+  },
+  {
+   "file": "swissimage_2021_2621-1202_2m.geojson",
+   "bounds_wgs84": [
+    7.712582,
+    46.966711,
+    7.729771,
+    46.979738
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 75
+  },
+  {
+   "file": "namchi_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.353384,
+    27.158026,
+    88.369624,
+    27.172975
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 1519
+  },
+  {
+   "file": "chungthang_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.637346,
+    27.595517,
+    88.653663,
+    27.61049
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 238
+  },
+  {
+   "file": "teesta_east_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.397573,
+    27.17242,
+    88.41382,
+    27.187372
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 480
+  },
+  {
+   "file": "teesta_west_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.310385,
+    27.144429,
+    88.32662,
+    27.159374
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 556
+  },
+  {
+   "file": "chungthang_west_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.610346,
+    27.623816,
+    88.626664,
+    27.638786
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 93
+  },
+  {
+   "file": "north_sikkim_alpine_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.287344,
+    27.900827,
+    88.303664,
+    27.915772
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 0
+  },
+  {
+   "file": "islahiye_before_2022-12-27_0.5m.geojson",
+   "bounds_wgs84": [
+    36.622093,
+    37.018462,
+    36.639909,
+    37.03354
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 2229
+  },
+  {
+   "file": "islahiye_after_2023-02-07_0.5m.geojson",
+   "bounds_wgs84": [
+    36.622093,
+    37.018462,
+    36.639909,
+    37.03354
+   ],
+   "source": "Microsoft Global ML Building Footprints",
+   "licence": "ODbL 1.0 (c) Microsoft",
+   "count": 2229
+  }
+ ]
+}

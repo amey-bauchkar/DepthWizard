@@ -60,7 +60,7 @@ def system(request: Request):
 
 
 @router.post("/api/jobs", status_code=201)
-async def create_job(request: Request, file: UploadFile = File(...), dem: UploadFile | None = File(None), anchors: UploadFile | None = File(None), dem_vertical_crs: str = Form("EGM2008")):
+async def create_job(request: Request, file: UploadFile = File(...), dem: UploadFile | None = File(None), anchors: UploadFile | None = File(None), footprints: UploadFile | None = File(None), dem_vertical_crs: str = Form("EGM2008")):
     """Create a job from an image (PNG/JPEG -> Mode A; GeoTIFF -> Mode B). Optional: user DEM GeoTIFF (+ its vertical CRS) and an anchors CSV (id,x,y,z,type[,sigma])."""
     mgr = _mgr(request)
     if not file.filename:
@@ -82,6 +82,14 @@ async def create_job(request: Request, file: UploadFile = File(...), dem: Upload
         adata = await anchors.read()
         if adata:
             mgr.attach_extra(job.job_id, "anchors", anchors.filename, adata)
+    if footprints is not None and footprints.filename:
+        fdata = await footprints.read()
+        if fdata:
+            try:
+                json.loads(fdata)
+            except ValueError as e:
+                raise InvalidFileError(f"building footprints must be GeoJSON: {e}") from e
+            mgr.attach_extra(job.job_id, "footprints", footprints.filename, fdata)
     return mgr.get(job.job_id).to_dict()
 
 

@@ -133,6 +133,11 @@ class Settings(BaseModel):
         return Path(os.environ.get("DW_DEM_DIR", REPO_ROOT / self.calib.dem_dir))
 
     @property
+    def footprints_dir(self) -> Path:
+        """Bundled open building footprints (assets/footprints/index.json, scripts/fetch_building_footprints.py)."""
+        return Path(os.environ.get("DW_FOOTPRINTS_DIR", REPO_ROOT / "assets" / "footprints"))
+
+    @property
     def proj_grids_dir(self) -> Path:
         return Path(os.environ.get("DW_PROJ_GRIDS", REPO_ROOT / "assets" / "proj"))
 

@@ -119,6 +119,8 @@ def extract_lod1_buildings(
     simplify_tol_m: float = 1.0,
     return_labels: bool = False,
     transform: Any = None,
+    footprints: tuple[np.ndarray, dict[int, list[tuple[float, float]]]] | None = None,
+    object_filter: bool = True,
 ) -> dict[str, Any]:
     """Extract LoD-1 buildings — one clean block per building.
 
@@ -128,6 +130,10 @@ def extract_lod1_buildings(
       3. Vectorize all components in a single pass
       4. Sample exact roof height & base elevation per building using fast bounding slices
       5. Simplify polygon + map to centered scene coordinates
+
+    footprints=(labels, {id: outer ring in pixel coordinates}) (core.terrain.footprints.to_labels) replaces steps 1-2:
+    the outlines come from a footprint dataset and only the heights from the nDSM. Without footprints, detected
+    candidates are scored by the object filter (core.terrain.building_filter) and trees / rock are dropped.
 
     With return_labels=True the result also carries "_labels": an int32 raster where pixel value k is building id k
     (0 = none). It is the exact pixel set every per-building statistic is computed on; callers must pop it before
@@ -141,6 +147,12 @@ def extract_lod1_buildings(
     pixel_area_m2 = abs(tr.a * tr.e - tr.b * tr.d)
     min_area_px = max(4, int(round(min_area_m2 / max(pixel_area_m2, 1e-6))))
     max_area_m2 = 50000.0
+
+    filter_report: dict[str, Any] | None = None
+    if footprints is not None:
+        return _finish(footprints[0], {k: v + [v[0]] for k, v in footprints[1].items()}, ndsm, terrain, tr, pixel_area_m2, gsd_m, H, W,
+                       min_height_m=min_height_m, min_area_m2=min_area_m2, max_area_m2=max_area_m2, simplify_tol_m=0.0,
+                       max_buildings=10 ** 9, return_labels=return_labels, segmentation_method="reference_footprints", gate_height=False, dedupe=False)
 
     # ── Step 1: Build unified building mask ───────────────────────────────
     if rgb is not None:
@@ -180,9 +192,14 @@ def extract_lod1_buildings(
     # ── Step 2: Separate touching buildings via watershed ─────────────────
     labeled, n_components = _separate_building_instances(clean, ndsm, gsd_m=gsd_m)
     log.info("Building instances separated via watershed: %d", n_components)
+    if object_filter and rgb is not None and labeled.max() > 0:
+        from core.terrain.building_filter import filter_labels
 
-    # Fast spatial slice precomputation for per-building height & terrain sampling
-    slices = find_objects(labeled)
+        labeled, filter_report = filter_labels(labeled, rgb, ndsm, gsd_m)
+        if filter_report.get("applied"):
+            segmentation_method += f"+object_filter_{filter_report['model']}"
+            log.info("Object filter kept %d of %d candidates", filter_report["kept"], filter_report["candidates"])
+            filter_report = {k: v for k, v in filter_report.items() if k != "probability"}
 
     # ── Step 3: Vectorize ALL components at once ──────────────────────────
     shapes_gen = rasterio.features.shapes(
@@ -209,13 +226,26 @@ def extract_lod1_buildings(
             best_per_label[val] = (geom, area_px)
 
     log.info("Unique building labels with valid polygons: %d", len(best_per_label))
+    out = _finish(labeled, {k: g["coordinates"][0] for k, (g, _a) in best_per_label.items()}, ndsm, terrain, tr, pixel_area_m2, gsd_m, H, W,
+                  min_height_m=min_height_m, min_area_m2=min_area_m2, max_area_m2=max_area_m2, simplify_tol_m=simplify_tol_m,
+                  max_buildings=max_buildings, return_labels=return_labels, segmentation_method=segmentation_method, gate_height=True, dedupe=True)
+    if filter_report:
+        out["object_filter"] = filter_report
+    return out
 
+
+def _finish(labeled: np.ndarray, rings: dict[int, list], ndsm: np.ndarray, terrain: np.ndarray, tr: Any, pixel_area_m2: float, gsd_m: float, H: int, W: int, *,
+            min_height_m: float, min_area_m2: float, max_area_m2: float, simplify_tol_m: float, max_buildings: int, return_labels: bool,
+            segmentation_method: str, gate_height: bool, dedupe: bool) -> dict[str, Any]:
+    """Per-building statistics + scene-coordinate polygons for labelled footprints (detected or from a dataset)."""
+    from scipy.ndimage import find_objects
+
+    slices = find_objects(labeled)
     buildings: list[dict[str, Any]] = []
     extent_x = (W - 1) * gsd_m
     extent_y = (H - 1) * gsd_m
 
-    for val, (geom, _ring_area_px) in best_per_label.items():
-        coords = geom["coordinates"][0]
+    for val, coords in rings.items():
         pts_col = np.array([p[0] for p in coords])
         pts_row = np.array([p[1] for p in coords])
         sl = slices[val - 1] if val - 1 < len(slices) else None
@@ -229,19 +259,21 @@ def extract_lod1_buildings(
             continue
         sub_ndsm = ndsm[sl]
         det_h = sub_ndsm[sub_mask & np.isfinite(sub_ndsm)]
-        # detection gate (segmentation rule, unchanged by the audit): the upper roof level must clear min_height_m
-        if det_h.size == 0 or float(np.percentile(det_h, 85)) < min_height_m:
+        low = det_h.size == 0 or float(np.percentile(det_h, 85)) < min_height_m
+        # detection gate (segmentation rule): the upper roof level must clear min_height_m. A footprint from a dataset
+        # is a known building: it is kept and flagged when the model sees it lower than that.
+        if det_h.size == 0 or (gate_height and low):
             continue
         touches = sl[0].start == 0 or sl[1].start == 0 or sl[0].stop == H or sl[1].stop == W
         st = footprint_stats(sub_ndsm, terrain[sl], sub_mask, transform=tr, row0=sl[0].start, col0=sl[1].start, touches_edge=touches)
         if st is None:
             continue
+        if low:
+            st["quality_flags"] = list(st.get("quality_flags", [])) + ["LOW_PREDICTED_HEIGHT"]
 
         # ── Simplify polygon ─────────────────────────────────────────
-        simplified = rdp_simplify(
-            [[float(p[0]), float(p[1])] for p in coords],
-            epsilon=simplify_tol_m / gsd_m,
-        )
+        ring = [[float(p[0]), float(p[1])] for p in coords]
+        simplified = rdp_simplify(ring, epsilon=simplify_tol_m / gsd_m) if simplify_tol_m > 0 else ring
         if len(simplified) < 4:
             continue
 
@@ -276,7 +308,7 @@ def extract_lod1_buildings(
     # ── Step 5: Deduplicate courtyard hole polygons & contained fragments ──
     # Watershed labels are disjoint, but outer rings ignore holes: a block inside a courtyard overlaps the filled
     # outer polygon. Candidate pairs come from a vectorised bbox test; only those are rasterised and compared.
-    if len(buildings) > 1:
+    if dedupe and len(buildings) > 1:
         try:
             from PIL import Image, ImageDraw
 

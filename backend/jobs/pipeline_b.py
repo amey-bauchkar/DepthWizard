@@ -12,6 +12,7 @@ Outputs (all on the job grid, GeoTIFFs with provenance tags):
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -189,7 +190,7 @@ def _ground_from_surface(dsm: np.ndarray, gsd_m: float, window_m: float) -> np.n
     return ndimage.gaussian_filter(ndimage.grey_opening(z, size=(w, w)), w / 4.0).astype(np.float32)
 
 
-def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: np.ndarray, prov: dict[str, Any], settings: Settings, log: JobLogger, *, tiled: TiledPrediction | None = None, user_dem: Path | None = None, user_dem_vcrs: str = "EGM2008", anchors_path: Path | None = None) -> dict[str, Any]:
+def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: np.ndarray, prov: dict[str, Any], settings: Settings, log: JobLogger, *, tiled: TiledPrediction | None = None, user_dem: Path | None = None, user_dem_vcrs: str = "EGM2008", anchors_path: Path | None = None, footprints_path: Path | None = None) -> dict[str, Any]:
     t0 = time.perf_counter()
     c = settings.calib
     grid = ing.grid
@@ -353,9 +354,29 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
         # LoD-1 building blocks (visualisation; heights sampled from ndsm, bases from terrain)
         if detail_t is not None:
             try:
+                from core.terrain import footprints as fpm
                 from core.terrain.lod1 import extract_lod1_buildings, save_lod1_buildings
 
-                lod1_data = extract_lod1_buildings(ndsm, terrain, rgb=ing.rgb, gsd_m=gsd_m, transform=grid.transform, return_labels=True)
+                # outlines: an uploaded footprint GeoJSON > bundled open footprints covering the scene > detection
+                fp, fp_info = None, None
+                if footprints_path is not None and footprints_path.exists():
+                    rings, rcrs = fpm.load_geojson(footprints_path)
+                    fp_info = {"source": "uploaded footprints", "file": footprints_path.name, "licence": "as supplied by the user"}
+                else:
+                    hit = fpm.discover(bounds, settings.footprints_dir)
+                    if hit is not None:
+                        rings, rcrs = fpm.load_geojson(hit[0])
+                        fp_info = {"source": hit[1]["source"], "file": hit[1]["file"], "licence": hit[1]["licence"], "coverage": hit[1]["coverage"]}
+                if fp_info is not None:
+                    fp = fpm.to_labels(rings, rcrs, grid.transform, grid.crs, (grid.height, grid.width))
+                    reg = fpm.coregister(fp[0], ing.rgb, ndsm, gsd_m)  # outlines from other imagery can sit metres off the roofs
+                    if reg["applied"]:
+                        fp = fpm.to_labels(rings, rcrs, fpm.shifted(grid.transform, reg), grid.crs, (grid.height, grid.width))
+                    fp_info["coregistration"] = reg
+                lod1_data = extract_lod1_buildings(ndsm, terrain, rgb=ing.rgb, gsd_m=gsd_m, transform=grid.transform, return_labels=True, footprints=fp,
+                                                   object_filter=os.environ.get("DW_LOD1_OBJECT_FILTER", "1") != "0")  # "0": raw detector (building study)
+                lod1_data["footprints"] = fp_info or {"source": "detected from the image (RGB + nDSM rules, object filter)",
+                                                      "note": "approximate: tree crowns and rock can still be counted as buildings, and small houses missed; see docs/building_detection_validation.md"}
                 labels = lod1_data.pop("_labels")
                 # exact footprint pixel sets (value = building id): hazard screening intersects these, not polygons
                 write_raster(job_dir / "building_labels.tif", labels, Grid(grid.width, grid.height, grid.transform, grid.crs, "int32", 0, "relative", False, None, tier.tier), {"OUTPUT_QUANTITY": "building_id", "NOTE": "0 = no building; ids match buildings.json"}, dtype="int32")

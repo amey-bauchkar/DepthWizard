@@ -125,6 +125,14 @@
                   &nbsp;<button class="linkbtn" id="anchors-clear">clear</button>
                 </span>
               </div>
+              <div class="optrow">
+                <label>
+                  <strong>Building footprints (GeoJSON)</strong>
+                  <input id="fp-input" type="file" accept=".geojson,.json" />
+                </label>
+                <span class="hint">optional outlines, e.g. from Bhuvan, OpenStreetMap or Google Open Buildings. Without them, bundled Microsoft footprints are used where they cover the scene; otherwise buildings are detected from the image (approximate).
+                  &nbsp;<button class="linkbtn" id="fp-clear">clear</button></span>
+              </div>
               <div id="opt-summary" class="hint"></div>
             </details>
 

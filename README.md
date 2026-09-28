@@ -74,7 +74,8 @@ In the app, the six Sikkim scenes are one-click demos. **Validate vs checkpoints
   * **Scene summary:** building counts per height class, total footprint and total volume.
   * **Interaction:** filter by height and footprint; click a row to fly the 3D view to that building, or click a building in 3D to select it.
   * **Export:** GeoJSON (opens in QGIS) or CSV (`/api/jobs/{id}/buildings[.geojson|.csv]`).
-  * **Limit:** footprints come from a rule-based RGB + nDSM mask, so on forested hills some tree clusters are counted as buildings.
+  * **Outlines** come from open building footprints where they cover the scene (bundled Microsoft ML footprints for the demos, or your own GeoJSON upload, e.g. Bhuvan / OSM), co-registered to the image. Heights always come from the DepthWizard nDSM. Without footprints, buildings are detected from the image and labelled approximate.
+  * **Measured** in [docs/building_detection_validation.md](docs/building_detection_validation.md). The old detector's blocks on rural Sikkim were 97 % trees and rock; footprints fixed the counts (Teesta east 2,968 → 305). Building heights on Zürich: RMSE 3.3 m vs LiDAR. Small rural houses in Sikkim are read too low (a model limit, flagged per building).
 * **CartoDEM (ISRO/NRSC)** is preferred over Copernicus in India. Put the Bhuvan tiles into `assets/dem/cartodem/` (see its README).
   * Whether its heights are geoid or ellipsoidal is decided automatically, by comparison with Copernicus.
   * If neither fits, CartoDEM is refused for that scene and the reason is reported, rather than risking a silent 40–90 m datum error.
@@ -99,7 +100,7 @@ The **Share & export** card on every result has two buttons:
 
 This compares two processed images of the same place at two dates. It aligns them automatically and measures the noise of the pair to set its thresholds. It then flags buildings with **major height loss** (consistent with collapse), height loss or gain, with a swipe view, an overlay, a table that links to the 3D view, and GeoTIFF / GeoJSON / CSV downloads.
 
-The demo is **Islahiye, Türkiye (earthquake of 6 Feb 2023)**, with Maxar pre- and post-event images: `python scripts/fetch_change_demo.py`. Of 2,429 buildings, 69 were flagged "major height loss". In a random visual audit of 24 flags, 19 were collapsed buildings, 2 uncertain and 3 false alarms (tree canopies); **precision is about 80–88%**. Recall is not measured. See [docs/change_screening.md](docs/change_screening.md). It is labelled a screening, never a damage grading.
+The demo is **Islahiye, Türkiye (earthquake of 6 Feb 2023)**, with Maxar pre- and post-event images: `python scripts/fetch_change_demo.py`. Of 1,432 buildings (Microsoft footprints), 37 were flagged "major height loss". In a random visual audit of 24 flags, 17 were collapsed, 3–4 uncertain and 3–4 still standing; **precision is about 71–88%**. Recall is not measured. See [docs/change_screening.md](docs/change_screening.md). It is labelled a screening, never a damage grading.
 
 ## How Mode B produces metres
 
@@ -176,7 +177,7 @@ After setup, **`start_depthwizard.bat`** (Windows) or **`./start_depthwizard.sh`
 | `GET` | `/health` | status, model name / hash / device |
 | `GET` | `/api/system` | versions (GDAL, PROJ, torch), configuration, geoid grids, DEM tiles, mode semantics |
 | `GET` | `/api/demo` | bundled demo inputs and LiDAR references |
-| `POST` | `/api/jobs` | create a job: multipart `file` (+ optional `dem` GeoTIFF with `dem_vertical_crs`, `anchors` CSV) |
+| `POST` | `/api/jobs` | create a job: multipart `file` (+ optional `dem` GeoTIFF with `dem_vertical_crs`, `anchors` CSV, `footprints` GeoJSON) |
 | `POST` | `/api/jobs/{id}/run` | run the pipeline (UPLOADED → PREPROCESSING → INFERENCE → CALIBRATION / RASTERIZING → READY) |
 | `GET` | `/api/jobs/{id}` · `/result` · `/metadata` | status and stage timings · result manifest (mode, tier, quality, datum, layers) · provenance |
 | `GET` | `/api/jobs/{id}/artifact/{name}` | `dsm.tif`, `terrain.tif`, `ndsm.tif`, `dem.tif`, `slope.tif`, `aspect.tif`, `flags.tif`, `relative.tif`, `rdsm.tif`, `buildings.json`, heightfields, previews, `log.jsonl` |

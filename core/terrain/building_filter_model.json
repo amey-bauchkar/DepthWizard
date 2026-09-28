@@ -1,0 +1,284 @@
+{
+ "mean": [
+  -0.00431702003471151,
+  0.3197909986186641,
+  0.19158229548570152,
+  82.66911712208882,
+  0.2895309022705229,
+  8.677549429022019,
+  0.03560138468205087,
+  -0.03541752176468146,
+  11.00228387129744,
+  0.20115858560559888,
+  0.813724721920772,
+  4.4351429978339025,
+  0.8367142807594522,
+  0.6060154589769844,
+  0.4306347645417255,
+  0.19510639785130113
+ ],
+ "scale": [
+  0.03460599636417443,
+  0.2221291465230235,
+  0.09638943970938983,
+  33.75775481062934,
+  0.1465017864580749,
+  4.043148088329429,
+  0.0596392345409727,
+  0.05050219994134358,
+  5.66920612955657,
+  0.16146338790787745,
+  0.6836558573976678,
+  1.050167636758468,
+  0.09202247156452852,
+  0.10105275311273287,
+  0.2707066742217013,
+  0.26876455764298746
+ ],
+ "coef": [
+  -1.0626428562656425,
+  0.4148739638960632,
+  -0.29252462098680976,
+  1.8667151550527357,
+  1.1414224251537486,
+  0.5421856410078675,
+  -0.6352358902864507,
+  -0.21421325829712973,
+  0.034316205479109796,
+  -0.45334462046219975,
+  0.3344111368712054,
+  0.7384264282742818,
+  0.12046914575684549,
+  0.20314246155205115,
+  -0.04548592553921001,
+  0.16749024607448806
+ ],
+ "intercept": -1.0413128164554943,
+ "threshold": 0.5,
+ "features": [
+  "exg_med",
+  "green_frac",
+  "sat_med",
+  "bright_med",
+  "bright_cv",
+  "texture",
+  "rg_med",
+  "bg_med",
+  "h_med",
+  "h_flat",
+  "h_grad",
+  "log_area",
+  "solidity",
+  "rect_fill",
+  "elong",
+  "dark_frac"
+ ],
+ "version": "bf-1.0",
+ "trained_on": [
+  "namchi",
+  "chungthang",
+  "teesta_east",
+  "teesta_west",
+  "chungthang_west",
+  "north_sikkim_alpine",
+  "zurich",
+  "islahiye"
+ ],
+ "reference": "Microsoft Global ML Building Footprints (ODbL)",
+ "protocol": "logistic regression on standardised object features; labels = overlap with reference footprints (>= 50 % building, <= 10 % not)",
+ "leave_one_scene_out": {
+  "namchi": {
+   "before_filter": {
+    "objects": 2933,
+    "reference_footprints": 1039,
+    "building_area_ha": 60.38,
+    "reference_area_ha": 20.19,
+    "area_precision": 0.338,
+    "area_recall": 0.788,
+    "area_f1": 0.473,
+    "footprints_found": 822,
+    "footprint_recall": 0.791
+   },
+   "after_filter_held_out": {
+    "objects": 915,
+    "reference_footprints": 1039,
+    "building_area_ha": 31.77,
+    "reference_area_ha": 20.19,
+    "area_precision": 0.599,
+    "area_recall": 0.75,
+    "area_f1": 0.666,
+    "footprints_found": 748,
+    "footprint_recall": 0.72
+   }
+  },
+  "chungthang": {
+   "before_filter": {
+    "objects": 1657,
+    "reference_footprints": 238,
+    "building_area_ha": 14.47,
+    "reference_area_ha": 2.41,
+    "area_precision": 0.128,
+    "area_recall": 0.658,
+    "area_f1": 0.214,
+    "footprints_found": 179,
+    "footprint_recall": 0.752
+   },
+   "after_filter_held_out": {
+    "objects": 273,
+    "reference_footprints": 238,
+    "building_area_ha": 4.56,
+    "reference_area_ha": 2.41,
+    "area_precision": 0.289,
+    "area_recall": 0.467,
+    "area_f1": 0.357,
+    "footprints_found": 120,
+    "footprint_recall": 0.504
+   }
+  },
+  "teesta_east": {
+   "before_filter": {
+    "objects": 2968,
+    "reference_footprints": 313,
+    "building_area_ha": 28.62,
+    "reference_area_ha": 2.05,
+    "area_precision": 0.023,
+    "area_recall": 0.277,
+    "area_f1": 0.042,
+    "footprints_found": 105,
+    "footprint_recall": 0.335
+   },
+   "after_filter_held_out": {
+    "objects": 77,
+    "reference_footprints": 313,
+    "building_area_ha": 1.5,
+    "reference_area_ha": 2.05,
+    "area_precision": 0.108,
+    "area_recall": 0.071,
+    "area_f1": 0.086,
+    "footprints_found": 24,
+    "footprint_recall": 0.077
+   }
+  },
+  "teesta_west": {
+   "before_filter": {
+    "objects": 2926,
+    "reference_footprints": 304,
+    "building_area_ha": 51.74,
+    "reference_area_ha": 2.03,
+    "area_precision": 0.025,
+    "area_recall": 0.468,
+    "area_f1": 0.048,
+    "footprints_found": 164,
+    "footprint_recall": 0.539
+   },
+   "after_filter_held_out": {
+    "objects": 82,
+    "reference_footprints": 304,
+    "building_area_ha": 3.77,
+    "reference_area_ha": 2.03,
+    "area_precision": 0.161,
+    "area_recall": 0.241,
+    "area_f1": 0.193,
+    "footprints_found": 63,
+    "footprint_recall": 0.207
+   }
+  },
+  "chungthang_west": {
+   "before_filter": {
+    "objects": 2857,
+    "reference_footprints": 69,
+    "building_area_ha": 22.2,
+    "reference_area_ha": 0.65,
+    "area_precision": 0.017,
+    "area_recall": 0.508,
+    "area_f1": 0.032,
+    "footprints_found": 34,
+    "footprint_recall": 0.493
+   },
+   "after_filter_held_out": {
+    "objects": 163,
+    "reference_footprints": 69,
+    "building_area_ha": 1.2,
+    "reference_area_ha": 0.65,
+    "area_precision": 0.122,
+    "area_recall": 0.207,
+    "area_f1": 0.153,
+    "footprints_found": 12,
+    "footprint_recall": 0.174
+   }
+  },
+  "north_sikkim_alpine": {
+   "before_filter": {
+    "objects": 194,
+    "reference_footprints": 0,
+    "building_area_ha": 13.28,
+    "reference_area_ha": 0.0,
+    "area_precision": 0.0,
+    "area_recall": null,
+    "area_f1": null,
+    "footprints_found": 0,
+    "footprint_recall": null
+   },
+   "after_filter_held_out": {
+    "objects": 188,
+    "reference_footprints": 0,
+    "building_area_ha": 13.25,
+    "reference_area_ha": 0.0,
+    "area_precision": 0.0,
+    "area_recall": null,
+    "area_f1": null,
+    "footprints_found": 0,
+    "footprint_recall": null
+   }
+  },
+  "zurich": {
+   "before_filter": {
+    "objects": 1961,
+    "reference_footprints": 289,
+    "building_area_ha": 40.4,
+    "reference_area_ha": 35.8,
+    "area_precision": 0.8,
+    "area_recall": 0.909,
+    "area_f1": 0.851,
+    "footprints_found": 275,
+    "footprint_recall": 0.952
+   },
+   "after_filter_held_out": {
+    "objects": 1050,
+    "reference_footprints": 289,
+    "building_area_ha": 28.19,
+    "reference_area_ha": 35.8,
+    "area_precision": 0.85,
+    "area_recall": 0.695,
+    "area_f1": 0.764,
+    "footprints_found": 231,
+    "footprint_recall": 0.799
+   }
+  },
+  "islahiye": {
+   "before_filter": {
+    "objects": 2429,
+    "reference_footprints": 1435,
+    "building_area_ha": 49.85,
+    "reference_area_ha": 33.78,
+    "area_precision": 0.631,
+    "area_recall": 0.847,
+    "area_f1": 0.723,
+    "footprints_found": 1308,
+    "footprint_recall": 0.911
+   },
+   "after_filter_held_out": {
+    "objects": 1973,
+    "reference_footprints": 1435,
+    "building_area_ha": 46.75,
+    "reference_area_ha": 33.78,
+    "area_precision": 0.661,
+    "area_recall": 0.835,
+    "area_f1": 0.738,
+    "footprints_found": 1279,
+    "footprint_recall": 0.891
+   }
+  }
+ },
+ "created": "2026-09-28T13:43:05"
+}

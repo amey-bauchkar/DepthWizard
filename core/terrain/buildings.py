@@ -96,7 +96,14 @@ def summary(data: dict[str, Any], recs: list[dict[str, Any]]) -> dict[str, Any]:
     hs = sorted(r["height_m"] for r in recs)
     method = "pixelwise" if any("volume_m3" in b for b in data.get("buildings", [])) else "legacy (area x median height; reprocess the job)"
     classes = {"low_lt10m": sum(h < 10 for h in hs), "mid_10_25m": sum(10 <= h < 25 for h in hs), "high_ge25m": sum(h >= 25 for h in hs)}
+    allb = data.get("buildings", [])  # all buildings, not the filtered table: the warning must not hide behind a height filter
+    low = sum("LOW_PREDICTED_HEIGHT" in (b.get("quality_flags") or []) for b in allb)
+    notes_extra = []
+    if allb and low / len(allb) >= 0.25:
+        notes_extra.append(f"{low} of {len(allb)} buildings ({100 * low / len(allb):.0f} %) are read below 2.2 m by the model although the footprint says a building is there: "
+                           "small rural buildings are under-read (the model was trained on Swiss / US buildings), so treat their heights as lower bounds.")
     return {
+        "low_height_buildings": low,
         "count_total": data.get("count", len(data.get("buildings", []))),
         "count_filtered": len(recs),
         "height_classes": classes,
@@ -107,9 +114,10 @@ def summary(data: dict[str, Any], recs: list[dict[str, Any]]) -> dict[str, Any]:
         "height_error": data.get("height_error"),
         "vertical_reference": data.get("vertical_reference"),
         "segmentation_method": data.get("segmentation_method"),
+        "footprints": data.get("footprints"),
         "stats_method": method,
         "quantity_category": QUANTITY_CATEGORY,
-        "notes": [
+        "notes": notes_extra + [
             "height = typical roof height = median of the model's nDSM over the footprint pixels; p10-p90 shows the spread (a wide spread means several roof levels or a pitched roof).",
             "volume = integral of the nDSM over the footprint (sum h_i x cell area); the 3D block height is volume / area, so the extruded block has exactly this volume.",
             "roof elevation is the median of (terrain + nDSM) per pixel, so it stays correct on sloped ground.",
