@@ -16,7 +16,7 @@ import rasterio
 from pyproj import Transformer
 
 from backend.config.settings import Settings
-from backend.errors import DepthWizardError, InvalidFileError, JobStateError
+from backend.errors import InvalidFileError, JobStateError
 from core.dsm.derive import FLAG_BITS
 from core.geo.grid import Grid
 from core.validate.harness import ReferenceSpec, run_validation
@@ -142,9 +142,15 @@ def sample(job_dir: Path, result: dict[str, Any], x: float, y: float, crs: str =
 
 def measure(job_dir: Path, result: dict[str, Any], points: list[dict[str, float]], crs: str = "pixel") -> dict[str, Any]:
     """Two-or-more-point measurement: per-point samples + horizontal distance (metres when metric grid) + dz."""
-    if len(points) < 2:
+    if not isinstance(points, list) or len(points) < 2:
         raise InvalidFileError("need at least two points")
-    samples = [sample(job_dir, result, float(p["x"]), float(p["y"]), crs) for p in points]
+    try:
+        xy = [(float(p["x"]), float(p["y"])) for p in points]
+    except (TypeError, KeyError, ValueError) as e:
+        raise InvalidFileError('points must be a list of {"x": number, "y": number}', user_message='Points must be given as {"x": ..., "y": ...}.') from e
+    if not all(math.isfinite(v) for pt in xy for v in pt):
+        raise InvalidFileError("point coordinates must be finite numbers")
+    samples = [sample(job_dir, result, x, y, crs) for x, y in xy]
     segs = []
     metric_h = bool(result.get("metric_horizontal")) or result.get("mode") == "B"
     for a, b in zip(samples[:-1], samples[1:]):
@@ -197,7 +203,7 @@ def validate_job(job_dir: Path, result: dict[str, Any], ref_path: Path, ref_type
         baseline = dm[0].astype(np.float64)
         if dm[2] is not None:
             baseline[baseline == dm[2]] = np.nan
-    grid = Grid(width=grid.width, height=grid.height, transform=grid.transform, crs=grid.crs, dtype="float32", nodata=nodata, units="m", metric=True, vertical_reference=result.get("vertical_reference"), tier=result.get("calibration_tier"))
+    grid = Grid(width=grid.width, height=grid.height, transform=grid.transform, crs=grid.crs, dtype="float32", nodata=nodata, units="metres", metric=True, vertical_reference=result.get("vertical_reference"), tier=result.get("calibration_tier"))
     t0 = time.perf_counter()
     try:
         vr = run_validation(job_dir, grid, pred, ReferenceSpec(str(ref_path), ref_type, vertical_crs, source_note, acquisition_date), out_vcrs=result.get("vertical_reference") or "EGM2008", ndsm=ndsm, anchors_xy=anchors_xy, exclusion_radius_m=settings.validation.anchor_exclusion_radius_m, border_px=settings.validation.border_px, max_shift_px=settings.validation.max_shift_px, baseline=baseline)

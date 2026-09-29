@@ -1,20 +1,24 @@
-# DepthWizard — runtime dependencies. Verified together on Windows 11 / CPython 3.12.14 (2026-09-21) and CPython 3.14.0 (2026-09-26), CPU.
+# DepthWizard — runtime dependencies. These exact versions pass the full test suite together on Windows 11 / CPython 3.14.0, CPU (re-pinned 2026-09-28 from the tested environment).
 # torch/torchvision: install from the PyTorch index matching your hardware, e.g.
-#   pip install torch==2.14.0 torchvision==0.29.0 --index-url https://download.pytorch.org/whl/cpu
-torch==2.14.0
-torchvision==0.29.0
-numpy==2.5.2
-scipy==1.18.1
+#   pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cpu
+torch==2.11.0
+torchvision==0.26.0
+numpy==2.4.4
+scipy==1.17.1
 scikit-image==0.26.0
 rasterio==1.5.1
 pyproj==3.8.0
 affine==3.0.1
-pillow==12.3.0
+pillow==12.2.0
 fastapi==0.141.1
-uvicorn[standard]==0.53.0
+uvicorn[standard]==0.52.1
 starlette==1.6.0
-pydantic==2.13.5
-pydantic-settings==2.15.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
 python-multipart==0.0.32
 PyYAML==6.0.3
 safetensors==0.8.0
+# hazard screening, road access, damage report, Sentinel-2 access
+networkx==3.6.1
+matplotlib==3.10.8
+requests==2.33.1

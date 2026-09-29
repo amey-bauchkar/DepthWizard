@@ -1,7 +1,6 @@
 """Unit tests for the new zero-compromise metric training pipeline modules."""
 from __future__ import annotations
 
-import numpy as np
 import torch
 import pytest
 

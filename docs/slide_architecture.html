@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DepthWizard — Technical Approach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #06080f;
+    --surface: rgba(13, 18, 35, 0.95);
+    --border: rgba(255,255,255,0.07);
+    --blue: #38bdf8;
+    --green: #10d48e;
+    --amber: #f59e0b;
+    --purple: #a78bfa;
+    --rose: #f43f5e;
+    --slate: #94a3b8;
+    --white: #f1f5f9;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse 80% 60% at 50% -5%, rgba(56,189,248,0.08) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 40% at 90% 95%, rgba(167,139,250,0.06) 0%, transparent 50%);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .slide {
+    width: 1360px;
+    max-width: 97vw;
+    aspect-ratio: 16/9;
+    background: #080c18;
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 20px;
+    overflow: hidden;
+    position: relative;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    box-shadow: 0 40px 100px -20px rgba(0,0,0,0.9);
+  }
+
+  /* Subtle grid texture */
+  .slide::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 44px 44px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px 14px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    z-index: 2;
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .logo-dot {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, #38bdf8, #10d48e);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    box-shadow: 0 0 20px rgba(56,189,248,0.4);
+    flex-shrink: 0;
+  }
+  .header-title h1 {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+    color: var(--white);
+  }
+  .header-title p {
+    font-size: 11.5px;
+    color: var(--slate);
+    margin-top: 1px;
+  }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .badge {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 4px 11px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+  }
+  .badge-isro {
+    background: rgba(56,189,248,0.1);
+    border: 1px solid rgba(56,189,248,0.25);
+    color: #7dd3fc;
+  }
+  .badge-sih {
+    background: rgba(245,158,11,0.1);
+    border: 1px solid rgba(245,158,11,0.25);
+    color: #fde68a;
+  }
+
+  /* ── MAIN FLOW ── */
+  .flow-body {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    padding: 14px 24px;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  /* Each stage column */
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  /* Stage header label */
+  .stage-label {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--slate);
+    margin-bottom: 8px;
+    text-align: center;
+  }
+
+  /* Node card */
+  .node {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 11px 13px;
+    text-align: center;
+    position: relative;
+    transition: transform 0.2s;
+    cursor: default;
+  }
+  .node:hover { transform: translateY(-3px); }
+
+  .node-icon { font-size: 20px; margin-bottom: 4px; }
+  .node-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--white);
+    line-height: 1.2;
+  }
+  .node-sub {
+    font-size: 9.5px;
+    color: var(--slate);
+    margin-top: 3px;
+    line-height: 1.3;
+  }
+
+  /* Color variants */
+  .node-blue  { border: 1.5px solid rgba(56,189,248,0.4);  box-shadow: 0 0 20px rgba(56,189,248,0.1);  }
+  .node-green { border: 1.5px solid rgba(16,212,142,0.4);  box-shadow: 0 0 20px rgba(16,212,142,0.1);  }
+  .node-amber { border: 1.5px solid rgba(245,158,11,0.45); box-shadow: 0 0 20px rgba(245,158,11,0.12); }
+  .node-purple{ border: 1.5px solid rgba(167,139,250,0.4); box-shadow: 0 0 20px rgba(167,139,250,0.1); }
+  .node-rose  { border: 1.5px solid rgba(244,63,94,0.4);   box-shadow: 0 0 20px rgba(244,63,94,0.1);   }
+  .node-teal  { border: 1.5px solid rgba(20,184,166,0.4);  box-shadow: 0 0 20px rgba(20,184,166,0.1);  }
+
+  /* Top accent stripe */
+  .node-blue::before  { content:''; position:absolute; top:0; left:12px; right:12px; height:2px; background:var(--blue);   border-radius:0 0 4px 4px; }
+  .node-green::before { content:''; position:absolute; top:0; left:12px; right:12px; height:2px; background:var(--green);  border-radius:0 0 4px 4px; }
+  .node-amber::before { content:''; position:absolute; top:0; left:12px; right:12px; height:2px; background:var(--amber);  border-radius:0 0 4px 4px; }
+  .node-purple::before{ content:''; position:absolute; top:0; left:12px; right:12px; height:2px; background:var(--purple); border-radius:0 0 4px 4px; }
+  .node-rose::before  { content:''; position:absolute; top:0; left:12px; right:12px; height:2px; background:var(--rose);   border-radius:0 0 4px 4px; }
+  .node-teal::before  { content:''; position:absolute; top:0; left:12px; right:12px; height:2px; background:#14b8a6;       border-radius:0 0 4px 4px; }
+
+  /* Arrow connector */
+  .arrow {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 0 6px;
+  }
+  .arrow svg { flex-shrink: 0; }
+
+  /* Inputs: stacked vertically */
+  .inputs-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 152px;
+  }
+
+  /* Processing stages: stacked */
+  .proc-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 152px;
+  }
+
+  /* The core fusion box — special */
+  .fusion-box {
+    width: 178px;
+    background: linear-gradient(135deg, rgba(20,20,40,0.9), rgba(15,25,45,0.95));
+    border: 2px solid rgba(245,158,11,0.5);
+    border-radius: 16px;
+    padding: 14px 12px;
+    position: relative;
+    box-shadow: 0 0 40px rgba(245,158,11,0.12), inset 0 1px 0 rgba(255,255,255,0.05);
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .fusion-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--blue), var(--amber), var(--green));
+    border-radius: 16px 16px 0 0;
+  }
+  .fusion-title {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #fbbf24;
+    margin-bottom: 6px;
+  }
+  .fusion-eq {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 800;
+    color: #fff;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: 8px;
+    padding: 5px 8px;
+    margin: 6px 0;
+  }
+  .fusion-sub {
+    font-size: 9px;
+    color: #94a3b8;
+    line-height: 1.4;
+  }
+  .fusion-tier {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .tier-chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid;
+  }
+  .tier-r { background: rgba(100,116,139,0.2); color:#94a3b8; border-color:rgba(100,116,139,0.3); }
+  .tier-h { background: rgba(56,189,248,0.15); color:#7dd3fc; border-color:rgba(56,189,248,0.3); }
+  .tier-t { background: rgba(245,158,11,0.15); color:#fde68a; border-color:rgba(245,158,11,0.3); }
+  .tier-a { background: rgba(16,212,142,0.15); color:#6ee7b7; border-color:rgba(16,212,142,0.3); }
+
+  /* Outputs fan */
+  .outputs-col {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    width: 156px;
+  }
+
+  /* Disaster suite */
+  .disaster-col {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    width: 165px;
+  }
+
+  /* Stage separator visual label */
+  .stage-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* ── BOTTOM RIBBON ── */
+  .footer-ribbon {
+    border-top: 1px solid var(--border);
+    padding: 10px 32px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    position: relative;
+    z-index: 2;
+  }
+  .metric {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    padding: 0 12px;
+    border-right: 1px solid var(--border);
+  }
+  .metric:last-child { border-right: none; }
+  .metric:first-child { padding-left: 0; }
+  .metric-icon-wrap {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+  .m-blue   { background: rgba(56,189,248,0.12); }
+  .m-green  { background: rgba(16,212,142,0.12); }
+  .m-amber  { background: rgba(245,158,11,0.12); }
+  .m-rose   { background: rgba(244,63,94,0.12); }
+  .m-purple { background: rgba(167,139,250,0.12); }
+  .metric-text .val {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--white);
+    line-height: 1;
+  }
+  .metric-text .lbl {
+    font-size: 9.5px;
+    color: var(--slate);
+    margin-top: 2px;
+  }
+
+  /* Animated pulse on fusion box */
+  @keyframes glow-pulse {
+    0%, 100% { box-shadow: 0 0 40px rgba(245,158,11,0.12); }
+    50%       { box-shadow: 0 0 55px rgba(245,158,11,0.25); }
+  }
+  .fusion-box { animation: glow-pulse 3s ease-in-out infinite; }
+
+  /* Animated dashes on arrows */
+  @keyframes dash {
+    to { stroke-dashoffset: -20; }
+  }
+  .animated-dash {
+    stroke-dasharray: 5 5;
+    animation: dash 1.2s linear infinite;
+  }
+
+  /* Small tag labels */
+  .tag {
+    display: inline-block;
+    font-size: 8.5px;
+    font-weight: 700;
+    padding: 1.5px 5px;
+    border-radius: 3px;
+    margin-top: 3px;
+    letter-spacing: 0.3px;
+  }
+  .tag-blue   { background: rgba(56,189,248,0.15);  color:#93c5fd; }
+  .tag-green  { background: rgba(16,212,142,0.15);  color:#6ee7b7; }
+  .tag-amber  { background: rgba(245,158,11,0.15);  color:#fde68a; }
+  .tag-purple { background: rgba(167,139,250,0.15); color:#ddd6fe; }
+  .tag-rose   { background: rgba(244,63,94,0.15);   color:#fca5a5; }
+  .tag-teal   { background: rgba(20,184,166,0.15);  color:#99f6e4; }
+
+  /* Double-head arrows between input nodes */
+  .v-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 8px;
+    color: rgba(255,255,255,0.2);
+    font-size: 10px;
+  }
+
+  /* Problem callout box */
+  .problem-box {
+    width: 152px;
+    background: rgba(244,63,94,0.06);
+    border: 1px dashed rgba(244,63,94,0.3);
+    border-radius: 10px;
+    padding: 7px 9px;
+    margin-top: 6px;
+  }
+  .problem-box .p-title {
+    font-size: 9px;
+    font-weight: 800;
+    color: #fca5a5;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .problem-box .p-text {
+    font-size: 8.5px;
+    color: #94a3b8;
+    line-height: 1.35;
+  }
+
+  /* Section divider lines */
+  .section-divider {
+    position: absolute;
+    top: 58px; bottom: 48px;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.06), transparent);
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    position: fixed;
+    bottom: 14px;
+    display: flex;
+    gap: 8px;
+    z-index: 100;
+  }
+  .tool-btn {
+    background: #1e293b;
+    color: #cbd5e1;
+    border: 1px solid #334155;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.2s;
+  }
+  .tool-btn:hover { background: #334155; color: #fff; }
+
+  @media print {
+    body { background: transparent; padding: 0; }
+    .toolbar { display: none; }
+    .slide { width: 100vw; height: 100vh; max-width: none; border: none; border-radius: 0; aspect-ratio: unset; }
+  }
+</style>
+</head>
+<body>
+
+<div class="slide">
+
+  <!-- ── HEADER ── -->
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-dot">🧭</div>
+      <div class="header-title">
+        <h1>DepthWizard — Technical Approach</h1>
+        <p>From a single 2D satellite image → calibrated 3D digital twin → disaster intelligence</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="badge badge-isro">ISRO · SIH 26175</span>
+      <span class="badge badge-sih">Disaster Management</span>
+    </div>
+  </div>
+
+  <!-- ── MAIN FLOW BODY ── -->
+  <div class="flow-body">
+
+    <!-- ═══ STAGE 1: INPUTS ═══ -->
+    <div class="stage-group">
+      <div class="stage-label">① Inputs</div>
+      <div class="inputs-col">
+
+        <div class="node node-blue" style="width:152px;">
+          <div class="node-icon">🛰️</div>
+          <div class="node-title">Satellite / Drone Image</div>
+          <div class="node-sub">RGB/GeoTIFF · 0.5 m GSD<br>JPG / PNG / TIFF</div>
+          <div style="display:flex;gap:4px;justify-content:center;margin-top:5px;flex-wrap:wrap;">
+            <span class="tag tag-blue">Mode A: Relative</span>
+            <span class="tag tag-green">Mode B: Metric</span>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:center;height:10px;">
+          <svg width="14" height="10" viewBox="0 0 14 10"><path d="M7 0 L7 10" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-dasharray="3 2"/></svg>
+        </div>
+
+        <div class="node node-teal" style="width:152px;">
+          <div class="node-icon">🌍</div>
+          <div class="node-title">Coarse 30m DEM</div>
+          <div class="node-sub">Copernicus GLO-30<br>or user-uploaded DEM</div>
+          <div style="display:flex;gap:4px;justify-content:center;margin-top:5px;flex-wrap:wrap;">
+            <span class="tag tag-teal">EGM2008 Geoid</span>
+          </div>
+        </div>
+
+        <div class="problem-box">
+          <div class="p-title">⚠ The Gap</div>
+          <div class="p-text">Image has no elevation scale. DEM misses all buildings &amp; trees.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Arrow 1 -->
+    <div class="arrow">
+      <svg width="38" height="36" viewBox="0 0 38 36">
+        <line x1="2" y1="18" x2="28" y2="18" stroke="#38bdf8" stroke-width="2" class="animated-dash"/>
+        <polygon points="28,12 38,18 28,24" fill="#38bdf8" opacity="0.9"/>
+      </svg>
+    </div>
+
+    <!-- ═══ STAGE 2: AI PROCESSING ═══ -->
+    <div class="stage-group">
+      <div class="stage-label">② AI Processing</div>
+      <div class="proc-col">
+
+        <div class="node node-green" style="width:152px;">
+          <div class="node-icon">🤖</div>
+          <div class="node-title">Depth Anything V2</div>
+          <div class="node-sub">ViT-S/14 · Fine-tuned on<br>swisstopo LiDAR</div>
+          <div style="display:flex;gap:4px;justify-content:center;margin-top:5px;flex-wrap:wrap;">
+            <span class="tag tag-green">nDSM in metres</span>
+          </div>
+        </div>
+
+        <div style="height:8px;"></div>
+
+        <div class="node node-blue" style="width:152px;">
+          <div class="node-icon">📐</div>
+          <div class="node-title">Geodetic Datum Guard</div>
+          <div class="node-sub">Auto ellipsoid→geoid<br>EGM2008 correction</div>
+          <div style="display:flex;gap:4px;justify-content:center;margin-top:5px;flex-wrap:wrap;">
+            <span class="tag tag-blue">C-1 Guard · PROJ</span>
+          </div>
+        </div>
+
+        <div style="height:8px;"></div>
+
+        <div class="node node-amber" style="width:152px; padding: 9px 11px;">
+          <div class="node-icon">🔢</div>
+          <div class="node-title">Tiled Inference</div>
+          <div class="node-sub">518 px overlapping tiles<br>25% overlap · feather blend</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Arrow 2 -->
+    <div class="arrow">
+      <svg width="38" height="36" viewBox="0 0 38 36">
+        <line x1="2" y1="18" x2="28" y2="18" stroke="#f59e0b" stroke-width="2" class="animated-dash" style="animation-delay:0.3s"/>
+        <polygon points="28,12 38,18 28,24" fill="#f59e0b" opacity="0.9"/>
+      </svg>
+    </div>
+
+    <!-- ═══ STAGE 3: FUSION (CORE) ═══ -->
+    <div class="stage-group">
+      <div class="stage-label">③ TL-CSM Fusion · Core Innovation</div>
+      <div class="fusion-box">
+        <div class="fusion-title">Multiscale Detail Fusion</div>
+
+        <div class="fusion-eq">DSM = Ground + Heights</div>
+
+        <div class="fusion-sub">
+          <b style="color:#e2e8f0;">DEM handles low-frequency</b><br>
+          terrain (≥30 m scale)<br>
+          <b style="color:#e2e8f0;">AI injects high-frequency</b><br>
+          buildings &amp; trees (&lt;30 m)
+        </div>
+
+        <div class="fusion-tier">
+          <span class="tier-chip tier-r">R Relative</span>
+          <span class="tier-chip tier-h">H Height</span>
+          <span class="tier-chip tier-t">T DEM</span>
+          <span class="tier-chip tier-a">A Anchored</span>
+        </div>
+
+        <div style="margin-top:8px;font-size:8.5px;color:#6ee7b7;background:rgba(16,212,142,0.08);border:1px solid rgba(16,212,142,0.2);border-radius:6px;padding:4px 6px;">
+          🛡 No bias added at 30 m · DSM beat the DEM on 3/3 Swiss tiles, 5/6 Sikkim sites
+        </div>
+      </div>
+    </div>
+
+    <!-- Arrow 3 -->
+    <div class="arrow">
+      <svg width="38" height="36" viewBox="0 0 38 36">
+        <line x1="2" y1="18" x2="28" y2="18" stroke="#10d48e" stroke-width="2" class="animated-dash" style="animation-delay:0.6s"/>
+        <polygon points="28,12 38,18 28,24" fill="#10d48e" opacity="0.9"/>
+      </svg>
+    </div>
+
+    <!-- ═══ STAGE 4: OUTPUTS ═══ -->
+    <div class="stage-group">
+      <div class="stage-label">④ 3D Digital Twin</div>
+      <div class="outputs-col">
+
+        <div class="node node-purple" style="width:156px;">
+          <div class="node-icon">🏙️</div>
+          <div class="node-title">3D Terrain + LoD-1 City</div>
+          <div class="node-sub">Extruded buildings · texture drape<br>RTIN adaptive mesh</div>
+        </div>
+
+        <div class="node node-purple" style="width:156px;">
+          <div class="node-icon">🕹️</div>
+          <div class="node-title">Interactive 3D Viewer</div>
+          <div class="node-sub">WASD walk · drone orbit<br>1.7m eye height · collision</div>
+        </div>
+
+        <div class="node node-green" style="width:156px;">
+          <div class="node-icon">📦</div>
+          <div class="node-title">Offline Scene Export</div>
+          <div class="node-sub">Single 8 MB HTML · COG · GLB<br>GeoPackage · STAC 1.0</div>
+          <div style="display:flex;gap:4px;justify-content:center;margin-top:5px;flex-wrap:wrap;">
+            <span class="tag tag-green">100% Offline · No Server</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Arrow 4 -->
+    <div class="arrow">
+      <svg width="38" height="36" viewBox="0 0 38 36">
+        <line x1="2" y1="18" x2="28" y2="18" stroke="#a78bfa" stroke-width="2" class="animated-dash" style="animation-delay:0.9s"/>
+        <polygon points="28,12 38,18 28,24" fill="#a78bfa" opacity="0.9"/>
+      </svg>
+    </div>
+
+    <!-- ═══ STAGE 5: DISASTER OPS ═══ -->
+    <div class="stage-group">
+      <div class="stage-label">⑤ Disaster Operations Suite</div>
+      <div class="disaster-col">
+
+        <div class="node node-rose" style="width:165px;">
+          <div class="node-icon">🚁</div>
+          <div class="node-title">Helicopter Landing Zones</div>
+          <div class="node-sub">FM 3-21.38 · 10:1 clearance<br>16 bearing obstacle scan</div>
+          <div style="display:flex;gap:4px;justify-content:center;margin-top:5px;flex-wrap:wrap;">
+            <span class="tag tag-rose">Safe HLZ Pads</span>
+          </div>
+        </div>
+
+        <div class="node node-blue" style="width:165px;">
+          <div class="node-icon">🌊</div>
+          <div class="node-title">Flood Inundation Model</div>
+          <div class="node-sub">HAND river/valley model<br>Per-building flood depth</div>
+          <div style="display:flex;gap:4px;justify-content:center;margin-top:5px;flex-wrap:wrap;">
+            <span class="tag tag-blue">Wet Area + Exposure</span>
+          </div>
+        </div>
+
+        <div class="node node-amber" style="width:165px;">
+          <div class="node-icon">🏚️</div>
+          <div class="node-title">Collapse Screening</div>
+          <div class="node-sub">Pre/post nDSM diff · 71–88%<br>precision · 3×NMAD threshold</div>
+          <div style="display:flex;gap:4px;justify-content:center;margin-top:5px;flex-wrap:wrap;">
+            <span class="tag tag-amber">Damage Detection</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Spacer -->
+    <div style="flex:1; min-width:6px;"></div>
+
+    <!-- ═══ VALIDATION BOX ═══ -->
+    <div class="stage-group" style="align-self: center;">
+      <div class="stage-label">✓ Validated</div>
+      <div style="width:118px;">
+
+        <div style="background:rgba(16,212,142,0.06); border:1px solid rgba(16,212,142,0.2); border-radius:12px; padding:10px 10px; text-align:center;">
+          <div style="font-size:10px;font-weight:800;color:#6ee7b7;margin-bottom:6px;letter-spacing:0.5px;">ACCURACY</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:900;color:#fff;line-height:1;">3.86m</div>
+          <div style="font-size:8.5px;color:#94a3b8;margin-top:2px;">RMSE vs LiDAR</div>
+          <div style="font-size:9px;font-weight:700;color:#10d48e;margin-top:4px;">−43% vs raw DEM</div>
+
+          <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.06);padding-top:8px;">
+            <div style="font-size:8.5px;color:#94a3b8;margin-bottom:4px;">ICESat-2 India</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:#fff;">8.54m</div>
+            <div style="font-size:8px;color:#94a3b8;">terrain RMSE</div>
+          </div>
+
+          <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;font-size:8px;color:#64748b;">
+            Swiss LiDAR · 20 test tiles<br>Sikkim · 1,114 ICESat-2 pts
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── FOOTER METRICS RIBBON ── -->
+  <div class="footer-ribbon">
+
+    <div class="metric">
+      <div class="metric-icon-wrap m-green">🤖</div>
+      <div class="metric-text">
+        <div class="val">ViT-S/14 Fine-Tuned</div>
+        <div class="lbl">24.8M params · swisstopo LiDAR · LiDAR-calibrated nDSM</div>
+      </div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-icon-wrap m-amber">🔀</div>
+      <div class="metric-text">
+        <div class="val">TL-CSM Spectral Fusion</div>
+        <div class="lbl">DEM low-freq + AI high-freq · Provenance tiers R/H/T/A</div>
+      </div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-icon-wrap m-blue">📐</div>
+      <div class="metric-text">
+        <div class="val">C-1 Datum Guard</div>
+        <div class="lbl">Ellipsoid→EGM2008 auto · Offline PROJ · Self-test</div>
+      </div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-icon-wrap m-purple">🏙️</div>
+      <div class="metric-text">
+        <div class="val">LoD-1 3D City + Viewer</div>
+        <div class="lbl">WASD walk · drone orbit · slope/distance tools</div>
+      </div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-icon-wrap m-rose">🚨</div>
+      <div class="metric-text">
+        <div class="val">3 Disaster Modules</div>
+        <div class="lbl">HLZ rescue pads · HAND flood · Collapse screening</div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <button class="tool-btn" onclick="toggleFS()">⛶ Fullscreen</button>
+  <button class="tool-btn" onclick="window.print()">🖨 Export PDF</button>
+</div>
+
+<script>
+  function toggleFS() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  }
+</script>
+</body>
+</html>

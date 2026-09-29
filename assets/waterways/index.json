@@ -1,0 +1,148 @@
+{
+ "files": [
+  {
+   "file": "swissimage_2019_2682-1247_0.5m.geojson",
+   "bounds_wgs84": [
+    8.521267,
+    47.365614,
+    8.54069,
+    47.380732
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 4
+  },
+  {
+   "file": "swissimage_2019_2682-1247_2m.geojson",
+   "bounds_wgs84": [
+    8.521267,
+    47.365614,
+    8.54069,
+    47.380732
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 4
+  },
+  {
+   "file": "swissimage_2021_2621-1202_2m.geojson",
+   "bounds_wgs84": [
+    7.711582,
+    46.965711,
+    7.730771,
+    46.980738
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 5
+  },
+  {
+   "file": "namchi_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.352384,
+    27.157026,
+    88.370624,
+    27.173975
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 4
+  },
+  {
+   "file": "chungthang_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.636346,
+    27.594517,
+    88.654663,
+    27.61149
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 5
+  },
+  {
+   "file": "teesta_east_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.396573,
+    27.17142,
+    88.41482,
+    27.188372
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 0
+  },
+  {
+   "file": "teesta_west_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.309385,
+    27.143429,
+    88.32762,
+    27.160374
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 0
+  },
+  {
+   "file": "chungthang_west_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.609346,
+    27.622816,
+    88.627664,
+    27.639786
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 4
+  },
+  {
+   "file": "north_sikkim_alpine_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.286344,
+    27.899827,
+    88.304664,
+    27.916772
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 0
+  },
+  {
+   "file": "islahiye_before_2022-12-27_0.5m.geojson",
+   "bounds_wgs84": [
+    36.621093,
+    37.017462,
+    36.640909,
+    37.03454
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 0
+  },
+  {
+   "file": "islahiye_after_2023-02-07_0.5m.geojson",
+   "bounds_wgs84": [
+    36.621093,
+    37.017462,
+    36.640909,
+    37.03454
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 0
+  },
+  {
+   "file": "nepal_sunkoshi.geojson",
+   "bounds_wgs84": [
+    85.82717,
+    27.42563,
+    85.84542,
+    27.44256
+   ],
+   "source": "OpenStreetMap waterways",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "count": 2
+  }
+ ]
+}

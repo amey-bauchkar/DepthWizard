@@ -4,12 +4,10 @@ Downloads the Aarau / Fribourg validation tiles (2 m RGB + 0.5 m swissSURFACE3D 
 pipeline with the zero-shot model and with the fine-tuned model under both compositions, validates against the LiDAR
 and writes docs/metric_composition_selection.json. Usage: python scripts/select_metric_composition.py
 """
-import json, os, sys, time, zipfile, tempfile, urllib.request
+import json, os, sys, time, urllib.request
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT)); os.chdir(ROOT)
-import numpy as np, rasterio
-from rasterio.enums import Resampling
-from rasterio.transform import from_origin
+import numpy as np
 from pyproj import Transformer
 
 OUT = ROOT / "data" / "valsel"; OUT.mkdir(parents=True, exist_ok=True)

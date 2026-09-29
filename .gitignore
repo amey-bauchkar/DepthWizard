@@ -36,3 +36,10 @@ depthwizard_ndsm_model*.zip
 assets/dem/cartodem/*.tif
 assets/dem/cartodem/*.tiff
 P5_PAN_CD_*.zip
+
+# Copernicus tiles downloaded only by scripts/helipad_study.py (re-fetched automatically; ~130 MB)
+assets/dem/Copernicus_DSM_COG_10_N28_00_E081_00_DEM.tif
+assets/dem/Copernicus_DSM_COG_10_N28_00_E082_00_DEM.tif
+assets/dem/Copernicus_DSM_COG_10_N29_00_E082_00_DEM.tif
+# Copernicus tiles downloaded only by scripts/validate_us.py (re-fetched automatically)
+assets/dem/Copernicus_DSM_COG_10_N*_W*_DEM.tif

@@ -198,3 +198,37 @@ def test_heightfield_non_divisible_sizes_cover_full_footprint():
         assert (meta.height, meta.width) == (-(-h // f), -(-w // f)) and max(meta.height, meta.width) <= maxd
         assert np.isfinite(zh[valid]).all() and meta.residual_vs_source["rmse"] >= 0.0
         assert 0.0 <= meta.min <= meta.max <= 1.0
+
+
+def test_projected_ellipsoidal_heights_get_the_geoid_correction():
+    """Regression: ellipsoidal -> EGM2008 over a projected CRS used to return 0 m (2D CRS = no vertical reference)."""
+    import numpy as np
+    from pyproj import Transformer
+
+    from backend.main import create_app
+    from core.geo.vertical import transform_heights, transform_heights_xy
+
+    create_app()  # registers the bundled geoid grids
+    x, y = Transformer.from_crs(4326, 32645, always_xy=True).transform(88.64, 27.6)
+    z, _ = transform_heights_xy(np.array([x]), np.array([y]), np.array([0.0]), "EPSG:32645", "ellipsoidal", "EGM2008")
+    ref = transform_heights(np.array([88.64]), np.array([27.6]), np.array([0.0]), "ellipsoidal", "EGM2008")[0]
+    assert 25 < z[0] < 45 and abs(z[0] - ref) < 0.01
+
+
+def test_navd88_reference_heights_use_geoid18():
+    """US LiDAR (NAVD88) is related to WGS84 only through NAD83(2011) + GEOID18; over a WGS84 UTM CRS PROJ returns inf."""
+    from pathlib import Path
+
+    import numpy as np
+    import pytest
+    from pyproj import Transformer
+
+    from backend.main import create_app
+    from core.geo.vertical import transform_heights_xy
+
+    if not (Path(__file__).resolve().parents[2] / "assets" / "proj" / "us_noaa_g2018u0.tif").exists():
+        pytest.skip("GEOID18 grid not installed")
+    create_app()
+    x, y = Transformer.from_crs(4326, 32617, always_xy=True).transform(-83.512, 35.714)
+    z, info = transform_heights_xy(np.array([x]), np.array([y]), np.array([0.0]), "EPSG:32617", "EPSG:5703", "EGM2008")
+    assert 0.3 < z[0] < 1.5 and "NAVD88" in info["pipeline"]

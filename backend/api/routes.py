@@ -3,18 +3,20 @@ All responses state mode/metric/tier/vertical reference explicitly; measurements
 from __future__ import annotations
 
 import json
+import zipfile
 import platform
 import threading
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import rasterio
 import torch
 from fastapi import APIRouter, Body, File, Form, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from backend.config.settings import REPO_ROOT
-from backend.errors import DepthWizardError, ExportUnavailableError, InvalidFileError, JobNotFoundError, UnsupportedFormatError
+from backend.errors import UploadTooLargeError, DepthWizardError, ExportUnavailableError, InvalidFileError, JobNotFoundError, UnsupportedFormatError
 from backend.jobs import query
 from backend.jobs.manager import JobManager
 from core.geo.vertical import grid_status
@@ -60,6 +62,17 @@ def system(request: Request):
     }
 
 
+async def _read_capped(f: UploadFile, max_mb: float) -> bytes:
+    """Read an upload in chunks and stop as soon as it exceeds the limit (never buffers more than the limit)."""
+    cap = int(max_mb * 1024 * 1024)
+    buf = bytearray()
+    while chunk := await f.read(1 << 20):
+        buf += chunk
+        if len(buf) > cap:
+            raise UploadTooLargeError(f"{f.filename}: larger than {max_mb:g} MB", user_message=f"{f.filename} is larger than the {max_mb:g} MB upload limit.")
+    return bytes(buf)
+
+
 @router.post("/api/jobs", status_code=201)
 async def create_job(request: Request, file: UploadFile = File(...), dem: UploadFile | None = File(None), anchors: UploadFile | None = File(None), footprints: UploadFile | None = File(None), dem_vertical_crs: str = Form("EGM2008")):
     """Create a job from an image (PNG/JPEG -> Mode A; GeoTIFF -> Mode B). Optional: user DEM GeoTIFF (+ its vertical CRS) and an anchors CSV (id,x,y,z,type[,sigma])."""
@@ -67,24 +80,34 @@ async def create_job(request: Request, file: UploadFile = File(...), dem: Upload
     if not file.filename:
         raise InvalidFileError("missing filename")
     ext = Path(file.filename).suffix.lower()
-    if ext not in mgr.settings.ingest.allowed_extensions:
+    if ext not in mgr.settings.ingest.allowed_extensions and ext != ".zip":
         raise UnsupportedFormatError(f"extension {ext!r}")
-    data = await file.read()
+    data = await _read_capped(file, mgr.settings.ingest.max_upload_mb)
     if not data:
         raise InvalidFileError("empty upload")
+    fname, isro_info = file.filename, None
+    if ext == ".zip":  # an ISRO product (Cartosat / Resourcesat, NRSC Bhoonidhi): bands -> natural-colour GeoTIFF
+        from core.ingest.isro import convert_bytes
+
+        try:
+            fname, data, isro_info = convert_bytes(file.filename, data, max_uncompressed_mb=mgr.settings.ingest.max_zip_uncompressed_mb)
+        except (ValueError, OSError, KeyError, zipfile.BadZipFile) as e:
+            raise InvalidFileError(f"could not read the zipped product: {e}", user_message=f"This zip is not a readable Cartosat / Resourcesat product: {e}") from e
     job = mgr.create()
-    mgr.attach_upload(job.job_id, file.filename, data)
+    mgr.attach_upload(job.job_id, fname, data)
+    if isro_info:
+        mgr.set_input_option(job.job_id, "isro_product", json.dumps(isro_info))
     if dem is not None and dem.filename:
-        ddata = await dem.read()
+        ddata = await _read_capped(dem, mgr.settings.ingest.max_upload_mb)
         if ddata:
             mgr.attach_extra(job.job_id, "dem", dem.filename, ddata)
             mgr.set_input_option(job.job_id, "dem_vcrs", dem_vertical_crs)
     if anchors is not None and anchors.filename:
-        adata = await anchors.read()
+        adata = await _read_capped(anchors, mgr.settings.ingest.max_upload_mb)
         if adata:
             mgr.attach_extra(job.job_id, "anchors", anchors.filename, adata)
     if footprints is not None and footprints.filename:
-        fdata = await footprints.read()
+        fdata = await _read_capped(footprints, mgr.settings.ingest.max_upload_mb)
         if fdata:
             try:
                 json.loads(fdata)
@@ -100,7 +123,7 @@ async def inspect_input(request: Request, file: UploadFile = File(...), has_dem:
     from backend.jobs.inspect import inspect_upload
 
     mgr = _mgr(request)
-    data = await file.read()
+    data = await _read_capped(file, mgr.settings.ingest.max_upload_mb)
     if not data:
         raise InvalidFileError("empty upload")
     mp = mgr.metric_predictor()
@@ -370,9 +393,20 @@ def job_disaster_flood(request: Request, job_id: str, body: dict[str, Any] = Bod
     result = mgr.result(job_id)
     try:
         water_level = float(body.get("waterLevel_m", 0.0))
-        return run_flood_screening(job_dir, water_level, result, connected_only=bool(body.get("connectedOnly", False)))
+        da = body.get("drainageAreaM2")
+        return run_flood_screening(job_dir, water_level, result, connected_only=bool(body.get("connectedOnly", False)), model=str(body.get("model", "level")), drainage_area_m2=None if da is None else float(da))
     except ValueError as e:
         return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
+
+
+@router.get("/api/jobs/{job_id}/disaster/flood/relief")
+def job_disaster_flood_relief(request: Request, job_id: str):
+    """Terrain relief of the job and the suggested flood model (river stage in hills, still level on flat ground)."""
+    from core.disaster.flood import terrain_relief
+
+    mgr = _mgr(request)
+    mgr.result(job_id)
+    return terrain_relief(mgr._job_dir(job_id))
 
 
 @router.post("/api/jobs/{job_id}/disaster/accessibility")
@@ -399,6 +433,138 @@ def job_disaster_landing_zones(request: Request, job_id: str, body: dict[str, An
         return run_landing_zone_screening(job_dir, result, size=size, max_slope_deg=None if max_slope is None else float(max_slope), exclude_flooded=bool(body.get("excludeFlooded", False)))
     except (ValueError, TypeError) as e:
         return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
+
+
+@router.post("/api/jobs/{job_id}/disaster/landslide")
+def job_disaster_landslide(request: Request, job_id: str, body: dict[str, Any] = Body(...)):
+    """Landslide hazard (IS 14496-2 factors), rainfall trigger (user series or Open-Meteo), optional Sentinel-2 scars."""
+    from core.disaster.landslide import run_landslide_screening
+
+    mgr = _mgr(request)
+    job_dir, result = mgr._job_dir(job_id), mgr.result(job_id)
+
+    def num(k):
+        v = body.get(k)
+        return None if v in (None, "") else float(v)
+
+    try:
+        rain = body.get("rainMmHourly")
+        return run_landslide_screening(job_dir, result, lithology=num("lithology"), structure=num("structure"), hydrogeology=num("hydrogeology"),
+                                       rain_mm_hourly=[float(x) for x in rain] if rain else None, fetch_rainfall=bool(body.get("fetchRainfall", False)),
+                                       scars=body.get("scars") or None)
+    except (ValueError, TypeError) as e:
+        return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
+
+
+@router.post("/api/jobs/{job_id}/disaster/roads")
+def job_disaster_roads(request: Request, job_id: str, body: dict[str, Any] = Body(...)):
+    """Road links cut by the last flood (and optionally landslide) result, and settlements with no route out."""
+    from core.disaster.roads import run_road_access
+
+    mgr = _mgr(request)
+    try:
+        return run_road_access(mgr._job_dir(job_id), mgr.result(job_id), include_landslide=bool(body.get("includeLandslide", False)))
+    except (ValueError, FileNotFoundError) as e:
+        return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
+
+
+@router.get("/api/jobs/{job_id}/bhuvan")
+def job_bhuvan_layers(request: Request, job_id: str):
+    """Bhuvan (NRSC/ISRO) WMS layers available for this scene."""
+    from core.geo import bhuvan
+
+    mgr = _mgr(request)
+    job_dir = mgr._job_dir(job_id)
+    mgr.result(job_id)
+    ref = job_dir / "terrain.tif" if (job_dir / "terrain.tif").exists() else job_dir / "input.tif"
+    with rasterio.open(ref) as ds:
+        if ds.crs is None:
+            return {"layers": []}
+        from rasterio.warp import transform_bounds
+
+        return {"layers": bhuvan.available(tuple(transform_bounds(ds.crs, "EPSG:4326", *ds.bounds))), "attribution": bhuvan.ATTRIBUTION}
+
+
+@router.get("/api/jobs/{job_id}/bhuvan/{layer_id}.png")
+def job_bhuvan_overlay(request: Request, job_id: str, layer_id: str):
+    from core.geo import bhuvan
+
+    mgr = _mgr(request)
+    mgr.result(job_id)
+    try:
+        # bytes, not FileResponse: the file is read inside this try (a Windows lock while another request replaces it
+        # would otherwise surface as a 500 while streaming, after this handler returned)
+        return Response(content=bhuvan.overlay(mgr._job_dir(job_id), layer_id).read_bytes(), media_type="image/png")
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
+    except Exception as e:  # noqa: BLE001 - Bhuvan offline / changed
+        return JSONResponse(status_code=502, content={"error": {"code": "UPSTREAM_UNAVAILABLE", "message": f"Bhuvan did not answer: {e}"}})
+
+
+@router.post("/api/jobs/{job_id}/confidence")
+def job_confidence(request: Request, job_id: str):
+    """Per-pixel 80 % error interval of the model's heights above ground (4-way TTA spread, calibrated on validation
+    LiDAR). On demand: ~4x the model time of the job. Cached as confidence_80.tif + confidence_preview.png."""
+    from core.inference.confidence import interval_from_spread, load_calibration, tta_heights
+
+    mgr = _mgr(request)
+    job_dir, result = mgr._job_dir(job_id), mgr.result(job_id)
+    summary_p = job_dir / "confidence.json"
+    if summary_p.exists():
+        return json.loads(summary_p.read_text(encoding="utf-8"))
+    cal = load_calibration()
+    pred = mgr.metric_predictor()
+    if result.get("mode") != "B" or pred is None or cal is None:
+        return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": "The confidence map needs a georeferenced (Mode B) job, the fine-tuned model and its calibration."}})
+    with rasterio.open(job_dir / "input.tif") as ds:
+        rgb = ds.read((1, 2, 3)).transpose(1, 2, 0)
+        tr, crs = ds.transform, ds.crs
+    gsd = float(abs(tr.a * tr.e - tr.b * tr.d) ** 0.5)
+    _mean, spread = tta_heights(np.ascontiguousarray(rgb), pred, gsd, mgr.settings.fusion)
+    del rgb, _mean
+    iv = interval_from_spread(spread, cal)
+    from core.geo.grid import Grid
+    from core.geo.raster_io import write_raster
+
+    g = Grid(width=iv.shape[1], height=iv.shape[0], transform=tr, crs=crs.to_string() if crs else None, dtype="float32", nodata=-9999.0, units="metres", metric=True, vertical_reference=None, tier=result.get("calibration_tier") or "T")
+    write_raster(job_dir / "confidence_80.tif", np.where(np.isfinite(iv), iv, -9999.0).astype(np.float32), g,
+                 tags={"KIND": "height_error_interval_80", "QUANTITY": "80 % of pixels with this TTA spread were within +/- this many metres of LiDAR", "CALIBRATED_ON": cal["calibrated_on"]})
+    from PIL import Image
+
+    t = np.clip(np.nan_to_num(iv, nan=0.0) / 8.0, 0, 1)  # 0 m green -> 8 m+ red
+    rgba = np.zeros(iv.shape + (4,), np.uint8)
+    rgba[..., 0] = (255 * t).astype(np.uint8)
+    rgba[..., 1] = (200 * (1 - t)).astype(np.uint8)
+    rgba[..., 3] = np.where(np.isfinite(iv), 150, 0).astype(np.uint8)
+    from core.geo.atomic import write_atomic
+
+    write_atomic(job_dir / "confidence_preview.png", lambda t: Image.fromarray(rgba, "RGBA").save(t, format="PNG"))
+    v = iv[np.isfinite(iv)]
+    out = {"rasterResult": "confidence_80.tif", "previewResult": "confidence_preview.png", "medianIntervalM": round(float(np.median(v)), 2) if v.size else None,
+           "shareWithin2mPct": round(100 * float((v <= 2).mean()), 1) if v.size else None, "shareOver5mPct": round(100 * float((v > 5).mean()), 1) if v.size else None,
+           "calibration": {k: cal[k] for k in ("method", "calibrated_on", "model") if k in cal}, "testCoverage": cal.get("test_coverage_swiss_test_tiles"),
+           "note": "80 % error interval of the height above ground per pixel, from the model's disagreement with itself under flips, calibrated against LiDAR on validation regions."}
+    summary_p.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    return out
+
+
+@router.get("/api/jobs/{job_id}/report")
+def job_report_summary(request: Request, job_id: str):
+    """The numbers of the damage-assessment report as JSON."""
+    from core.export.report import collect
+
+    mgr = _mgr(request)
+    return collect(mgr._job_dir(job_id), mgr.result(job_id))
+
+
+@router.get("/api/jobs/{job_id}/report.pdf")
+def job_report_pdf(request: Request, job_id: str):
+    """One-click damage-assessment report (PDF) from the latest hazard results of this job."""
+    from core.export.report import build_pdf
+
+    mgr = _mgr(request)
+    p = build_pdf(mgr._job_dir(job_id), mgr.result(job_id))
+    return FileResponse(p, media_type="application/pdf", filename=f"depthwizard_damage_report_{job_id}.pdf")
 
 
 def error_response(exc: DepthWizardError) -> JSONResponse:

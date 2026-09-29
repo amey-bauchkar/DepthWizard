@@ -11,6 +11,7 @@ import shutil
 import threading
 import time
 import traceback
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -55,6 +56,9 @@ class Job:
         return asdict(self)
 
 
+_JOB_ID = re.compile(r"[0-9a-f]{12}")
+
+
 class JobManager:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -73,6 +77,8 @@ class JobManager:
 
     # ---- persistence -------------------------------------------------------
     def _job_dir(self, job_id: str) -> Path:
+        if not _JOB_ID.fullmatch(job_id or ""):  # job ids are 12 hex characters: no path components ever reach the filesystem
+            raise JobNotFoundError(str(job_id)[:40])
         return self.jobs_dir / job_id
 
     def _save(self, job: Job) -> None:
@@ -241,10 +247,12 @@ class JobManager:
             # overlapping-tile inference: sub-DEM-posting detail (Mode B) / native-resolution detail (large Mode A images)
             tiled = None
             fz = self.settings.fusion
-            if fz.enabled and (mode_b or (fz.mode_a_tiling and needs_tiling(rgb.shape[0], rgb.shape[1], self.settings.model.input_size))):
+            # Mode A with the fine-tuned model: always tiled (the model reads height above ground at native pixel size)
+            mode_a_metric = (not mode_b) and fz.mode_a_metric_model and self.metric_predictor() is not None
+            if fz.enabled and (mode_b or mode_a_metric or (fz.mode_a_tiling and needs_tiling(rgb.shape[0], rgb.shape[1], self.settings.model.input_size))):
                 t_tiles = time.perf_counter()
                 # Mode B: the fine-tuned metric nDSM model when installed (tier H heights), else the zero-shot model
-                tile_pred = (self.metric_predictor() or predictor) if mode_b else predictor
+                tile_pred = (self.metric_predictor() or predictor) if (mode_b or mode_a_metric) else predictor
                 if tile_pred is not predictor:
                     job.model["tiles"] = {"name": tile_pred.card.name, "version": tile_pred.card.version, "sha256": tile_pred.card.sha256_actual, "output_quantity": tile_pred.card.output_quantity}
 

@@ -18,6 +18,8 @@ model_metric:                     # optional fine-tuned metric nDSM model (tier 
 
 ingest:
   max_image_dim: 4096             # pixels; larger inputs are rejected with IMAGE_TOO_LARGE
+  max_upload_mb: 600              # per uploaded file; larger -> 413 UPLOAD_TOO_LARGE
+  max_zip_uncompressed_mb: 3000   # zipped Cartosat / Resourcesat product once extracted (zip-bomb guard)
   allowed_extensions: [".png", ".jpg", ".jpeg", ".tif", ".tiff"]
 
 preprocess:
@@ -57,7 +59,10 @@ fusion:                           # tiled inference + DEM-preserving detail fusi
   max_tile_gain: null             # optional cap on per-tile DEM-band gain (m per relative unit)
   anchor_gain_max: 4.0            # plausibility bound on the anchor-fitted detail gain
   mode_a_tiling: true             # Mode A: refine large images with native-resolution tiles
+  mode_a_metric_model: true       # Mode A: fine-tuned nDSM model (if installed) instead of zero-shot depth; measured in docs/validation_mode_a.md
   metric_composition: highpass    # metric model + DEM: highpass (DSM = DEM + high-pass nDSM) | terrain_plus_ndsm
+  metric_detail_gain: 1.0          # DSM = DEM + g * hp(nDSM); chosen on validation regions (scripts/select_dem_trust.py)
+  metric_dem_object_fraction: 0.75 # terrain = DEM - f * lp(nDSM); share of smoothed object height the DEM holds
   metric_ground_max_m: 1.0        # metric model nDSM below this counts as ground
 
 validation:

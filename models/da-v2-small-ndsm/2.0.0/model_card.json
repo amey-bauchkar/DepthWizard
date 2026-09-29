@@ -1,0 +1,191 @@
+{
+  "name": "da-v2-small-ndsm",
+  "version": "2.0.0",
+  "role": "Fine-tuned metric nDSM model (tier H): height above ground in metres from 0.5 m RGB tiles; used for Mode B tiled inference.",
+  "architecture": "Depth Anything V2 Small: DINOv2 ViT-S/14 encoder, DPT decoder, features=64, out_channels=[48,96,192,384]",
+  "parameters_millions": 24.8,
+  "base_model": "depth-anything/Depth-Anything-V2-Small (Apache-2.0)",
+  "training_data": "swisstopo SWISSIMAGE (RGB, 0.5 m from 0.1 m COG overviews) + swissSURFACE3D raster - swissALTI3D (0.5 m) = nDSM; (c) swisstopo OGD; USA: NAIP RGB (resampled to 0.5 m) + USGS 3DEP LiDAR DSM - DTM (2 m, bilinear to 0.5 m) via Microsoft Planetary Computer (public domain)",
+  "training_gsd_m": 0.5,
+  "training_tiles": {
+    "train": 213,
+    "val": 33,
+    "test": 41
+  },
+  "excluded": "DepthWizard validation tiles [[2682, 1247], [2621, 1202]] and everything within 5.0 km",
+  "output_quantity": "metric_ndsm_metres",
+  "metric": true,
+  "calibration_tier": "H",
+  "validation": {
+    "protocol": "held-out REGIONS (spatially separate from training), full-tile 518 px sliding window at 0.5 m vs swisstopo LiDAR nDSM",
+    "test_regions": [
+      "2572-1251",
+      "2572-1252",
+      "2572-1253",
+      "2573-1251",
+      "2573-1252",
+      "2573-1253",
+      "2610-1267",
+      "2610-1268",
+      "2611-1266",
+      "2611-1267",
+      "2611-1268",
+      "2612-1267",
+      "2716-1095",
+      "2716-1096",
+      "2717-1094",
+      "2717-1095",
+      "2717-1096",
+      "2718-1095",
+      "2724-1267",
+      "2724-1268",
+      "2725-1266",
+      "2725-1267",
+      "2725-1268",
+      "2726-1267",
+      "2781-1185",
+      "2781-1186",
+      "2782-1185",
+      "2782-1186",
+      "2783-1185",
+      "2783-1186",
+      "us_ponce_pr_0",
+      "us_ponce_pr_1",
+      "us_ponce_pr_2",
+      "us_ponce_pr_3",
+      "us_ponce_pr_4",
+      "us_sacramento_3",
+      "us_sacramento_4",
+      "us_st_louis_0",
+      "us_st_louis_1",
+      "us_st_louis_2",
+      "us_st_louis_3"
+    ],
+    "finetuned": {
+      "n": 162487752,
+      "ME": 0.199,
+      "RMSE": 3.692,
+      "MAE": 1.748,
+      "NMAD": 0.519,
+      "r": 0.869,
+      "RMSE_objects_ge2.5m": 5.379,
+      "ME_objects_ge2.5m": -0.877,
+      "RMSE_ground_lt2.5m": 2.432,
+      "ME_ground_lt2.5m": 0.741
+    },
+    "zeroshot_with_oracle_affine": {
+      "n": 162487752,
+      "ME": 0.0,
+      "RMSE": 6.188,
+      "MAE": 4.082,
+      "NMAD": 3.069,
+      "r": 0.549,
+      "RMSE_objects_ge2.5m": 9.081,
+      "ME_objects_ge2.5m": -5.257,
+      "RMSE_ground_lt2.5m": 4.002,
+      "ME_ground_lt2.5m": 2.65
+    },
+    "by_source": {
+      "swiss": {
+        "n": 120000000,
+        "ME": 0.25478386562412575,
+        "RMSE": 3.8344370071722214,
+        "MAE": 1.8345877424561507,
+        "NMAD": 0.5040840000000051,
+        "r": 0.8846816055253213,
+        "RMSE_objects_ge2.5m": 5.413017617117896,
+        "ME_objects_ge2.5m": -0.7207857390176174,
+        "RMSE_ground_lt2.5m": 2.6127472325549705,
+        "ME_ground_lt2.5m": 0.7811649904934558
+      },
+      "us": {
+        "n": 42487752,
+        "ME": 0.04073572390780297,
+        "RMSE": 3.25558725650911,
+        "MAE": 1.5044419052226945,
+        "NMAD": 0.5485620000000068,
+        "r": 0.5897260037032158,
+        "RMSE_objects_ge2.5m": 5.262660840497089,
+        "ME_objects_ge2.5m": -1.408548961937077,
+        "RMSE_ground_lt2.5m": 1.8834813710755915,
+        "ME_ground_lt2.5m": 0.6384755154050341
+      }
+    }
+  },
+  "uncertainty_calibration": {
+    "method": "4-way test-time augmentation (identity, h-flip, v-flip, rot180); per-pixel spread binned by validation-set quantiles; |error| quantiles per bin",
+    "spread_bin_edges_m": [
+      0.0,
+      0.013656958704814315,
+      0.04170006234198809,
+      0.1354951113462448,
+      0.3187067434191704,
+      0.5698263645172119,
+      0.9881887212395668,
+      15.516637802124023
+    ],
+    "abs_error_quantiles_m": {
+      "50%": [
+        0.0011285031214356422,
+        0.11116590350866318,
+        0.2748648226261139,
+        0.8809309005737305,
+        1.5863173007965088,
+        2.5347211360931396,
+        4.090189456939697
+      ],
+      "80%": [
+        0.006874134764075279,
+        0.24379116296768188,
+        0.6194895505905151,
+        2.1206252574920654,
+        3.643801212310791,
+        5.6868133544921875,
+        8.534433364868164
+      ],
+      "90%": [
+        0.03875732421875,
+        0.3719281256198883,
+        1.2198237180709839,
+        3.289616107940674,
+        5.5157976150512695,
+        8.174635887145996,
+        11.920975685119629
+      ]
+    },
+    "test_coverage": {
+      "50%": 0.5260834163608882,
+      "80%": 0.815446799817579,
+      "90%": 0.9022494479433149
+    },
+    "test_spread_error_correlation": 0.5330234274865641
+  },
+  "known_limitations": [
+    "Trained on Switzerland only (swisstopo); accuracy on Indian imagery/sensors is unmeasured.",
+    "First-surface model: sees canopy and roof tops; ground under dense canopy is inferred.",
+    "Trained at 0.5 m nadir orthophotos; very different GSD or strongly off-nadir imagery degrade it.",
+    "RGB and LiDAR acquisitions differ by up to max_year_gap years (construction/tree growth = label noise)."
+  ],
+  "licence": "Apache-2.0 (Depth Anything V2 Small derivative); training data (c) swisstopo OGD",
+  "weights_sha256": "8e9e1438f7820c46f529bb6489de108a935dbe07059ca4cb66e07f94af1937c5",
+  "trained": {
+    "created": "2026-09-28T21:47:00.750210Z",
+    "gpu": "NVIDIA GeForce RTX 4050 Laptop GPU",
+    "torch": "2.14.0+cu126",
+    "iters": 20000
+  },
+  "preprocess": {
+    "input_size": 518,
+    "size_multiple": 14,
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ]
+  }
+}

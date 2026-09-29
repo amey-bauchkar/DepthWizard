@@ -6,7 +6,6 @@ Serves the API under /api and the built frontend (frontend/dist) at / when prese
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -22,6 +21,19 @@ from core.geo.vertical import register_bundled_grids
 __version__ = "1.0.0-prototype"
 
 
+class SafeStaticFiles(StaticFiles):
+    """StaticFiles that answers 404, not 500, for paths the OS cannot even stat (on Windows, e.g. characters such as
+    { } ' < > : in a malformed URL raise OSError / WinError 123 inside os.stat)."""
+
+    async def get_response(self, path, scope):
+        from starlette.exceptions import HTTPException
+
+        try:
+            return await super().get_response(path, scope)
+        except OSError:
+            raise HTTPException(status_code=404) from None
+
+
 def create_app(settings=None) -> FastAPI:
     setup_logging()
     register_bundled_grids()  # offline PROJ grids (C-1): bundled assets/proj or DW_PROJ_GRIDS; network stays disabled
@@ -30,6 +42,18 @@ def create_app(settings=None) -> FastAPI:
     app.state.settings = settings
     app.state.jobs = JobManager(settings)
     app.include_router(router)
+
+    @app.middleware("http")
+    async def _no_stale_html(request: Request, call_next):
+        # index.html names the hashed JS/CSS bundles: a cached copy after an update loads the OLD app. HTML is always
+        # revalidated; the hashed assets themselves may be cached forever.
+        resp = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.endswith(".html"):
+            resp.headers["Cache-Control"] = "no-cache"
+        elif path.startswith("/assets/"):
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
 
     @app.exception_handler(DepthWizardError)
     async def _dw_error(_: Request, exc: DepthWizardError):
@@ -43,11 +67,11 @@ def create_app(settings=None) -> FastAPI:
 
     demo = REPO_ROOT / "assets" / "demo"
     if demo.exists():
-        app.mount("/demo", StaticFiles(directory=str(demo)), name="demo")
+        app.mount("/demo", SafeStaticFiles(directory=str(demo)), name="demo")
 
     dist = REPO_ROOT / settings.server.frontend_dist
     if dist.exists():
-        app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
+        app.mount("/", SafeStaticFiles(directory=str(dist), html=True), name="frontend")
     else:
         @app.get("/")
         def _root():

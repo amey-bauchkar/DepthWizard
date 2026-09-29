@@ -5,11 +5,11 @@ from DepthWizard's own measured validations (backend.jobs.pipeline_b.MEASURED_DE
 from __future__ import annotations
 
 import math
+import zipfile
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-import rasterio
 from rasterio.io import MemoryFile
 
 from backend.config.settings import Settings
@@ -127,6 +127,13 @@ def _inspect(filename: str, data: bytes, settings: Settings, *, metric_card: Any
 
 
 def inspect_upload(filename: str, data: bytes, settings: Settings, *, metric_card: Any | None, has_user_dem: bool = False, has_anchors: bool = False) -> dict[str, Any]:
+    if Path(filename).suffix.lower() == ".zip":  # ISRO product: inspect the GeoTIFF it will become
+        from core.ingest.isro import convert_bytes
+
+        try:
+            filename, data, _info = convert_bytes(filename, data, max_uncompressed_mb=settings.ingest.max_zip_uncompressed_mb)
+        except (ValueError, OSError, KeyError, zipfile.BadZipFile) as e:
+            return {"filename": filename, "checks": [_check("bad", "Not a readable Cartosat / Resourcesat product", str(e))], "mode": None}
     out = _inspect(filename, data, settings, metric_card=metric_card, has_user_dem=has_user_dem, has_anchors=has_anchors)
     lv = {c["level"] for c in out["checks"]}
     out["verdict"] = "bad" if "bad" in lv else "warn" if "warn" in lv else "ok"

@@ -30,11 +30,14 @@ from rasterio import Affine
 from scipy.ndimage import binary_dilation, grey_dilation, maximum_filter
 from scipy.fft import irfft2, next_fast_len, rfft2
 from scipy.signal import fftconvolve
+from scipy.special import ndtr
 
 from core.geo.grid import Grid
 from core.geo.raster_io import write_raster
 from core.screening_params import (
     HLZ_ADVISORY_MIN_SIZE,
+    HLZ_BEARING_FALSE_CLEAR,
+    HLZ_CONFIDENCE_BANDS,
     HLZ_APPROACH_LENGTH_M,
     HLZ_BEARINGS,
     HLZ_CORRIDOR_CELL_M,
@@ -50,7 +53,9 @@ from core.screening_params import (
     HLZ_SIZES,
     HLZ_SLOPE_ADVISORY_DEG,
     HLZ_SLOPE_ALL_DEG,
+    HLZ_SCENE_BIAS_MIN_N,
     HLZ_SLOPE_MARGIN_DEG,
+    HLZ_SLOPE_SIGMA_DEG,
 )
 
 METHOD = "hlz-screening-1"
@@ -303,6 +308,49 @@ def screen(dsm: np.ndarray, ndsm: np.ndarray, buildings: np.ndarray | None, wet:
     return {"reasons": reasons, "feasible": feasible, "sites": sites, "blockedSites": n_blocked, "evaluated": n_eval, "slopeMaxDeg": slope_max, "diameterM": D, "objectMask": obj, "valid": valid, "slope": slope, "roughness": rms, "planeZ": c}
 
 
+def site_confidence(slope_deg: float, slope_limit_deg: float, n_clear: int, validated: bool) -> dict[str, Any]:
+    """Probability-style confidence of one site: P(slope within the doctrine limit) x P(at least one CLEAR bearing is
+    really clear), from the errors measured against Swiss LiDAR (HLZ_SLOPE_SIGMA_DEG, HLZ_BEARING_FALSE_CLEAR)."""
+    p_slope = float(ndtr((slope_limit_deg - slope_deg) / HLZ_SLOPE_SIGMA_DEG))
+    p_appr = 1.0 - HLZ_BEARING_FALSE_CLEAR ** n_clear if n_clear else 0.0
+    p = p_slope * p_appr
+    hi, mid = HLZ_CONFIDENCE_BANDS
+    label = "HIGH" if p >= hi else "MEDIUM" if p >= mid else "LOW"
+    capped = not validated and label == "HIGH"
+    return {"score": round(p, 3), "label": "MEDIUM" if capped else label, "pSlopeWithinLimit": round(p_slope, 3), "pApproachClear": round(p_appr, 3),
+            "cappedNoValidation": capped}
+
+
+def scene_height_bias(job_dir: Path) -> dict[str, Any] | None:
+    """Measured under-reading of obstacle tops in THIS scene: the job's point validation against independent laser
+    checkpoints (ICESat-2 canopy / structure height, core.validate.points). ME < 0 = the model reads obstacles too low."""
+    vp = job_dir / "validation.json"
+    if not vp.exists():
+        return None
+    lp = (json.loads(vp.read_text(encoding="utf-8")) or {}).get("latest_points") or {}
+    m = (lp.get("metrics") or {}).get("ndsm_vs_canopy_height") or {}
+    me, n = m.get("ME"), m.get("n")
+    if not isinstance(me, (int, float)) or not isinstance(n, int) or n < HLZ_SCENE_BIAS_MIN_N:
+        return None
+    return {"meM": float(me), "n": n, "source": lp.get("source") or "point checkpoints"}
+
+
+def diagnose(reasons: np.ndarray) -> dict[str, Any]:
+    """Why pad centres were rejected: the share of centres (with data) failing each rule, and the share for which that
+    rule is the ONLY failure (removing it alone would make them feasible)."""
+    ok = (reasons & R_INVALID) == 0
+    n = int(ok.sum())
+    out: dict[str, Any] = {"centresWithData": n}
+    if n == 0:
+        return out
+    r = reasons[ok]
+    for name, bit in (("slope", R_SLOPE), ("obstacle", R_OBJECT), ("roughness", R_ROUGH), ("flooded", R_WET)):
+        out[name + "Pct"] = round(100.0 * float(((r & bit) > 0).mean()), 1)
+        out[name + "OnlyPct"] = round(100.0 * float((r == bit).mean()), 1)
+    out["feasiblePct"] = round(100.0 * float((r == R_FEASIBLE).mean()), 2)
+    return out
+
+
 def run_landing_zone_screening(job_dir: Path, result: dict[str, Any], *, size: int, max_slope_deg: float | None = None, exclude_flooded: bool = False) -> dict[str, Any]:
     tier = result.get("calibration_tier")
     if tier not in ("T", "A") or not result.get("metric"):
@@ -329,7 +377,13 @@ def run_landing_zone_screening(job_dir: Path, result: dict[str, Any], *, size: i
         depth, _, _ = _read(job_dir / "flood_depth.tif")
         wet = np.nan_to_num(depth, nan=0.0) > 0.0
 
-    out = screen(dsm, ndsm, buildings, wet, transform, size=size, object_threshold_m=float(unc["object_threshold_m"]), object_sigma_m=float(unc["object_m"]), max_slope_deg=max_slope_deg)
+    # obstacle margin for the approach check: 1 sigma of the model card, plus the scene's MEASURED under-reading of
+    # obstacle tops when the job has been validated against laser checkpoints (ICESat-2 in the Sikkim demos)
+    bias = scene_height_bias(job_dir)
+    extra = max(0.0, -bias["meM"]) if bias else 0.0
+    sigma_eff = float(unc["object_m"]) + extra / HLZ_OBJECT_MARGIN_SIGMA
+    out = screen(dsm, ndsm, buildings, wet, transform, size=size, object_threshold_m=float(unc["object_threshold_m"]), object_sigma_m=sigma_eff, max_slope_deg=max_slope_deg)
+    diag = diagnose(out["reasons"])
     D = out["diameterM"]
     posting = (result.get("dem") or {}).get("posting_m")
     coarse = isinstance(posting, (int, float)) and posting > D
@@ -342,6 +396,7 @@ def run_landing_zone_screening(job_dir: Path, result: dict[str, Any], *, size: i
     inv = ~transform
     R = D / 2.0
     for s in out["sites"]:
+        s["confidence"] = site_confidence(s["slopeDeg"], HLZ_SLOPE_ALL_DEG if s["class"] == "CANDIDATE" else out["slopeMaxDeg"], len(s["clearBearings"]), bias is not None)
         if coarse:
             s["flags"].append("TERRAIN_COARSER_THAN_PAD")
         # 2D-map geometry in pixel coordinates (exact for any affine grid): pad outline and non-blocked corridors
@@ -362,7 +417,12 @@ def run_landing_zone_screening(job_dir: Path, result: dict[str, Any], *, size: i
         (job_dir / "landing_zones.geojson").write_text(json.dumps(geo), encoding="utf-8")
 
     warnings = list(WARNINGS)
-    warnings.insert(2, f"Object threshold for this job: {unc['object_threshold_m']:g} m. Obstacle heights carry a {HLZ_OBJECT_MARGIN_SIGMA:g}-sigma margin of {unc['object_m']:g} m.")
+    margin_txt = f"{HLZ_OBJECT_MARGIN_SIGMA:g}-sigma margin of {unc['object_m']:g} m"
+    if extra > 0:
+        margin_txt += f" plus {extra:.1f} m because {bias['n']} laser checkpoints ({bias['source']}) show this scene's obstacle tops read {extra:.1f} m too low"
+    warnings.insert(2, f"Object threshold for this job: {unc['object_threshold_m']:g} m. Obstacle heights in the approach check carry a {margin_txt}.")
+    if bias is None:
+        warnings.append("No laser-checkpoint validation for this scene: obstacle heights may be under-read (in the Sikkim demos, ICESat-2 shows trees read 3-7 m too low). Run 'Validate vs checkpoints' first where checkpoints exist.")
     if coarse:
         warnings.append(f"The terrain DEM posting ({posting:g} m) is coarser than the pad ({D:g} m): slope below that scale comes from the image model, not a measured terrain model.")
     if not exclude_flooded and (job_dir / "flood_depth.tif").exists():
@@ -376,12 +436,16 @@ def run_landing_zone_screening(job_dir: Path, result: dict[str, Any], *, size: i
         "rules": {
             "slopeAllDeg": HLZ_SLOPE_ALL_DEG, "slopeAdvisoryDeg": HLZ_SLOPE_ADVISORY_DEG, "slopeMaxDegApplied": out["slopeMaxDeg"],
             "obstacleRatio": HLZ_OBSTACLE_RATIO, "approachLengthM": HLZ_APPROACH_LENGTH_M, "corridorWidthM": HLZ_CORRIDOR_WIDTH_FACTOR * D,
-            "bearings": HLZ_BEARINGS, "objectThresholdM": float(unc["object_threshold_m"]), "objectMarginM": HLZ_OBJECT_MARGIN_SIGMA * float(unc["object_m"]),
+            "bearings": HLZ_BEARINGS, "objectThresholdM": float(unc["object_threshold_m"]), "objectMarginM": round(HLZ_OBJECT_MARGIN_SIGMA * sigma_eff, 2), "sceneObstacleBias": bias,
             "roughnessMaxM": HLZ_ROUGHNESS_MAX_M, "objectBufferM": HLZ_OBJECT_BUFFER_M, "slopeMarginDeg": HLZ_SLOPE_MARGIN_DEG, "source": "US Army FM 3-21.38 (2006) ch. 4: sizes 4-3.d, slope 4-1.d, 10:1 obstacle ratio 4-1.i",
         },
         "sizes": [{"size": k, **v} for k, v in HLZ_SIZES.items()],
         "feasibleCentreAreaM2": round(int(out["feasible"].sum()) * a_px, 1),
+        "rejection": diag,
+        "advice": advice(diag, size, D, out["slopeMaxDeg"], len(out["sites"]), out["blockedSites"]),
         "nSites": len(out["sites"]),
+        "confidenceCounts": {k: sum(1 for s in out["sites"] if s["confidence"]["label"] == k) for k in ("HIGH", "MEDIUM", "LOW")},
+        "confidenceRule": f"P(slope <= limit | slope error sigma {HLZ_SLOPE_SIGMA_DEG:g} deg) x (1 - {HLZ_BEARING_FALSE_CLEAR:g}^CLEAR bearings); HIGH >= {HLZ_CONFIDENCE_BANDS[0]:g}, MEDIUM >= {HLZ_CONFIDENCE_BANDS[1]:g}; capped at MEDIUM without laser-checkpoint validation (docs/landing_zones_results.md)",
         "nCandidate": sum(1 for s in out["sites"] if s["class"] == "CANDIDATE"),
         "blockedSites": out["blockedSites"],
         "evaluatedSites": out["evaluated"],
@@ -400,6 +464,27 @@ def run_landing_zone_screening(job_dir: Path, result: dict[str, Any], *, size: i
     return summary
 
 
+def advice(diag: dict[str, Any], size: int, D: float, slope_max: float, n_sites: int, n_blocked: int) -> str | None:
+    """One plain sentence explaining an empty or all-blocked result, from the rejection shares."""
+    if n_sites > 0:
+        return None
+    if n_blocked > 0:
+        return (f"{n_blocked} flat, clear pad(s) of {D:g} m exist, but every approach direction is blocked by terrain or obstacles "
+                f"rising faster than 1:{HLZ_OBSTACLE_RATIO:g} within {HLZ_APPROACH_LENGTH_M:g} m.")
+    if not diag.get("centresWithData"):
+        return "No pad centre has complete data in this scene."
+    parts = []
+    if diag.get("obstaclePct", 0) >= 50:
+        parts.append(f"{diag['obstaclePct']:.0f} % of pad centres have a building or tree within {HLZ_OBJECT_BUFFER_M:g} m of the pad edge")
+    if diag.get("slopePct", 0) >= 50:
+        parts.append(f"{diag['slopePct']:.0f} % are steeper than the {slope_max:g} deg limit (minus a {HLZ_SLOPE_MARGIN_DEG:g} deg safety margin)")
+    if diag.get("roughnessPct", 0) >= 50:
+        parts.append(f"{diag['roughnessPct']:.0f} % are too uneven")
+    why = "; ".join(parts) if parts else "the pad rules exclude every centre"
+    tip = f" A smaller landing point (size {size - 1}) needs less clear ground." if size > 1 else " No open, flat ground of 25 m exists here: consider a hover or winch operation, or open ground outside the scene."
+    return f"No {D:g} m landing point fits: {why}.{tip}"
+
+
 def _geojson(sites: list[dict[str, Any]], transform: Affine, lonlat: Any, D: float) -> dict[str, Any]:
     """RFC 7946 (WGS84 lon/lat): per site a pad polygon (64-gon, drawn in CRS metres then transformed), a centre point
     and one centre line per CLEAR bearing from the pad edge to the checked length."""
@@ -407,7 +492,9 @@ def _geojson(sites: list[dict[str, Any]], transform: Affine, lonlat: Any, D: flo
     feats = []
     ang = np.linspace(0.0, 2.0 * math.pi, 65)
     for s in sites:
-        props = {k: v for k, v in s.items() if k not in ("approaches", "padPixelRing", "approachPixelLines")}
+        props = {k: v for k, v in s.items() if k not in ("approaches", "padPixelRing", "approachPixelLines", "confidence")}
+        if s.get("confidence"):  # flat fields: GIS attribute tables do not show nested objects
+            props["confidence"], props["confidenceScore"] = s["confidence"]["label"], s["confidence"]["score"]
         ring = [list(lonlat.transform(s["x"] + R * math.sin(t), s["y"] + R * math.cos(t))) for t in ang]
         feats.append({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]}, "properties": {**props, "kind": "pad"}})
         feats.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": list(lonlat.transform(s["x"], s["y"]))}, "properties": {**props, "kind": "centre"}})

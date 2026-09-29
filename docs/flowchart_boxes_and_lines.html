@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DepthWizard Architecture Flowchart</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #060913;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    color: #f8fafc;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .slide-box {
+    width: 1360px;
+    max-width: 98vw;
+    aspect-ratio: 16 / 9;
+    background: #090e1a;
+    border: 1.5px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    padding: 28px 36px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: 0 25px 70px rgba(0,0,0,0.8);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding-bottom: 14px;
+  }
+  .title-area h1 {
+    font-size: 22px;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: -0.5px;
+  }
+  .title-area p {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+  .badge {
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    color: #38bdf8;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Flow Grid (5 Columns) */
+  .flow-row {
+    display: grid;
+    grid-template-columns: 190px 40px 190px 40px 220px 40px 210px 40px 210px;
+    align-items: center;
+    margin: 16px 0;
+  }
+
+  .column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .col-header {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 4px;
+    text-align: center;
+  }
+
+  /* Box Styles */
+  .box {
+    background: #0f172a;
+    border-radius: 12px;
+    padding: 12px 14px;
+    border: 1.5px solid;
+    position: relative;
+  }
+  .box-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .box-desc {
+    font-size: 10px;
+    color: #94a3b8;
+    line-height: 1.35;
+  }
+  .box-badge {
+    display: inline-block;
+    font-size: 8.5px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Theme borders */
+  .box-blue { border-color: #38bdf8; }
+  .box-blue .box-badge { background: rgba(56,189,248,0.15); color: #7dd3fc; }
+
+  .box-green { border-color: #10b981; }
+  .box-green .box-badge { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+
+  .box-amber {
+    border-color: #f59e0b;
+    background: #141c30;
+    box-shadow: 0 0 25px rgba(245,158,11,0.12);
+  }
+  .box-amber .box-badge { background: rgba(245,158,11,0.2); color: #fbbf24; }
+
+  .box-purple { border-color: #c084fc; }
+  .box-purple .box-badge { background: rgba(192,132,252,0.15); color: #e9d5ff; }
+
+  .box-rose { border-color: #f43f5e; }
+  .box-rose .box-badge { background: rgba(244,63,94,0.15); color: #fecdd3; }
+
+  /* Arrows */
+  .arrow-connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .arrow-connector svg {
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Bottom Summary Bar */
+  .footer-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 10px 18px;
+    gap: 12px;
+  }
+  .stat-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .stat-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #64748b;
+    letter-spacing: 0.8px;
+  }
+  .stat-val {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+  .stat-val span {
+    color: #10b981;
+  }
+</style>
+</head>
+<body>
+
+<div class="slide-box">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="title-area">
+      <h1>DepthWizard — System Architecture</h1>
+      <p>Turning Flat Satellite Photos into 3D Digital Twins for Disaster Relief</p>
+    </div>
+    <div class="badge">ISRO SIH 26175 · SOFTWARE</div>
+  </div>
+
+  <!-- 5 Columns connected by arrows -->
+  <div class="flow-row">
+
+    <!-- 1. INPUTS -->
+    <div class="column">
+      <div class="col-header">1. What Goes In</div>
+
+      <div class="box box-blue">
+        <div class="box-title">📷 2D Satellite Photo</div>
+        <div class="box-desc">Standard overhead satellite or drone photo (flat, contains no 3D height data).</div>
+        <span class="box-badge">Flat 2D Input</span>
+      </div>
+
+      <div class="box box-blue">
+        <div class="box-title">🌍 Rough Ground Map</div>
+        <div class="box-desc">Free global elevation data showing hills &amp; valleys (misses buildings and trees).</div>
+        <span class="box-badge">Base Ground Level</span>
+      </div>
+    </div>
+
+    <!-- Arrow 1 -->
+    <div class="arrow-connector">
+      <svg viewBox="0 0 32 32">
+        <line x1="2" y1="16" x2="22" y2="16" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+        <polygon points="20,11 29,16 20,21" fill="#38bdf8"/>
+      </svg>
+    </div>
+
+    <!-- 2. PROCESSING -->
+    <div class="column">
+      <div class="col-header">2. Measuring</div>
+
+      <div class="box box-green">
+        <div class="box-title">🤖 AI Height Finder</div>
+        <div class="box-desc">Smart AI analyzes shadows &amp; shapes to measure building and tree heights in metres.</div>
+        <span class="box-badge">Object Heights (m)</span>
+      </div>
+
+      <div class="box box-green">
+        <div class="box-title">📐 Sea-Level Alignment</div>
+        <div class="box-desc">Calibrates the ground map to true sea level so elevations match real-world coordinates.</div>
+        <span class="box-badge">Sea-Level Datum</span>
+      </div>
+    </div>
+
+    <!-- Arrow 2 -->
+    <div class="arrow-connector">
+      <svg viewBox="0 0 32 32">
+        <line x1="2" y1="16" x2="22" y2="16" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"/>
+        <polygon points="20,11 29,16 20,21" fill="#10b981"/>
+      </svg>
+    </div>
+
+    <!-- 3. FUSION -->
+    <div class="column">
+      <div class="col-header">3. Smart Combination</div>
+
+      <div class="box box-amber">
+        <div class="box-title">⚡ Smart 3D Fusion</div>
+        <div class="box-desc" style="font-family:'JetBrains Mono', monospace; font-size:10.5px; font-weight:700; color:#fbbf24; margin: 4px 0;">
+          Ground + Heights = 3D Map
+        </div>
+        <div class="box-desc">
+          • Takes hills &amp; valleys from ground map<br>
+          • Adds building &amp; tree heights from AI<br>
+          Blended without losing ground accuracy.
+        </div>
+        <span class="box-badge">Accurate Combined 3D</span>
+      </div>
+    </div>
+
+    <!-- Arrow 3 -->
+    <div class="arrow-connector">
+      <svg viewBox="0 0 32 32">
+        <line x1="2" y1="16" x2="22" y2="16" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/>
+        <polygon points="20,11 29,16 20,21" fill="#f59e0b"/>
+      </svg>
+    </div>
+
+    <!-- 4. 3D DIGITAL TWIN -->
+    <div class="column">
+      <div class="col-header">4. 3D Digital Twin</div>
+
+      <div class="box box-purple">
+        <div class="box-title">🏙️ Realistic 3D City</div>
+        <div class="box-desc">Pops up 3D building blocks with real heights and drapes the satellite photo over terrain.</div>
+        <span class="box-badge">True 3D Model</span>
+      </div>
+
+      <div class="box box-purple">
+        <div class="box-title">📦 Offline 3D Explorer</div>
+        <div class="box-desc">Walk or fly like a video game. Packed into a tiny 8MB file that runs with zero internet.</div>
+        <span class="box-badge">Works 100% Offline</span>
+      </div>
+    </div>
+
+    <!-- Arrow 4 -->
+    <div class="arrow-connector">
+      <svg viewBox="0 0 32 32">
+        <line x1="2" y1="16" x2="22" y2="16" stroke="#c084fc" stroke-width="2.5" stroke-linecap="round"/>
+        <polygon points="20,11 29,16 20,21" fill="#c084fc"/>
+      </svg>
+    </div>
+
+    <!-- 5. DISASTER OPERATIONS -->
+    <div class="column">
+      <div class="col-header">5. Rescue &amp; Relief Tools</div>
+
+      <div class="box box-rose">
+        <div class="box-title">🚁 Safe Chopper Landing</div>
+        <div class="box-desc">Scans terrain slopes &amp; nearby obstacles to find safe, flat spots for rescue helicopters.</div>
+        <span class="box-badge">Rescue HLZ Zones</span>
+      </div>
+
+      <div class="box box-rose">
+        <div class="box-title">🌊 Flood Risk Simulation</div>
+        <div class="box-desc">Simulates rising river water to predict which buildings will submerge and water depth.</div>
+        <span class="box-badge">Inundation Model</span>
+      </div>
+
+      <div class="box box-rose">
+        <div class="box-title">🏚️ Collapse Detection</div>
+        <div class="box-desc">Compares before &amp; after satellite photos to immediately detect destroyed buildings.</div>
+        <span class="box-badge">Damage Assessment</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom Metric Bar -->
+  <div class="footer-bar">
+    <div class="stat-item">
+      <div class="stat-label">AI Engine</div>
+      <div class="stat-val">Depth Anything V2 <span>(Trained on laser scans)</span></div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Measured Accuracy</div>
+      <div class="stat-val">3.86 m Height Precision <span>(−43% error vs base DEM)</span></div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Space Validation</div>
+      <div class="stat-val">NASA ICESat-2 Sikkim <span>(Laser-verified)</span></div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Field Deployment</div>
+      <div class="stat-val">Single Standalone 8MB HTML <span>(Zero internet needed)</span></div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

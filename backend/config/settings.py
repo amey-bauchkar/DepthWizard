@@ -36,6 +36,8 @@ class MetricModelCfg(BaseModel):
 
 class IngestCfg(BaseModel):
     max_image_dim: int = 4096
+    max_upload_mb: float = 600.0  # any single uploaded file (image, DEM, zip product); larger -> 413
+    max_zip_uncompressed_mb: float = 3000.0  # zipped ISRO product, total size once extracted (zip-bomb guard)
     allowed_extensions: list[str] = Field(default_factory=lambda: [".png", ".jpg", ".jpeg", ".tif", ".tiff"])
 
 
@@ -67,8 +69,11 @@ class FusionCfg(BaseModel):
     max_tile_gain: float | None = None  # optional cap on the per-tile DEM-band gain (m per relative unit)
     anchor_gain_max: float = 4.0  # plausibility bound on the anchor-fitted detail gain
     mode_a_tiling: bool = True  # Mode A: refine large images with native-resolution tiles
+    mode_a_metric_model: bool = True  # Mode A: use the fine-tuned nDSM model (when installed) instead of zero-shot depth (docs/validation_mode_a.md)
     metric_composition: Literal["highpass", "terrain_plus_ndsm"] = "highpass"  # how a metric nDSM model is combined with the DEM
     metric_ground_max_m: float = 1.0  # model nDSM below this = ground (terrain-layer support)
+    metric_detail_gain: float = 1.0  # g: DSM = DEM + g * hp(nDSM)            (chosen on validation regions: scripts/select_dem_trust.py)
+    metric_dem_object_fraction: float = 0.75  # f: terrain = DEM - f * lp(nDSM)  (share of the smoothed object height the DEM holds)
 
 
 class ValidateCfg(BaseModel):

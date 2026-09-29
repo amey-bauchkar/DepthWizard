@@ -1,0 +1,158 @@
+[
+ {
+  "input": "sample_urban_hd.jpg",
+  "engine": "zero-shot (old Mode A)",
+  "label": "Z\u00fcrich urban, 2000 px (0.5 m)",
+  "seconds": 22.8,
+  "vs_dsm": {
+   "n": 4000000,
+   "pearson_r": 0.056,
+   "spearman_rho": 0.034,
+   "rmse_after_affine_m": 9.98,
+   "mae_after_affine_m": 8.8,
+   "baseline_flat_rmse_m": 9.99,
+   "explained_variance": 0.003,
+   "affine_a_m_per_unit": 2.55
+  },
+  "vs_ndsm": {
+   "n": 4000000,
+   "pearson_r": 0.094,
+   "spearman_rho": 0.052,
+   "rmse_after_affine_m": 9.39,
+   "mae_after_affine_m": 8.37,
+   "baseline_flat_rmse_m": 9.43,
+   "explained_variance": 0.009,
+   "affine_a_m_per_unit": 4.05
+  }
+ },
+ {
+  "input": "sample_urban.jpg",
+  "engine": "zero-shot (old Mode A)",
+  "label": "Z\u00fcrich urban, 500 px (2 m)",
+  "seconds": 1.2,
+  "vs_dsm": {
+   "n": 250000,
+   "pearson_r": 0.008,
+   "spearman_rho": -0.014,
+   "rmse_after_affine_m": 9.76,
+   "mae_after_affine_m": 8.54,
+   "baseline_flat_rmse_m": 9.76,
+   "explained_variance": 0.0,
+   "affine_a_m_per_unit": 0.33
+  },
+  "vs_ndsm": {
+   "n": 250000,
+   "pearson_r": 0.054,
+   "spearman_rho": -0.013,
+   "rmse_after_affine_m": 9.18,
+   "mae_after_affine_m": 8.11,
+   "baseline_flat_rmse_m": 9.19,
+   "explained_variance": 0.003,
+   "affine_a_m_per_unit": 2.2
+  }
+ },
+ {
+  "input": "sample_rural.jpg",
+  "engine": "zero-shot (old Mode A)",
+  "label": "Emmental rural / forest / hilly, 500 px (2 m)",
+  "seconds": 1.3,
+  "vs_dsm": {
+   "n": 250000,
+   "pearson_r": -0.197,
+   "spearman_rho": -0.169,
+   "rmse_after_affine_m": 32.68,
+   "mae_after_affine_m": 24.13,
+   "baseline_flat_rmse_m": 33.33,
+   "explained_variance": 0.039,
+   "affine_a_m_per_unit": -26.88
+  },
+  "vs_ndsm": {
+   "n": 250000,
+   "pearson_r": 0.751,
+   "spearman_rho": 0.604,
+   "rmse_after_affine_m": 7.07,
+   "mae_after_affine_m": 4.47,
+   "baseline_flat_rmse_m": 10.72,
+   "explained_variance": 0.565,
+   "affine_a_m_per_unit": 32.99
+  }
+ },
+ {
+  "input": "sample_urban_hd.jpg",
+  "engine": "fine-tuned nDSM model (current Mode A)",
+  "label": "Z\u00fcrich urban, 2000 px (0.5 m)",
+  "seconds": 20.8,
+  "vs_dsm": {
+   "n": 4000000,
+   "pearson_r": 0.852,
+   "spearman_rho": 0.804,
+   "rmse_after_affine_m": 5.24,
+   "mae_after_affine_m": 3.55,
+   "baseline_flat_rmse_m": 9.99,
+   "explained_variance": 0.725,
+   "affine_a_m_per_unit": 26.19
+  },
+  "vs_ndsm": {
+   "n": 4000000,
+   "pearson_r": 0.871,
+   "spearman_rho": 0.806,
+   "rmse_after_affine_m": 4.64,
+   "mae_after_affine_m": 2.81,
+   "baseline_flat_rmse_m": 9.43,
+   "explained_variance": 0.758,
+   "affine_a_m_per_unit": 25.28
+  }
+ },
+ {
+  "input": "sample_urban.jpg",
+  "engine": "fine-tuned nDSM model (current Mode A)",
+  "label": "Z\u00fcrich urban, 500 px (2 m)",
+  "seconds": 1.8,
+  "vs_dsm": {
+   "n": 250000,
+   "pearson_r": 0.506,
+   "spearman_rho": 0.526,
+   "rmse_after_affine_m": 8.42,
+   "mae_after_affine_m": 6.84,
+   "baseline_flat_rmse_m": 9.76,
+   "explained_variance": 0.256,
+   "affine_a_m_per_unit": 16.95
+  },
+  "vs_ndsm": {
+   "n": 250000,
+   "pearson_r": 0.477,
+   "spearman_rho": 0.489,
+   "rmse_after_affine_m": 8.08,
+   "mae_after_affine_m": 6.61,
+   "baseline_flat_rmse_m": 9.19,
+   "explained_variance": 0.227,
+   "affine_a_m_per_unit": 15.04
+  }
+ },
+ {
+  "input": "sample_rural.jpg",
+  "engine": "fine-tuned nDSM model (current Mode A)",
+  "label": "Emmental rural / forest / hilly, 500 px (2 m)",
+  "seconds": 2.3,
+  "vs_dsm": {
+   "n": 250000,
+   "pearson_r": -0.201,
+   "spearman_rho": -0.261,
+   "rmse_after_affine_m": 32.64,
+   "mae_after_affine_m": 24.03,
+   "baseline_flat_rmse_m": 33.33,
+   "explained_variance": 0.041,
+   "affine_a_m_per_unit": -22.21
+  },
+  "vs_ndsm": {
+   "n": 250000,
+   "pearson_r": 0.804,
+   "spearman_rho": 0.732,
+   "rmse_after_affine_m": 6.38,
+   "mae_after_affine_m": 3.66,
+   "baseline_flat_rmse_m": 10.72,
+   "explained_variance": 0.646,
+   "affine_a_m_per_unit": 28.51
+  }
+ }
+]

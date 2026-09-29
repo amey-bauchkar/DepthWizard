@@ -13,10 +13,10 @@ from PIL import Image
 
 from backend.config.settings import Settings
 from backend.logging_setup import JobLogger
-from core.calib.fusion import TiledPrediction, fuse_detail, mode_a_scales
+from core.calib.fusion import TiledPrediction, fuse_detail, mode_a_scales, stitch_tiles
 from core.dsm.rdsm import make_rdsm, write_preview, write_raster
 from core.ingest.ingest import IngestResult, ingest_image
-from core.inference.predictor import BasePredictor
+from core.inference.predictor import METRIC_QUANTITY, BasePredictor
 from core.terrain.heightfield import build_heightfield, write_heightfield, write_texture
 
 
@@ -59,7 +59,14 @@ def stage_rasterize(job_dir: Path, ing: IngestResult, rel_depth: np.ndarray, pro
     t0 = time.perf_counter()
     rc = settings.rdsm
     refinement: dict[str, Any] = {"applied": False}
-    if tiled is not None:
+    if tiled is not None and tiled.quantity == METRIC_QUANTITY:
+        # fine-tuned nDSM model on native-resolution tiles: heights above ground, normalised below (the pixel size of a
+        # PNG/JPG is unknown, so the metres are not trusted and the output stays relative). Measured against LiDAR it
+        # tracks the surface far better than zero-shot whole-image depth (docs/validation_mode_a.md).
+        rel_depth = np.clip(stitch_tiles(tiled), 0.0, None).astype(np.float32)
+        refinement = {"applied": True, "source": "fine-tuned nDSM model, native-resolution tiles (heights above ground, normalised)", **tiled.summary()}
+        prov = {**prov, "output_quantity": "relative height above ground (from the fine-tuned nDSM model)", "tile_model": (tiled.model_info or {}).get("name")}
+    elif tiled is not None:
         rel_depth, refinement = refine_with_tiles(rel_depth, tiled, settings.model.input_size)
     rel, grid, stats = make_rdsm(rel_depth, ing.valid_mask, method=rc.method, percentiles=tuple(rc.percentiles), nodata=rc.nodata, orientation=rc.orientation)  # type: ignore[arg-type]
     tags = {"MODEL": f"{prov['model_name']}@{prov['model_version']}", "MODEL_SHA256": prov.get("model_sha256") or "n/a", "INPUT_SHA256": ing.meta.sha256, "OUTPUT_QUANTITY": "relative_height_normalised", "SOURCE_QUANTITY": prov.get("output_quantity", "")}

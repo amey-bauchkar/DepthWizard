@@ -17,10 +17,8 @@ import rasterio.features
 from core.terrain.building_stats import STATS_VERSION, footprint_stats
 from scipy.ndimage import (
     binary_closing,
-    binary_dilation,
     binary_opening,
     label as nd_label,
-    sobel,
 )
 
 log = logging.getLogger(__name__)
@@ -139,13 +137,11 @@ def extract_lod1_buildings(
     (0 = none). It is the exact pixel set every per-building statistic is computed on; callers must pop it before
     JSON serialisation.
     """
-    from scipy.ndimage import find_objects
 
     H, W = ndsm.shape
     # pixel->CRS affine; without one, a north-up grid of gsd_m cells (pixel area = |det J| either way)
     tr = transform if transform is not None else rasterio.Affine(gsd_m, 0.0, 0.0, 0.0, -gsd_m, 0.0)
     pixel_area_m2 = abs(tr.a * tr.e - tr.b * tr.d)
-    min_area_px = max(4, int(round(min_area_m2 / max(pixel_area_m2, 1e-6))))
     max_area_m2 = 50000.0
 
     filter_report: dict[str, Any] | None = None

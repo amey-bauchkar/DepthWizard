@@ -1,12 +1,33 @@
 # Phase 10 — Final SIH PPT, Storytelling, Technical Narrative & Evaluator Pitch
 
 SIH26175 DepthWizard · 2026-09-21 (Research Phase Baseline)  
-> **Implementation status (updated 2026-09-26).** This research document fixed the evidence-based pitch framework at the end of the design phases (2026-09-21); statements below about "nothing built yet" describe that date. The software now exists and is documented in `README.md` and `DEPTHWIZARD_COMPREHENSIVE_SYSTEM_DOSSIER.md`: Mode A + Mode B, automated tests, local Depth Anything V2 Small weights, Three.js orbit / walk / drone flythrough, LoD-1 blocks, in-app LiDAR validation. **How the build relates to the plan below:**
-(1) The LiDAR-supervised metric head **was trained** (2026-09-26, Colab T4) on swisstopo SWISSIMAGE + swissSURFACE3D − swissALTI3D with a region-blocked split. On held-out regions its height-above-ground error is RMSE 3.86 m (r 0.875), against 6.74 m for the zero-shot model even with oracle scaling. Tier H is available when no DEM exists.
-(2) The built Mode B method keeps the DEM for everything ≥ 30 m, adds the model's < 30 m heights, and takes terrain = DSM − heights.
-(3) On the held-out DepthWizard test tiles it cuts error against the raw Copernicus GLO-30 DEM by 14–40 % for the DSM and 54–60 % for the terrain (`docs/validation_results.md`).
+> **⚠ Read this first: status as of 2026-09-28.** This document fixed the pitch framework on 2026-09-21, before anything was built. Everything below that says "not built", "implementation not started", "no accuracy number exists" or "None yet" is **out of date: do not present it**. The current, measured facts are in `README.md`, and every number there is traced to a results file.
 
-The training data are Swiss only, so claims about Indian imagery must still be phrased as unmeasured.
+**Answers that changed.** These replace the "None yet" answers in the Q&A (rows 9, 20 and 25) and the status on Slides 1, 10 and 12:
+* **"What accuracy do you have?"**
+  * Held-out Swiss regions, height above ground: RMSE 3.86 m (r 0.875), vs 6.74 m zero-shot with oracle scaling.
+  * Held-out Swiss test tiles vs the Copernicus DEM: DSM error −14 to −40 %, terrain −54 to −60 % (`docs/validation_results.md`).
+  * Sikkim vs 1,114 ICESat-2 checkpoints, on CartoDEM: terrain 7.98 → 7.61 m, DSM 11.92 → 10.72 m, height above ground 9.20 m (`docs/validation_india.md`).
+  * **Say also:** in India the terrain improved on only 2 of 6 sites.
+* **"Indian data?"**
+  * Measured against NASA ICESat-2 on six Sikkim scenes.
+  * CartoDEM (ISRO) is used automatically, with its datum detected.
+  * Bhuvan layers are shown in the app, and Cartosat / Resourcesat zips are accepted.
+  * The model is still trained on Swiss data only.
+* **"Four terrain types?"**
+  * Dense airborne LiDAR at 5 sites: Zürich urban, Emmental rural/forest, and US 3DEP Gatlinburg (forest mountains), State College (town + ridges), Las Cruces (sparse).
+  * Plus ICESat-2 in Sikkim.
+  * **Say also:** on flat sparse ground the DEM alone was better (`docs/validation_us.md`).
+* **"PNG/JPG accuracy?"** Correlation with LiDAR r = 0.84 (Zürich 0.5 m) and 0.50 (2 m); terrain relief cannot come from a JPG (`docs/validation_mode_a.md`).
+* **"Standalone?"** Yes. `DepthWizard.exe` needs no Python and passed its offline self-test on the build machine; a clean-machine test is still to do.
+* **"Is it built?"**
+  * Yes: Mode A and Mode B, the 3D flythrough, validation, and GIS / offline exports.
+  * Disaster screening: flood (checked against 2 real floods, F1 0.57 and 0.70), helicopter landing zones (9 of 19 real helipads found), landslide (not yet validated), road access and a PDF damage report.
+* **Do not claim:**
+  * that the output is "guaranteed never worse than the DEM" (it is not; see README);
+  * that flood maps are hydraulic;
+  * that landslide classes are validated;
+  * any accuracy on Indian imagery beyond the ICESat-2 tables.
 
 **Authorities for this phase.** Phase 8 (evidence): Level-0 design-verification checks on synthetic data and foundational mathematics; Phase 9 (product pre-implementation baseline). The rules established here govern scientific honesty in the live evaluation pitch.
 

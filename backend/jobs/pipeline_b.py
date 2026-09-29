@@ -163,9 +163,13 @@ def _anchor_calibration(job_dir: Path, grid: Grid, terrain: np.ndarray, dem: np.
 # Typical 1-sigma point errors MEASURED by DepthWizard itself (never assumed): DEM-based layers vs NASA ICESat-2
 # checkpoints over the six Sikkim scenes (docs/validation_india.md = CartoDEM, docs/validation_india_copernicus.md).
 MEASURED_DEM_RMSE = {
-    "cartodem": {"dem_m": 7.98, "terrain_m": 7.61, "dsm_m": 10.72, "source": "measured: DepthWizard with CartoDEM vs ICESat-2, 6 Sikkim scenes (docs/validation_india.md)"},
+    "cartodem": {"dem_m": 7.98, "terrain_m": 7.28, "dsm_m": 10.75, "source": "measured: DepthWizard (model v2, g = 1, f = 0.75) with CartoDEM vs ICESat-2, 6 Sikkim scenes (scripts/select_dem_trust.py)"},
     "bundled": {"dem_m": 10.51, "terrain_m": 8.54, "dsm_m": 11.10, "source": "measured: DepthWizard with Copernicus GLO-30 vs ICESat-2, 6 Sikkim scenes (docs/validation_india_copernicus.md)"},
 }
+# These are steep-Himalaya figures and are shown for every scene (the conservative choice). On the held-out Swiss
+# test tiles (docs/validation_results.md) the same method measured terrain 3.2-5.3 m and DSM 5.5-6.4 m RMSE.
+for _v in MEASURED_DEM_RMSE.values():
+    _v["source"] += "; steep Himalayan terrain - on the Swiss LiDAR test tiles terrain was 3.2-5.3 m, DSM 5.5-6.4 m"
 
 
 def point_uncertainty(tier: str, metric: bool, model_info: dict[str, Any], dem_name: str | None) -> dict[str, Any]:
@@ -248,12 +252,12 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
             d1, _d2 = default_detail_scales(c.dem_posting_m, gsd_m)
             detail_t = np.where(dem_valid & valid, highpass(np.nan_to_num(ndsm_model), d1), 0.0).astype(np.float32)
             n = len(tiled.tiles)
-            report["fusion"] = {"accepted": True, "metric_model": True, "reason": "accepted (metric model: scale known)", "tiles_with_detail": n, "n_tiles": n, "gain_median": 1.0, "composition": settings.fusion.metric_composition, "method": "fine-tuned metric nDSM model; DSM = DEM + high-pass(nDSM) below one DEM posting (gain 1, DEM cell means preserved); terrain = DSM - nDSM" if settings.fusion.metric_composition == "highpass" else "fine-tuned metric nDSM model; DSM = ground-weighted DEM terrain (ground = model nDSM < threshold) + nDSM"}
+            report["fusion"] = {"accepted": True, "metric_model": True, "reason": "accepted (metric model: scale known)", "tiles_with_detail": n, "n_tiles": n, "gain_median": 1.0, "composition": settings.fusion.metric_composition, "method": "fine-tuned metric nDSM model; DSM = DEM + high-pass(nDSM) below one DEM posting (gain 1, zero-mean detail at the DEM scale); terrain = DSM - nDSM" if settings.fusion.metric_composition == "highpass" else "fine-tuned metric nDSM model; DSM = ground-weighted DEM terrain (ground = model nDSM < threshold) + nDSM"}
         elif tiled is not None and settings.fusion.enabled:
             d1, d2 = default_detail_scales(c.dem_posting_m, gsd_m)
             fusion = fuse_detail(np.where(dem_valid, dem, np.nan), tiled, detail_scale_px=d1, band_high_px=d2, max_gain=settings.fusion.max_tile_gain)
             accepted = fusion.stats["tiles_with_detail"] > 0 and fusion.stats["detail_std"] > 1e-3
-            report["fusion"] = {"accepted": bool(accepted), "reason": "accepted" if accepted else "no tile showed a positive model/DEM agreement in the DEM-resolved band", "params": fusion.params, **fusion.stats, "per_tile_gain": [round(g, 3) for g in fusion.gains], "method": "per-tile least squares of model vs DEM band-pass (1-4 DEM postings); gain applied to model detail below one posting; DEM cell means preserved"}
+            report["fusion"] = {"accepted": bool(accepted), "reason": "accepted" if accepted else "no tile showed a positive model/DEM agreement in the DEM-resolved band", "params": fusion.params, **fusion.stats, "per_tile_gain": [round(g, 3) for g in fusion.gains], "method": "per-tile least squares of model vs DEM band-pass (1-4 DEM postings); gain applied to model detail below one posting; zero-mean detail at the DEM scale"}
             if accepted:
                 detail_t = np.where(dem_valid & valid, fusion.detail, 0.0).astype(np.float32)
         if anchors_path is not None and anchors_path.exists():
@@ -288,10 +292,14 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
             terrain = terr.copy()
             dsm = (terrain + np.nan_to_num(ndsm_model)).astype(np.float32)
         else:
-            dsm = (dem + c_off + (k * detail_t if detail_t is not None else 0.0)).astype(np.float32)
+            fz = settings.fusion
+            g_d = fz.metric_detail_gain if metric else 1.0
+            dsm = (dem + c_off + (g_d * k * detail_t if detail_t is not None else 0.0)).astype(np.float32)
             if metric:
-                # terrain = surface minus the model's object heights (DEM - low-pass(nDSM) + anchors); never above the DSM
-                terrain = np.fmin(dsm - k * np.nan_to_num(ndsm_model), dsm).astype(np.float32)
+                # terrain = DEM - f * low-pass(nDSM) (+ anchor offset): f = share of the smoothed object height the DEM
+                # itself contains (1 = a full surface model); never above the DSM
+                lp = np.nan_to_num(ndsm_model) - (np.nan_to_num(detail_t) if detail_t is not None else 0.0)
+                terrain = np.fmin(dem + c_off - fz.metric_dem_object_fraction * k * lp, dsm).astype(np.float32)
             else:
                 # DEM-based ground layer (anchor offset in tier A) combined with the morphological ground of the
                 # fused DSM; never above the surface itself

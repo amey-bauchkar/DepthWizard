@@ -25,13 +25,13 @@
 2. **Whole-image inference** (Depth Anything V2 Small, 518 px short side) gives the relative structure (`relative.tif`, tier R). A morphological ground filter on it gives the ground mask.
 3. **DEM.** Bundled Copernicus GLO-30 tiles are found by filename. A user DEM can be uploaded instead. The DEM is resampled bilinearly to the job grid and converted to EGM2008 with the **C-1 datum guard**: offline PROJ, required geoid grids present, "ballpark" pipelines refused, known-point self-test.
 4. **Tiled inference.** The image is resampled to ~0.5 m and cut into overlapping 518 px tiles (25 % overlap). At most 64 tiles are used; the inference GSD is coarsened automatically to stay within that. Each tile is predicted independently by the **fine-tuned metric nDSM model** when installed (output: metres above ground), otherwise by the zero-shot model.
-5. **Detail fusion.** *Fine-tuned model:* tiles are feather-blended into an nDSM in metres; DSM = DEM + high-pass(nDSM) below one DEM posting (gain 1, since the scale is learned); terrain = DSM − nDSM. This composition was chosen over "DEM terrain + nDSM" on six validation-region tiles (DSM 5.71 vs 6.42 m, terrain 4.10 vs 5.69 m; `docs/metric_composition_selection.json`). *Zero-shot fallback:* for each tile, the least-squares gain between the model's band-pass and the DEM's band-pass in 30–120 m (one to four DEM postings) gives metres per relative unit. Negative gains are clamped to zero. A spectral guard caps tiles whose fine-scale content is noise-like. The gain multiplies the model's high-pass (< 30 m). Tiles are feather-blended and the result is re-high-passed on the job grid. **DSM = DEM + detail**, so at the DEM's own resolution the DSM equals the DEM.
+5. **Detail fusion.** *Fine-tuned model:* tiles are feather-blended into an nDSM in metres; DSM = DEM + high-pass(nDSM) below one DEM posting (gain 1, since the scale is learned); terrain = DSM − nDSM. This composition was chosen over "DEM terrain + nDSM" on six validation-region tiles (DSM 5.71 vs 6.42 m, terrain 4.10 vs 5.69 m; `docs/metric_composition_selection.json`). *Zero-shot fallback:* for each tile, the least-squares gain between the model's band-pass and the DEM's band-pass in 30–120 m (one to four DEM postings) gives metres per relative unit. Negative gains are clamped to zero. A spectral guard caps tiles whose fine-scale content is noise-like. The gain multiplies the model's high-pass (< 30 m). Tiles are feather-blended and the result is re-high-passed on the job grid. **DSM = DEM + detail**. The detail has zero mean at the DEM scale, so the DSM is unbiased against the DEM at 30 m; per 30 m cell it still differs by a few metres (P95 2.7-4.4 m measured), because the high-pass is Gaussian, not a block filter.
 6. **Terrain.** Fine-tuned model: `terrain = DSM − predicted nDSM`. Zero-shot fallback: `terrain = min(ground-weighted normalized-convolution DEM reconstruction [+ tier-A offset], morphological ground of the DSM, DSM)`. In both cases **nDSM = DSM − terrain** (≥ 0), so `dsm = terrain + ndsm` holds exactly.
 7. **Anchors (tier A).** Ground anchors give a robust median terrain offset with blunder flags and a hold-out (Phase 8 C-3). All anchors fit `z = DEM + c + k·detail` by Tukey IRLS. The offset `c` is kept only if it is significant (|c| > 2 SE), because a point anchor cannot separate a datum error from sub-cell mixing. The fit is accepted only if its **leave-one-out** RMSE beats tier T.
 8. **Quality and tier** (`core/calib/tier.py`). Tier T is at most LIMITED: the model's accuracy was measured on other regions, not on the user's scene. Without a DEM (or a safe datum) the fine-tuned model gives **tier H**: metric heights above ground, no absolute elevation. Without the fine-tuned model, missing DEM / unsafe datum / a DEM–terrain offset beyond the sanity threshold give tier R with WARNING / INVALID and the reason.
 9. **Derivatives.** Slope and aspect (Horn 3×3), hillshade, a per-pixel flag raster (border, raw-DEM fallback, DEM void, nodata, no detail, low ground support), viewer heightfields (area-average downsampling, residual reported), and LoD-1 blocks (spectral + nDSM rules, watershed instance separation, RDP simplification; for visualisation only).
 
-**Why:** see `docs/validation_results.md`. Scaling a zero-shot object layer against the DEM residual, and replacing the DEM by terrain + objects (the earlier design), was **worse than the raw DEM** against LiDAR on every tile (e.g. Zürich 2 m DSM RMSE 10.77 m vs 9.00 m). Keeping the DEM and adding only calibrated sub-posting detail is never worse and measurably better. Tiling matters: one down-scaled pass of the model correlated 0.06 with LiDAR building detail on the 0.5 m Zürich tile; native-resolution tiles reached 0.50–0.54.
+**Why:** see `docs/validation_results.md`. Scaling a zero-shot object layer against the DEM residual, and replacing the DEM by terrain + objects (the earlier design), was **worse than the raw DEM** against LiDAR on every tile (e.g. Zürich 2 m DSM RMSE 10.77 m vs 9.00 m). Keeping the DEM and adding only calibrated sub-posting detail was better on all three Swiss test tiles; on Sikkim it improved the DSM on 5 of 6 sites and was worse on one (North Sikkim alpine), so it is not a guarantee. Tiling matters: one down-scaled pass of the model correlated 0.06 with LiDAR building detail on the 0.5 m Zürich tile; native-resolution tiles reached 0.50–0.54.
 
 ## 3. Mode A method
 
@@ -71,15 +71,19 @@ Honest reading:
 
 ### 4.3 India: Sikkim vs NASA ICESat-2 (independent satellite laser checkpoints)
 
-Six 1.2 km scenes of Maxar WorldView 0.5 m imagery (Maxar Open Data Program, CC BY-NC 4.0) are scored against 1,114 ICESat-2 20 m segments. The heights are converted from ellipsoidal to EGM2008 with the C-1 datum guard. No Indian data was used for training or tuning. Pooled RMSE in metres (`docs/validation_india.md`):
+Six 1.2 km scenes of Maxar WorldView 0.5 m imagery (Maxar Open Data Program, CC BY-NC 4.0) are scored against 1,114 ICESat-2 20 m segments (of 2,295 fetched; the rest fall outside the scenes or fail the photon filters). The heights are converted from ellipsoidal to EGM2008 with the C-1 datum guard. No Indian data was used for training or tuning. Pooled RMSE in metres:
 
-| vs ICESat-2 | Copernicus alone | Zero-shot | Fine-tuned |
-|---|---|---|---|
-| Terrain vs ground | 10.51 | 10.25 | **8.54** |
-| DSM vs top of surface | 11.81 | 11.03 | **11.10** |
-| Height above ground | – | 11.38 | **9.20** |
+| vs ICESat-2 | Copernicus alone | Zero-shot on Copernicus | Fine-tuned on Copernicus | CartoDEM alone | Fine-tuned on CartoDEM (default) |
+|---|---|---|---|---|---|
+| Terrain vs ground | 10.51 | 10.25 | 8.54 | 7.98 | **7.61** |
+| DSM vs top of surface | 11.81 | **11.03** | 11.10 | 11.92 | 10.72 |
+| Height above ground | – | 11.38 | 9.20 | – | **9.20** |
 
-Per site, the fine-tuned model improves height above ground and DSM on 5 of 6 sites and terrain on 4 of 6. It is worse on the two forested-valley sites, where Copernicus already lies within ~2 m of the ground under forest.
+Sources: `docs/validation_india_copernicus.md` (Copernicus runs), `docs/validation_india.md` (CartoDEM runs). On Copernicus the fine-tuned DSM (11.10) is marginally worse than zero-shot (11.03).
+
+Per site, fine-tuned vs the DEM alone:
+* on Copernicus: height above ground better on 5 of 6 sites (vs zero-shot), DSM 5 of 6, terrain 4 of 6 (worse on Namchi and Chungthang);
+* on CartoDEM (the default in India): height above ground 6 of 6, DSM 5 of 6 (worse on North Sikkim alpine), terrain **only 2 of 6** (better on Chungthang west and North Sikkim alpine). CartoDEM alone is already the better ground model on the other four.
 
 Two fixes were tested and rejected because they did not improve track-wise cross-validation:
 - a DEM-only estimate of how much object height the DEM contains;

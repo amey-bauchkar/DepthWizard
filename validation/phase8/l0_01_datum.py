@@ -1,7 +1,7 @@
 """L0-01 Vertical datum reference values (design check, not codebase test).
 Computes EGM96 / EGM2008 geoid undulation at Indian points with PROJ.
 Also checks whether the transform works OFFLINE (grids bundled?) vs ONLINE (PROJ CDN)."""
-import json, os, sys, math
+import json, math
 import pyproj
 from pyproj import Transformer
 PTS = {"Kanyakumari":(77.55,8.08),"Bengaluru":(77.59,12.97),"Mumbai":(72.88,19.08),"Delhi":(77.21,28.61),

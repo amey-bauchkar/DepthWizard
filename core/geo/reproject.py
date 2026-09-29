@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 import rasterio
 from pyproj import CRS, Geod
 from rasterio.warp import Resampling, calculate_default_transform, reproject

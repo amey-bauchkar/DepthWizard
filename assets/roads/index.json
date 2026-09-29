@@ -1,0 +1,160 @@
+{
+ "files": [
+  {
+   "file": "swissimage_2019_2682-1247_0.5m.geojson",
+   "bounds_wgs84": [
+    8.520267,
+    47.364614,
+    8.54169,
+    47.381732
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 6021,
+   "places": 3
+  },
+  {
+   "file": "swissimage_2019_2682-1247_2m.geojson",
+   "bounds_wgs84": [
+    8.520267,
+    47.364614,
+    8.54169,
+    47.381732
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 6021,
+   "places": 3
+  },
+  {
+   "file": "swissimage_2021_2621-1202_2m.geojson",
+   "bounds_wgs84": [
+    7.710582,
+    46.964711,
+    7.731771,
+    46.981738
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 123,
+   "places": 30
+  },
+  {
+   "file": "namchi_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.351384,
+    27.156026,
+    88.371624,
+    27.174975
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 150,
+   "places": 1
+  },
+  {
+   "file": "chungthang_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.635346,
+    27.593517,
+    88.655663,
+    27.61249
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 26,
+   "places": 1
+  },
+  {
+   "file": "teesta_east_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.395573,
+    27.17042,
+    88.41582,
+    27.189372
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 35,
+   "places": 0
+  },
+  {
+   "file": "teesta_west_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.308385,
+    27.142429,
+    88.32862,
+    27.161374
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 54,
+   "places": 1
+  },
+  {
+   "file": "chungthang_west_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.608346,
+    27.621816,
+    88.628664,
+    27.640786
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 22,
+   "places": 0
+  },
+  {
+   "file": "north_sikkim_alpine_rgb_0.5m.geojson",
+   "bounds_wgs84": [
+    88.285344,
+    27.898827,
+    88.305664,
+    27.917772
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 0,
+   "places": 0
+  },
+  {
+   "file": "islahiye_before_2022-12-27_0.5m.geojson",
+   "bounds_wgs84": [
+    36.620093,
+    37.016462,
+    36.641909,
+    37.03554
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 373,
+   "places": 16
+  },
+  {
+   "file": "islahiye_after_2023-02-07_0.5m.geojson",
+   "bounds_wgs84": [
+    36.620093,
+    37.016462,
+    36.641909,
+    37.03554
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 373,
+   "places": 16
+  },
+  {
+   "file": "nepal_sunkoshi.geojson",
+   "bounds_wgs84": [
+    85.82617,
+    27.424629,
+    85.846423,
+    27.443562
+   ],
+   "source": "OpenStreetMap roads, paths and places",
+   "licence": "ODbL 1.0 (c) OpenStreetMap contributors",
+   "roads": 65,
+   "places": 0
+  }
+ ]
+}

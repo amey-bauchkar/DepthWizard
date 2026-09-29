@@ -19,7 +19,7 @@ from typing import Iterable
 
 import numpy as np
 import pyproj
-from pyproj import Transformer
+from pyproj import CRS, Transformer
 from pyproj.exceptions import ProjError
 
 from backend.errors import GridsMissingError, VerticalTransformUnsafeError
@@ -161,10 +161,12 @@ def safe_compound_transformer(horizontal_crs: str, src_v: str, dst_v: str) -> Tr
         code = _vertical_code(v)
         return f"{horizontal_crs}" if code in (None, "ellipsoidal") else f"{horizontal_crs}+{code.split(':')[-1]}"
     src_c, dst_c = compound(src_v), compound(dst_v)
+    # ellipsoidal heights need a 3D CRS: a plain 2D projected CRS carries no vertical reference, so PROJ would apply
+    # NO geoid correction (and not call it "ballpark") - found by the packaged-app self-test (24-99 m error in India)
     if src_v == "ellipsoidal":
-        src_c = CRS_3D_OF.get(horizontal_crs, horizontal_crs)
+        src_c = CRS_3D_OF.get(horizontal_crs) or CRS.from_user_input(horizontal_crs).to_3d()
     if dst_v == "ellipsoidal":
-        dst_c = CRS_3D_OF.get(horizontal_crs, horizontal_crs)
+        dst_c = CRS_3D_OF.get(horizontal_crs) or CRS.from_user_input(horizontal_crs).to_3d()
     try:
         t = Transformer.from_crs(src_c, dst_c, always_xy=True, only_best=True)
     except ProjError as e:
@@ -196,10 +198,39 @@ def check_transformer_not_ballpark(t: Transformer, x: float, y: float, label: st
     return desc
 
 
+# Vertical datums that PROJ only relates to WGS84 through their own geodetic frame (e.g. NAVD88 via NAD83(2011) and
+# NOAA GEOID18): transformed on geographic coordinates with that frame, never over the job's WGS84-based UTM CRS
+# (which PROJ answers with inf -> refused). Required grid in assets/proj: us_noaa_g2018u0.tif (NOAA, public domain).
+NATIVE_FRAME = {"EPSG:5703": "EPSG:6318"}
+
+
+def _native_frame_transform(xs: np.ndarray, ys: np.ndarray, z: np.ndarray, horizontal_crs: str, src_v: str, dst_v: str) -> tuple[np.ndarray, dict]:
+    register_bundled_grids()
+
+    def crs_of(v: str) -> str:
+        code = _vertical_code(v)
+        if code in NATIVE_FRAME:
+            return f"{NATIVE_FRAME[code]}+{code.split(':')[-1]}"
+        return _crs_for(v)
+
+    lon, lat = Transformer.from_crs(horizontal_crs, "EPSG:4326", always_xy=True).transform(xs, ys)
+    try:
+        t = Transformer.from_crs(crs_of(src_v), crs_of(dst_v), always_xy=True, only_best=True)
+    except ProjError as e:
+        raise VerticalTransformUnsafeError(f"PROJ refused {src_v}->{dst_v}: {e}") from e
+    _a, _b, zz = t.transform(np.asarray(lon, float), np.asarray(lat, float), np.asarray(z, float))
+    desc = used_operation_description(t)
+    if not np.all(np.isfinite(zz)) or "ballpark" in desc.lower():
+        raise VerticalTransformUnsafeError(f"{src_v}->{dst_v}: no exact transformation available ({desc or 'non-finite'}); is the geoid grid (e.g. us_noaa_g2018u0.tif) in assets/proj?")
+    return np.asarray(zz), {"transformed": True, "pipeline": desc}
+
+
 def transform_heights_xy(x: np.ndarray, y: np.ndarray, z: np.ndarray, horizontal_crs: str, src_v: str, dst_v: str) -> tuple[np.ndarray, dict]:
     """Convert heights between vertical references at projected positions (x, y in `horizontal_crs`)."""
     if src_v == dst_v:
         return np.asarray(z, float), {"transformed": False}
+    if _vertical_code(src_v) in NATIVE_FRAME or _vertical_code(dst_v) in NATIVE_FRAME:
+        return _native_frame_transform(np.asarray(x, float), np.asarray(y, float), np.asarray(z, float), horizontal_crs, src_v, dst_v)
     t = safe_compound_transformer(horizontal_crs, src_v, dst_v)
     xs = np.asarray(x, float); ys = np.asarray(y, float)
     check_transformer_not_ballpark(t, float(xs.flat[0]), float(ys.flat[0]), f"{src_v}->{dst_v}")
@@ -207,6 +238,15 @@ def transform_heights_xy(x: np.ndarray, y: np.ndarray, z: np.ndarray, horizontal
     if not np.all(np.isfinite(zz)):
         raise VerticalTransformUnsafeError(f"non-finite heights from {src_v}->{dst_v}")
     desc = used_operation_description(t)  # populated only after a transform call
+    # independent cross-check at the first point: the geographic path (transform_heights) must give the same shift
+    try:
+        lon, lat = Transformer.from_crs(horizontal_crs, "EPSG:4326", always_xy=True).transform(float(xs.flat[0]), float(ys.flat[0]))
+        ref = float(transform_heights(np.array([lon]), np.array([lat]), np.array([0.0]), src_v, dst_v)[0])
+        got = float(t.transform(float(xs.flat[0]), float(ys.flat[0]), 0.0)[2])
+    except (ProjError, VerticalTransformUnsafeError, KeyError, ValueError):
+        ref = got = None  # explicit vertical EPSG codes without a geographic twin: rely on the ballpark guard
+    if ref is not None and got is not None and abs(ref - got) > 0.1:
+        raise VerticalTransformUnsafeError(f"{src_v}->{dst_v} over {horizontal_crs} shifts heights by {got:+.2f} m but the geoid gives {ref:+.2f} m")
     if "ballpark" in desc.lower():
         raise VerticalTransformUnsafeError(f"PROJ selected a ballpark vertical transformation for {src_v}->{dst_v}: {desc}")
     return np.asarray(zz), {"transformed": True, "pipeline": desc}

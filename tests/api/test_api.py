@@ -171,7 +171,6 @@ def test_real_model_mode_b_demo_geotiff_beats_nothing_it_should_not(tmp_path, mo
 
 def test_non_georeferenced_tiff_runs_in_mode_a(client):
     """PS: PNG, JPG or TIFF input. A TIFF without CRS (16-bit here) is Mode A (relative), not rejected."""
-    import io
     import warnings
 
     import rasterio
@@ -201,3 +200,30 @@ def test_delete_job(client, png_bytes):
     r = client.delete(f"/api/jobs/{jid}")
     assert r.status_code == 204 and r.content == b""
     assert client.get(f"/api/jobs/{jid}").status_code == 404
+
+
+def test_upload_size_cap_and_job_id_format(client, png_bytes):
+    s = client.app.state.settings
+    old = s.ingest.max_upload_mb
+    s.ingest.max_upload_mb = 0.00001  # ~10 bytes
+    try:
+        r = client.post("/api/jobs", files={"file": ("big.png", png_bytes, "image/png")})
+        assert r.status_code == 413 and r.json()["error"]["code"] == "UPLOAD_TOO_LARGE"
+    finally:
+        s.ingest.max_upload_mb = old
+    for bad in ("..", "abc", "0123456789ab0", "..%5C..%5Cx"):
+        assert client.get(f"/api/jobs/{bad}/report").status_code == 404
+
+
+def test_zip_bomb_is_refused(tmp_path):
+    import zipfile
+
+    import pytest
+
+    from core.ingest.isro import convert
+
+    z = tmp_path / "bomb.zip"
+    with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("BAND1.tif", b"\0" * (3 * 1024 * 1024))
+    with pytest.raises(ValueError, match="once extracted"):
+        convert(z, tmp_path / "o.tif", max_uncompressed_mb=1)

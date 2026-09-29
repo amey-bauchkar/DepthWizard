@@ -155,3 +155,47 @@ below the doctrine limits (7 / 15 degrees), because the pad slope error has an N
 degrees against LiDAR. With no margin, 10 % of rural pads accepted as <= 7 degrees were steeper on LiDAR; with 2
 degrees it is <= 1.4 % in both scenes. Chosen on the rural scene (the urban scene is nearly flat and cannot constrain
 it), so no independent scene has tested this value."""
+
+HLZ_SCENE_BIAS_MIN_N = 20
+"""STATISTICAL. The scene-measured under-reading of obstacle tops (mean error of the nDSM P98 against laser canopy /
+structure heights, e.g. ICESat-2) is added to the approach-check margin only when at least this many checkpoints
+support it; with fewer, the mean error is dominated by sampling noise (standard error ~ RMSE / sqrt(n) ~ 2 m at n = 20)."""
+
+HLZ_SLOPE_SIGMA_DEG = 1.5
+"""STATISTICAL (docs/landing_zones_results.md section 3). 1-sigma error of the measured pad slope used for the per-site
+confidence: the P95 absolute slope error against LiDAR is 2.2-3.0 degrees across scenes and sizes, i.e. ~1.5 degrees
+if Gaussian (the NMAD, 0.3-1.0 degrees, understates the tails). The slope limit is compared with the slope
+WITHOUT the margin HLZ_SLOPE_MARGIN_DEG, so the confidence reports how far inside the doctrine limit a site sits."""
+
+HLZ_BEARING_FALSE_CLEAR = 0.25
+"""STATISTICAL (docs/landing_zones_results.md section 4). Share of approach bearings shown CLEAR that the LiDAR DSM
+blocks (36/175 = 21 % Size 1, 28/107 = 26 % Size 3, rural). Per-site approach confidence = 1 - rate^k for k CLEAR
+bearings, which reproduces the measured share of sites whose clear bearings are all blocked (3 of 79, ~4 %) at the
+typical k = 2-3."""
+
+HLZ_CONFIDENCE_BANDS = (0.9, 0.6)
+"""POLICY. Site confidence >= first value: HIGH; >= second: MEDIUM; else LOW. A scene without laser-checkpoint
+validation of obstacle heights is capped at MEDIUM."""
+
+ROAD_FLOOD_IMPASSABLE_M = 0.3
+"""POLICY. A road cell is cut when the screened water depth exceeds this. ~30 cm of moving water can float a car
+(US NWS 'Turn Around Don't Drown'; also the usual threshold in flood-routing studies)."""
+
+ROAD_BRIDGE_CLEARANCE_M = 5.0
+"""ASSUMPTION. Mapped bridges (OSM bridge=yes) stay open until the water under them is deeper than this: the deck
+height is not known, and a river channel below a bridge is always 'wet'. Stated with every result."""
+
+ROAD_SETTLEMENT_LINK_M = 250.0
+"""POLICY. A settlement is joined to the network at the nearest road node within this distance; farther away it is
+reported as having no mapped road."""
+
+SETTLEMENT_CLUSTER_M = 25.0
+"""ALGORITHMIC. Buildings closer than this (edge to edge) form one settlement cluster; clusters of at least
+SETTLEMENT_MIN_BUILDINGS are reported (named after the nearest OSM place within SETTLEMENT_NAME_M)."""
+SETTLEMENT_MIN_BUILDINGS = 3
+SETTLEMENT_NAME_M = 400.0
+
+HOUSEHOLD_SIZE = 4.9
+"""STATISTICAL (Census of India 2011: 1,210.9 million persons / 246.7 million households). Population estimate =
+sum over buildings of floors x HOUSEHOLD_SIZE, i.e. ONE household per floor of every detected building. Rough and
+labelled as such: it counts non-residential buildings too; replace with census / survey data where available."""

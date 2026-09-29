@@ -256,7 +256,8 @@ function updateOptSummary() {
 // ──────────────────────────────────────── Input
 function showInput(file: File) {
   state.file = file; state.jobId = null; state.result = null; state.job = null;
-  const tif = isTiff(file);
+  const zip = /\.zip$/i.test(file.name);  // zipped Cartosat / Resourcesat product: converted to a GeoTIFF on upload
+  const tif = isTiff(file) || zip;
   const wrap = $("input-preview-wrap"); const img = $("input-preview") as HTMLImageElement;
   if (!tif) {
     const url = URL.createObjectURL(file);
@@ -264,7 +265,7 @@ function showInput(file: File) {
     img.src = url; wrap.classList.remove("hidden");
   } else {
     wrap.classList.add("hidden"); img.removeAttribute("src");
-    $("m-image").textContent = `${file.name} · ${(file.size / 1024).toFixed(0)} KB · GeoTIFF (preview available after processing)`;
+    $("m-image").textContent = `${file.name} · ${(file.size / 1024).toFixed(0)} KB · ${zip ? "ISRO product zip (bands re-ordered to RGB on upload)" : "GeoTIFF"} (preview available after processing)`;
   }
   $("m-mode").textContent = tif
     ? "B if the TIFF carries a CRS (GeoTIFF → DEM + calibrated model detail → metric DSM); otherwise A (relative)"
@@ -559,23 +560,12 @@ async function renderResult(job: Job, res: Result) {
   loadBuildingsPanel();
   void loadChangePanel();
 
-  // ── Disaster slider initialization based on terrain elevation
-  const tLeg = res.layers?.terrain?.legend || res.layers?.dsm?.legend;
-  const fSlider = $("flood-level-slider") as HTMLInputElement | null;
-  const fVal = $("flood-level-val");
-  if (fSlider && tLeg && typeof tLeg.lo === "number" && typeof tLeg.hi === "number") {
-    const minElev = Math.floor(tLeg.lo);
-    const maxElev = Math.ceil(tLeg.hi);
-    fSlider.min = String(minElev);
-    fSlider.max = String(maxElev + 10);
-    fSlider.step = "0.5";
-    const defaultVal = Math.min(maxElev, minElev + 2.0);
-    fSlider.value = defaultVal.toFixed(1);
-    if (fVal) fVal.textContent = defaultVal.toFixed(1);
-    state.disaster.autoFloodVal = defaultVal;
-    const minLbl = $("flood-min-lbl"); if (minLbl) minLbl.textContent = `${minElev} m`;
-    const maxLbl = $("flood-max-lbl"); if (maxLbl) maxLbl.textContent = `${maxElev + 10} m`;
-  }
+  // ── Flood slider: always configured for the model the selector shows (river rise 0-30 m, or a still level in the
+  // terrain's own elevations), so a run can never pair the river model with an elevation; initFloodModel() then
+  // switches both to the model the terrain relief suggests.
+  configureFloodSlider(floodModel());
+  void initFloodModel();
+  void initIndiaLayers();
   initDisasterMap();
 
   // ── Reset readout
@@ -1124,9 +1114,72 @@ function updateDisasterBaseMap() {
   });
 }
 
+const floodModel = (): "river" | "level" => (($("flood-model") as HTMLSelectElement | null)?.value === "level" ? "level" : "river");
+
+/** Slider range and label for the flood model: river stage 0-30 m above the channel, or an absolute water level. */
+function configureFloodSlider(model: "river" | "level") {
+  const s = $("flood-level-slider") as HTMLInputElement;
+  const res = state.result;
+  if (model === "river") {
+    s.min = "0"; s.max = "30"; s.step = "0.5"; s.value = "3.0";
+    state.disaster.autoFloodVal = 3.0;
+    $("flood-level-title").textContent = "River rise above channel";
+  } else {
+    const tLeg = res?.layers?.terrain?.legend || res?.layers?.dsm?.legend;
+    if (tLeg && typeof tLeg.lo === "number" && typeof tLeg.hi === "number") {
+      const lo = Math.floor(tLeg.lo), hi = Math.ceil(tLeg.hi);
+      const v = Math.min(hi, lo + 2);
+      s.min = String(lo); s.max = String(hi + 10); s.step = "0.5"; s.value = v.toFixed(1);
+      state.disaster.autoFloodVal = v;
+    }
+    $("flood-level-title").textContent = `Water level (${res?.vertical_reference ?? "terrain datum"})`;
+  }
+  $("flood-level-val").textContent = Number(s.value).toFixed(1);
+  $("flood-min-lbl").textContent = `${s.min} m`;
+  $("flood-max-lbl").textContent = `${s.max} m`;
+}
+
+/** Default flood model from the terrain relief (river rise in hills, still level on flat ground). */
+function scarWindows(): { before: string; after: string } {
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const back = (days: number, years = 0) => { const d = new Date(); d.setFullYear(d.getFullYear() - years); d.setDate(d.getDate() - days); return d; };
+  return { before: `${iso(back(60, 1))}/${iso(back(0, 1))}`, after: `${iso(back(60))}/${iso(back(0))}` };
+}
+
+async function initIndiaLayers() {
+  if (!state.jobId) return;
+  ($("disaster-report-btn") as HTMLAnchorElement).href = `/api/jobs/${state.jobId}/report.pdf`;
+  $("bhuvan-overlay-img").classList.add("hidden");
+  $("confidence-overlay-img").classList.add("hidden");
+  ($("confidence-toggle") as HTMLInputElement).checked = false;
+  const sel = $("bhuvan-layer") as HTMLSelectElement;
+  sel.innerHTML = `<option value="">none</option>`;
+  try {
+    const r = await (await fetch(`/api/jobs/${state.jobId}/bhuvan`)).json();
+    for (const l of r.layers ?? []) sel.insertAdjacentHTML("beforeend", `<option value="${l.id}">${esc(l.label)}</option>`);
+    $("bhuvan-row").classList.toggle("hidden", !(r.layers ?? []).length);
+  } catch { $("bhuvan-row").classList.add("hidden"); }
+}
+
+async function initFloodModel() {
+  if (!state.jobId || state.result?.mode !== "B") return;
+  let m: "river" | "level" = "level";
+  try {
+    const r = await fetch(`/api/jobs/${state.jobId}/disaster/flood/relief`).then((x) => x.json());
+    m = r.suggestedModel === "river" ? "river" : "level";
+    $("flood-model-hint").textContent = m === "river"
+      ? `Hilly scene (${r.relief_m} m relief): water rises above the river channels.`
+      : `Fairly flat scene (${r.relief_m} m relief): one still water level.`;
+  } catch { /* keep the still-level model */ }
+  ($("flood-model") as HTMLSelectElement).value = m;
+  configureFloodSlider(m);
+}
+
+let disasterSeq = 0;  // only the newest request may update the panel (a slower older response must not overwrite it)
 async function runDisasterAnalysis(silent = false) {
+  const seq = ++disasterSeq;
   if (!state.jobId || !state.result) {
-    if (!silent) alert("Please generate a surface first.");
+    if (!silent) setStatus("Generate a surface first (upload an image or pick a demo, then Generate Surface).", "err", "disaster-status");
     return;
   }
   const runBtn = $("run-disaster-btn") as HTMLButtonElement;
@@ -1137,8 +1190,12 @@ async function runDisasterAnalysis(silent = false) {
     const mode = disScen ? disScen.value : "flood";
     const fLvl = $("flood-level-slider") as HTMLInputElement;
     const aSlp = $("access-slope-slider") as HTMLInputElement;
-    const body = mode === "flood" ? { waterLevel_m: Number(fLvl.value || 0) }
+    const sel = (id: string) => ($(id) as HTMLSelectElement).value;
+    const chk = (id: string) => ($(id) as HTMLInputElement).checked;
+    const body = mode === "flood" ? { waterLevel_m: Number(fLvl.value || 0), model: floodModel() }
       : mode === "landing_zones" ? { size: Number(($("hlz-size") as HTMLSelectElement).value), excludeFlooded: ($("hlz-exclude-flooded") as HTMLInputElement).checked }
+      : mode === "landslide" ? { lithology: sel("ls-lithology"), structure: sel("ls-structure"), hydrogeology: sel("ls-hydro"), fetchRainfall: chk("ls-rain"), scars: chk("ls-scars") ? scarWindows() : null }
+      : mode === "roads" ? { includeLandslide: chk("roads-landslide") }
       : { maxSlopeDeg: Number(aSlp.value || 15) };
 
     const res = await fetch(`/api/jobs/${state.jobId}/disaster/${mode}`, {
@@ -1146,9 +1203,17 @@ async function runDisasterAnalysis(silent = false) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+      const t = await res.text();
+      let msg = t;
+      try { msg = JSON.parse(t).error?.message ?? t; } catch { /* plain text */ }
+      throw new Error(msg);
+    }
     const resp = await res.json();
+    if (seq !== disasterSeq) return;  // superseded by a newer run
     state.disaster.lastResult = resp;
+    setStatus("", "", "disaster-status");
+    ["stat-area-card", "stat-buildings-card", "stat-maxdepth-card", "stat-meandepth-card"].forEach((c) => $(c).classList.remove("hidden"));
 
     $("disaster-result").classList.remove("hidden");
     const placeholder = $("disaster-map-placeholder");
@@ -1160,8 +1225,13 @@ async function runDisasterAnalysis(silent = false) {
 
     if (mode === "flood") {
       const iso = resp.isolatedAreaM2 ? ` · ${fmtArea(resp.isolatedAreaM2)} isolated` : "";
-      setStat("stat-area-card", "Inundated Area", fmtArea(resp.affectedAreaM2), `${resp.affectedAreaPct}% of valid terrain${iso}`);
-      setStat("stat-buildings-card", "Affected Buildings", String(resp.affectedBuildingsCount ?? 0), `exposed · ${resp.contactBuildingsCount ?? 0} in contact`);
+      const u = resp.uncertainty;
+      setStat("stat-area-card", "Inundated Area", fmtArea(resp.affectedAreaM2), u
+        ? `range ${fmtArea(u.likelyAreaM2)} likely – ${fmtArea(u.possibleAreaM2)} possible${iso}`
+        : `${resp.affectedAreaPct}% of valid terrain${iso}`);
+      setStat("stat-buildings-card", "Affected Buildings", String(resp.affectedBuildingsCount ?? 0), u
+        ? `range ${u.buildingsLikely} likely – ${u.buildingsPossible} possible`
+        : `exposed · ${resp.contactBuildingsCount ?? 0} in contact`);
       setStat("stat-maxdepth-card", "Max Depth", `${resp.maxDepth_m} m`, "deepest flooded cell");
       setStat("stat-meandepth-card", "Mean Depth", `${resp.meanDepth_m} m`, "over flooded area");
 
@@ -1182,7 +1252,7 @@ async function runDisasterAnalysis(silent = false) {
           <div class="disaster-bldg-item" data-bldg-id="${b.id}">
             <div>
               <b>Building #${b.id}</b>
-              <span class="hint" style="margin-left: 6px;">Ground ${b.base_elev_m} m · depth <span class="depth-val">${b.flood_depth_m} m</span>${b.wet_fraction != null ? ` · ${Math.round(b.wet_fraction * 100)}% wet` : ""}</span>
+              <span class="hint" style="margin-left: 6px;">${resp.model === "river" ? `${b.ground_p10_m ?? "?"} m above channel` : `Ground ${b.base_elev_m} m`} · depth <span class="depth-val">${b.flood_depth_m} m</span>${b.wet_fraction != null ? ` · ${Math.round(b.wet_fraction * 100)}% wet` : ""}</span>
             </div>
             <span class="badge ${exposureBadge(b.exposure)}" style="font-size: 10px;">${b.exposure}</span>
           </div>
@@ -1202,6 +1272,10 @@ async function runDisasterAnalysis(silent = false) {
       // legend drawn from the backend's ramp + class definitions (single source of truth)
       const ramp = resp.previewRamp ?? { colours: ["#add8e6", "#00bfff", "#0000cd", "#000080"], stops_m: [0, 1.67, 3.33, 5] };
       $("disaster-legend-title").textContent = "Water depth above terrain (m)";
+      $("flood-model-hint").textContent = resp.model === "river"
+        ? `Channels: ${resp.hand?.channels?.source ?? "DEM flow accumulation"}${resp.hand?.channels?.mapped?.length ? ` (${resp.hand.channels.mapped.join(", ")})` : ""}.`
+        : (resp.relief?.suggestedModel === "river" ? `This scene is hilly (${resp.relief.relief_m} m relief): the river-rise model is more realistic here.` : "Still water: every cell below the level is wet.");
+      if (u) $("flood-model-hint").textContent += ` Range from the terrain error (±${fmtNum(u.sigmaM)} m). ${u.note ?? ""}`;
       $("disaster-ramp-bar").style.background = `linear-gradient(to right, ${ramp.colours.join(", ")})`;
       $("disaster-ramp-labels").innerHTML = ramp.stops_m.map((v: number, i: number) => `<span>${v.toFixed(1)}${i === ramp.stops_m.length - 1 ? "+" : ""}</span>`).join("");
       $("disaster-legend-classes").innerHTML = (resp.exposureRules ?? []).map((r: any) =>
@@ -1229,10 +1303,10 @@ async function runDisasterAnalysis(silent = false) {
         <div class="disaster-bldg-item" data-hlz-id="${s.id}">
           <div>
             <b>Site ${s.id}</b>
-            <span class="hint hlz-item-meta">slope ${fmtNum(s.slopeDeg)}° · rough ${fmtNum(s.roughnessM)} m · ${s.clearBearings.length ? `clear ${s.clearBearings.map((b: number) => `${b}°`).join(", ")}` : "no clear bearing"}</span>
+            <span class="hint hlz-item-meta">slope ${fmtNum(s.slopeDeg)}° · rough ${fmtNum(s.roughnessM)} m · ${s.clearBearings.length ? `clear ${s.clearBearings.map((b: number) => `${b}°`).join(", ")}` : "no clear bearing"}${s.confidence ? ` · confidence ${s.confidence.label.toLowerCase()} (${Math.round(s.confidence.score * 100)}%)${s.confidence.cappedNoValidation ? ", capped: obstacle heights not laser-checked" : ""}` : ""}</span>
           </div>
           <span class="badge ${s.class === "CANDIDATE" ? "ok" : "warn"} badge-xs">${s.class}</span>
-        </div>`).join("") : `<div class="hint hlz-empty">No site meets the pad rules in this scene.</div>`;
+        </div>`).join("") : `<div class="hint hlz-empty">${esc(resp.advice ?? "No site meets the pad rules in this scene.")}${resp.rejection?.centresWithData ? `<br><span class="hlz-why">Pad centres failing each rule: obstacle ${resp.rejection.obstaclePct}% · slope ${resp.rejection.slopePct}% · roughness ${resp.rejection.roughnessPct}%</span>` : ""}</div>`;
       list.querySelectorAll<HTMLElement>(".disaster-bldg-item").forEach((el) => {
         const id = Number(el.dataset.hlzId);
         el.addEventListener("mouseenter", () => highlightSite(id, true));
@@ -1251,6 +1325,47 @@ async function runDisasterAnalysis(silent = false) {
         <span class="l-item"><i style="background:#5a5a5a"></i>Detected obstacle</span>
       `;
       $("disaster-toggle-lbl").textContent = "Feasible-centre overlay";
+    } else if (mode === "landslide") {
+      const c = resp.classAreaPct;
+      const hiOf = (x: any) => Math.round((x["HIGH"] ?? 0) + (x["VERY HIGH"] ?? 0));
+      const rng = resp.classAreaPctIfGeologyBest ? `${hiOf(resp.classAreaPctIfGeologyBest)}–${hiOf(resp.classAreaPctIfGeologyWorst)}% if geology is best / worst` : "geology set by user";
+      setStat("stat-area-card", "High or very high hazard", `${hiOf(c)}%`, `${fmtArea(resp.highOrWorseAreaM2)} · ${rng}`);
+      setStat("stat-buildings-card", "Buildings in high hazard", String(resp.buildingsHighOrWorse), `mean facet slope ${resp.meanSlopeDeg}° · relief ${resp.reliefM} m`);
+      const w = resp.rainfall?.worst;
+      setStat("stat-maxdepth-card", "Rainfall trigger", resp.rainfall?.error ? "offline" : w ? (resp.rainfall.exceeded ? "EXCEEDED" : `${Math.round(w.ratio * 100)}%`) : "not checked",
+        w ? `${w.rainMm} mm in ${w.durationH} h vs ${Math.round(w.thresholdMmH * w.durationH)} mm threshold` : (resp.rainfall?.error ?? "tick the rainfall option"));
+      setStat("stat-meandepth-card", "New slope scars", resp.scars ? (resp.scars.error ? "–" : String(resp.scars.count)) : "not checked",
+        resp.scars ? (resp.scars.error ?? `${fmtArea(resp.scars.areaM2)} new bare ground (Sentinel-2)`) : "tick the Sentinel-2 option");
+      const dl = $("disaster-download-raster") as HTMLAnchorElement;
+      dl.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+      dl.textContent = "Download hazard classes (GeoTIFF)";
+      $("disaster-buildings-wrap").classList.add("hidden");
+      $("disaster-legend-title").textContent = "Landslide hazard (IS 14496-2, TEHD)";
+      $("disaster-ramp-bar").style.background = "linear-gradient(to right, rgba(250,204,21,0.5), #ea580c, #b91c1c)";
+      $("disaster-ramp-labels").innerHTML = "<span>moderate</span><span>high</span><span>very high</span>";
+      $("disaster-legend-classes").innerHTML = Object.entries(c).map(([k, v]) => `<span class="l-item">${k.toLowerCase()} ${v}%</span>`).join("") + (resp.scars?.count ? `<span class="l-item"><i style="background:#d946ef"></i>new scar</span>` : "");
+      $("disaster-toggle-lbl").textContent = "Hazard overlay";
+    } else if (mode === "roads") {
+      setStat("stat-area-card", "Settlements cut off", String(resp.nCutOff), `~${resp.populationCutOff.toLocaleString()} people (estimate) · ${resp.nFootOnly} reachable on foot only`);
+      setStat("stat-buildings-card", "Roads cut", `${resp.roads.cutKm} km`, `of ${resp.roads.motorableKm} km motorable · ${resp.roads.strandedKm} km open but isolated`);
+      const hz = resp.hazards.map((h: any) => h.hazard === "flood" ? `flood (${h.model}, ${h.waterLevel_m} m)` : "landslide").join(" + ");
+      setStat("stat-maxdepth-card", "Hazard used", hz, resp.hazards.map((h: any) => h.rule).join("; "));
+      setStat("stat-meandepth-card", "Settlements checked", String(resp.nSettlements), "building clusters + OSM places");
+      const dl = $("disaster-download-raster") as HTMLAnchorElement;
+      dl.href = `/api/jobs/${state.jobId}/artifact/${resp.vectorResult}`;
+      dl.textContent = "Download roads + settlements (GeoJSON)";
+      $("disaster-buildings-wrap").classList.remove("hidden");
+      $("disaster-bldg-count").textContent = String(resp.nSettlements);
+      $("disaster-buildings-list").innerHTML = resp.settlements.map((st: any) => `
+        <div class="disaster-bldg-item">
+          <div><b>${esc(st.name)}</b><span class="hint" style="margin-left:6px;">${st.nBuildings} buildings · ~${st.population ?? "?"} people</span></div>
+          <span class="badge ${st.status === "OPEN" ? "ok" : st.status === "CUT_OFF" ? "err" : "warn"}" style="font-size:10px;">${st.status.replace(/_/g, " ")}</span>
+        </div>`).join("");
+      $("disaster-legend-title").textContent = "Road access";
+      $("disaster-ramp-bar").style.background = "linear-gradient(to right, #22c55e, #f59e0b, #ef4444)";
+      $("disaster-ramp-labels").innerHTML = "<span>open</span><span>isolated</span><span>cut</span>";
+      $("disaster-legend-classes").innerHTML = `<span class="l-item"><i style="background:#ef4444"></i>cut / settlement cut off</span><span class="l-item"><i style="background:#f59e0b"></i>open road, no way out</span><span class="l-item"><i style="background:#94a3b8"></i>footpath</span>`;
+      $("disaster-toggle-lbl").textContent = "Road overlay";
     } else {
       $("stat-area-card").querySelector(".stat-label")!.textContent = "Accessible Area";
       $("stat-area-val").textContent = fmtArea(resp.accessibleAreaM2);
@@ -1304,9 +1419,9 @@ async function runDisasterAnalysis(silent = false) {
     if (mode === "landing_zones") renderLandingSvg(resp.sites);
 
   } catch (e: any) {
-    if (!silent) alert("Disaster Analysis Failed: " + (e.message || String(e)));
+    if (!silent && seq === disasterSeq) setStatus(`Screening failed: ${e.message || String(e)}`, "err", "disaster-status");
   } finally {
-    if (!silent && runBtn) runBtn.textContent = "Run screening";
+    if (!silent && runBtn && seq === disasterSeq) runBtn.textContent = "Run screening";
   }
 }
 
@@ -1735,11 +1850,49 @@ function wire() {
   const fLvl = $("flood-level-slider") as HTMLInputElement;
   const aSlp = $("access-slope-slider") as HTMLInputElement;
 
+  // IS 14496-2 ratings (same table as core/disaster/landslide.py USER_FACTORS)
+  const LS_OPTIONS: Record<string, [string, Record<string, number>]> = {
+    lithology: ["ls-lithology", { "massive hard rock (granite, quartzite)": 0.3, "weathered hard rock": 0.8, "schist / phyllite / shale": 1.3, "old well-compacted debris": 0.8, "young loose debris / soil": 1.5, "highly weathered rock or loose soil": 2.0 }],
+    structure: ["ls-structure", { "discontinuities favourable to stability": 0.3, "moderately favourable": 0.8, "unfavourable (dip out of slope)": 1.5, "highly unfavourable": 2.0 }],
+    hydrogeology: ["ls-hydro", { dry: 0.0, damp: 0.2, wet: 0.5, dripping: 0.8, flowing: 1.0 }],
+  };
+  for (const [id, opts] of Object.values(LS_OPTIONS)) {
+    for (const [label, v] of Object.entries(opts)) $(id).insertAdjacentHTML("beforeend", `<option value="${v}">${esc(label)} (${v})</option>`);
+  }
+  $("confidence-toggle").addEventListener("change", async (e) => {
+    const on = (e.target as HTMLInputElement).checked;
+    const img = $("confidence-overlay-img") as HTMLImageElement;
+    if (!on || !state.jobId) { img.classList.add("hidden"); return; }
+    setStatus("Computing the confidence map (the model runs 4 more times; about 2 minutes on a CPU)…", "", "disaster-status");
+    try {
+      const r = await fetch(`/api/jobs/${state.jobId}/confidence`, { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error?.message ?? r.statusText);
+      img.src = `/api/jobs/${state.jobId}/artifact/${j.previewResult}?t=${Date.now()}`;
+      img.classList.remove("hidden");
+      setStatus(`Height confidence: median ±${j.medianIntervalM} m (80 % interval); ${j.shareWithin2mPct}% of the scene within ±2 m, ${j.shareOver5mPct}% worse than ±5 m.`, "ok", "disaster-status");
+    } catch (err: any) {
+      (e.target as HTMLInputElement).checked = false;
+      setStatus(`Confidence map unavailable: ${err.message || err}`, "err", "disaster-status");
+    }
+  });
+
+  $("bhuvan-layer").addEventListener("change", (e) => {
+    const v = (e.target as HTMLSelectElement).value;
+    const img = $("bhuvan-overlay-img") as HTMLImageElement;
+    if (!v || !state.jobId) { img.classList.add("hidden"); return; }
+    img.onerror = () => { img.classList.add("hidden"); setStatus("Bhuvan did not answer for this layer (it needs internet); try again later.", "err", "disaster-status"); };
+    img.src = `/api/jobs/${state.jobId}/bhuvan/${v}.png`;
+    img.classList.remove("hidden");
+  });
+
   if (disScen) {
     disScen.addEventListener("change", () => {
       $("flood-controls-wrap").classList.toggle("hidden", disScen.value !== "flood");
       $("access-slope-wrap").classList.toggle("hidden", disScen.value !== "accessibility");
       $("hlz-controls-wrap").classList.toggle("hidden", disScen.value !== "landing_zones");
+      $("ls-controls-wrap").classList.toggle("hidden", disScen.value !== "landslide");
+      $("roads-controls-wrap").classList.toggle("hidden", disScen.value !== "roads");
       runDisasterAnalysis();
     });
   }
@@ -1788,6 +1941,7 @@ function wire() {
   });
 
   $("run-disaster-btn")?.addEventListener("click", () => runDisasterAnalysis());
+  $("flood-model")?.addEventListener("change", () => { configureFloodSlider(floodModel()); runDisasterAnalysis(); });
 
   // Base map buttons
   document.querySelectorAll("#disaster-base-group button").forEach((btn) => {

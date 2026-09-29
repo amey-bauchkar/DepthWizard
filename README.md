@@ -9,7 +9,7 @@ DepthWizard turns a single optical RGB image into an elevation model and an inte
 * **3D flythrough** (Three.js): orbit, first-person walk (WASD, terrain-following, building collision), automatic drone orbit, LoD-1 building blocks, heat-map / contour shaders, server-side point & distance / height / slope measurement.
 * **In-app validation** against LiDAR or any reference raster: ME, RMSE, MAE, NMAD, LE90/95, Pearson r, Spearman ρ, slope / object / height strata, residual map — shown next to the *input DEM alone* on the same pixels.
 
-Everything runs offline on a CPU laptop (CUDA used automatically when present).
+The core pipeline, 3D viewer and hazard screenings run offline on a CPU laptop (CUDA used automatically when present). Four optional extras need internet: live rainfall (Open-Meteo), the Sentinel-2 scar check, Bhuvan map layers, and the data-fetch scripts.
 
 ---
 
@@ -35,16 +35,50 @@ No anchors are used in this table (tier T). These two tiles, and everything with
 | **Fine-tuned** | **3.86 m** | **1.90 m** | **0.875** | **5.52 m** |
 | Zero-shot, oracle-scaled (its best case) | 6.74 m | 4.85 m | 0.528 | 9.45 m |
 
-Source: `models/da-v2-small-ndsm/1.0.0/training_report.json`. How the model is combined with the DEM (`fusion.metric_composition`) was chosen on 6 validation-region tiles (Aarau, Fribourg). DSM = DEM + high-pass(model nDSM) scored DSM 5.71 m and terrain 4.10 m, against 7.20 m and 6.90 m for the DEM alone ([`docs/metric_composition_selection.json`](docs/metric_composition_selection.json), `scripts/select_metric_composition.py`).
+Source: `models/da-v2-small-ndsm/1.0.0/training_report.json`. How the model is combined with the DEM (`fusion.metric_composition`) was chosen on 6 validation-region tiles (Aarau, Fribourg). DSM = DEM + high-pass(model nDSM) scored a mean per-tile RMSE of 5.71 m (DSM) and 4.10 m (terrain), against 7.20 m and 6.90 m for the DEM alone ([`docs/metric_composition_selection.json`](docs/metric_composition_selection.json), `scripts/select_metric_composition.py`).
 
 Limits, stated plainly:
 * Training and testing are Swiss only (swisstopo is the free LiDAR + orthophoto source). Accuracy on Indian imagery or other sensors is **not yet measured**.
 * Only two test tiles have a bundled DEM.
 * With the fine-tuned model, simulated anchors added nothing measurable. The anchor fit was rejected on 2 of 3 tiles, and on the 0.5 m tile it slightly worsened the terrain (3.17 → 4.04 m). The anchors are simulated from the same LiDAR, with pixels within 15 m excluded from the metrics.
 
+## Measured on the USA (USGS 3DEP airborne LiDAR, three more terrain types)
+
+`python scripts/validate_us.py` ([docs/validation_us.md](docs/validation_us.md)).
+* **Input:** NAIP 0.6 m aerial images of the LiDAR year.
+* **Reference:** USGS 3DEP LiDAR DSM / DTM, 2 m, NAVD88 converted with NOAA GEOID18.
+* **DEM:** Copernicus GLO-30.
+* **Sites:** chosen by terrain class before any result was seen.
+
+| Site | Layer | Copernicus alone | **DepthWizard** | Change |
+|---|---|---|---|---|
+| Gatlinburg, TN: forested mountain town | DSM | 6.25 | **6.00** | −4 % |
+| | terrain | 10.59 | **5.00** | **−53 %** |
+| State College, PA: town between forested ridges | DSM | 6.08 | **4.98** | −18 % |
+| | terrain | 4.17 | 7.44 | **+78 % (worse)** |
+| Las Cruces, NM: sparse arid terrain | DSM | 1.86 | 2.39 | **+29 % (worse)** |
+| | terrain | 0.99 | 2.87 | **+190 % (worse)** |
+
+**Reading.**
+* Where the free DEM is badly biased (forest on steep slopes), DepthWizard's terrain halves the error.
+* Where the DEM is already good, the model's sub-30 m detail adds more error than it removes. This happens on flat, sparse ground, where Copernicus is within 1–2 m, and on the terrain layer of a mixed town.
+* So the output is **not** always better than the DEM. The per-site results decide where to trust it.
+
+## Mode A (PNG / JPG) measured
+
+A relative map has no units, so it is scored by correlation with LiDAR and by the error left after the best possible scale and offset ([docs/validation_mode_a.md](docs/validation_mode_a.md), `python scripts/validate_mode_a.py`). Mode A now uses the fine-tuned model on native-resolution tiles. The old zero-shot whole-image map had almost no skill on the city tiles.
+
+| Held-out Swiss tile (as JPG, no coordinates) | Old Mode A (zero-shot): r vs LiDAR DSM | **Current Mode A: r vs LiDAR DSM** |
+|---|---|---|
+| Zürich urban, 0.5 m | 0.06 | **0.84** (71 % of variance) |
+| Zürich urban, 2 m | 0.01 | **0.50** |
+| Emmental rural / forest | −0.20 (height above ground 0.75) | −0.20 (height above ground **0.80**) |
+
+**Limit:** Mode A reads heights above ground. On a hillside the terrain relief itself cannot be recovered without coordinates and a DEM. Coarse 2 m images are also weaker, because the model was trained at 0.5 m.
+
 ## Measured on India (Sikkim, NASA ICESat-2 checkpoints)
 
-No public airborne LiDAR exists for Indian sites, so DepthWizard is validated there against **independent satellite laser altimetry**: NASA ICESat-2 ground and canopy heights. That's 1,114 20 m segments, 2018–2025, fetched without any login through the public SlideRule service.
+No public airborne LiDAR exists for Indian sites, so DepthWizard is validated there against **independent satellite laser altimetry**: NASA ICESat-2 ground and canopy heights: 2,295 20 m segments (2018–2025) fetched without any login through the public SlideRule service, of which 1,114 fall inside the scenes and pass the quality filters.
 
 The imagery is **Maxar WorldView at 0.5 m** (Maxar Open Data Program, Sikkim flood event, CC BY-NC 4.0). The six sites are 1.2 km scenes: Namchi town, the Chungthang valley and dam, two Teesta-valley hillside sites, a steep forest, and a North Sikkim alpine / glacial area. No Indian data was used for training or tuning. Pooled RMSE in metres ([`docs/validation_india.md`](docs/validation_india.md), `scripts/fetch_india_demo.py` + `scripts/validate_india.py`):
 
@@ -61,7 +95,9 @@ The imagery is **Maxar WorldView at 0.5 m** (Maxar Open Data Program, Sikkim flo
 
 The zero-shot model on Copernicus, for reference: terrain 10.25, DSM 11.03, height above ground 11.38.
 
-Site by site, the fine-tuned model improves the height above ground on 5 of 6 sites and the DSM on 5 of 6. The terrain improves on 4 of 6. It is worse on the two forested-valley sites (Namchi, Chungthang), where Copernicus already lies close to the ground under the forest.
+Site by site (fine-tuned model vs the DEM alone):
+* **On CartoDEM (the default in India):** height above ground improves on all 6 sites (vs zero-shot) and the DSM on 5 of 6 (worse on North Sikkim alpine). **The terrain improves on only 2 of 6** (Chungthang west, North Sikkim alpine) and is worse on the other four: CartoDEM alone is already a better ground model there. The pooled terrain gain (7.98 → 7.61 m) comes mostly from the steep forest site.
+* **On Copernicus:** height above ground improves on 5 of 6, the DSM on 5 of 6 and the terrain on 4 of 6. The terrain is worse on the two forested-valley sites (Namchi, Chungthang).
 
 Errors are dominated by very steep Himalayan slopes, where the 30 m DEM itself is off by 15–20 m. These numbers are the model's first measurement on Indian imagery; it was trained only on Swiss data.
 
@@ -79,6 +115,26 @@ In the app, the six Sikkim scenes are one-click demos. **Validate vs checkpoints
 * **CartoDEM (ISRO/NRSC)** is preferred over Copernicus in India. Put the Bhuvan tiles into `assets/dem/cartodem/` (see its README).
   * Whether its heights are geoid or ellipsoidal is decided automatically, by comparison with Copernicus.
   * If neither fits, CartoDEM is refused for that scene and the reason is reported, rather than risking a silent 40–90 m datum error.
+
+## Disaster screening (flood, landslide, road access, landing zones, report)
+
+All are **screenings for planning and reconnaissance**, stated as such in every result. Measured results are in the linked documents.
+
+* **Flood.** River rise above the channel (HAND, with OpenStreetMap rivers burned in) in hills, or a still water level on flat ground. Each result gives a likely–possible range from the measured terrain error.
+  * Checked against two real floods mapped from Sentinel-2: the Teesta GLOF of Oct 2023 (F1 0.57) and the Sunkoshi flood in Nepal, Sep 2024 (F1 0.70).
+  * The model finds 76–92 % of the flooded area but floods about 1.6× too much. The 30 m DEM is the limit.
+  * See [docs/hazard_validation.md](docs/hazard_validation.md).
+* **Helicopter landing zones** (US Army FM 3-21.38 rules). Each site gets a confidence from errors measured against Swiss LiDAR.
+  * Against 19 real OpenStreetMap helipads in Sikkim and Nepal, 9 were found, 6–9× better than random placement.
+  * See [docs/landing_zones_results.md](docs/landing_zones_results.md) and [docs/helipad_validation.md](docs/helipad_validation.md).
+* **Landslide hazard.** BIS IS 14496 (Part 2) factors from the scene, plus user geology.
+  * Rainfall trigger: a Himalayan intensity-duration threshold, with live rain.
+  * Optional Sentinel-2 check for new slope scars.
+  * **Not yet validated against a landslide inventory.**
+* **Road access.** OpenStreetMap roads cut by the last flood or landslide result, and the settlements that lose every route out, with a rough population estimate.
+* **Damage report (PDF).** One click. Summary, map, action lists and limits.
+* **Indian data.** Bhuvan (NRSC) layers as overlays, and Cartosat / Resourcesat product zips accepted directly. The product import is tested only on synthetic products so far.
+* See [docs/india_features.md](docs/india_features.md).
 
 ## Take the result out of the app (offline 3D scene, GIS package)
 
@@ -111,7 +167,7 @@ GeoTIFF ──► ingest (CRS, GSD; geographic → local UTM)          Copernicu
    │                                                                                                  ▼
    └─► overlapping 518 px tiles at ~0.5 m ──► fine-tuned nDSM model: height above ground (m) ──► high-pass < 30 m
                                               (no model installed: zero-shot tiles, per-tile scale fitted to the DEM band)
-                        DSM = DEM + detail   (DEM cell means preserved: never worse than the DEM at its own resolution)
+                        DSM = DEM + detail   (detail has zero mean at the DEM scale: no bias added at 30 m)
                         terrain = DSM − predicted heights · nDSM · slope / aspect · flags · LoD-1 blocks
 optional anchors CSV ──► tier A: detail gain (+ offset only if statistically significant), accepted only if leave-one-out error improves
 no DEM for the area  ──► tier H: metric heights above ground only (fine-tuned model), no absolute elevation
@@ -136,14 +192,35 @@ The notebook is generated from `notebooks/build_finetune_notebook.py`. The weigh
 
 ---
 
-## Quick start (Windows / Linux / macOS)
+## Standalone app (Windows, no Python or Node needed)
+
+`python scripts/package_win.py` builds `dist/DepthWizard/` (about 1.35 GB, one folder; zip 0.87 GB) with PyInstaller. The build contains:
+* the models;
+* the geoid grids;
+* the demo scenes and DEM tiles;
+* the built viewer.
+
+It then runs the packaged app's own self-test with networking blocked. Measured on 2026-09-28, all 7 steps passed:
+* geoid grids;
+* model;
+* a real Chungthang job (45–100 s on a CPU laptop);
+* metric DSM with a datum;
+* flood screening;
+* PDF report;
+* offline 3D export.
+
+To use it, copy the folder or the zip to any Windows 10/11 x64 PC and double-click `DepthWizard.exe`. It serves on 127.0.0.1, opens the browser, and writes jobs next to the exe (`DepthWizard_data/`). `DepthWizard.exe --selftest` repeats the offline check on the judge's machine.
+
+**Not yet done:** a test on a fresh Windows machine that never had Python. So far it has only been run on the build machine.
+
+## Quick start from source (Windows / Linux / macOS)
 
 Prerequisites: **Python 3.12+** (tested on 3.12.14 and 3.14.0) and **Node.js 20+** (only to build the frontend once). About 1 GB of disk.
 
 ```bash
 python -m venv .venv
 .venv/Scripts/activate            # Linux/macOS: source .venv/bin/activate
-pip install torch==2.14.0 torchvision==0.29.0 --index-url https://download.pytorch.org/whl/cpu   # or your CUDA build
+pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cpu   # or your CUDA build
 pip install -r requirements/dev.txt
 python scripts/fetch_model.py     # Depth Anything V2 Small, 99 MB, Apache-2.0, SHA-256 verified
 python scripts/install_finetuned_model.py depthwizard_ndsm_model.zip   # fine-tuned nDSM model (optional but recommended)
@@ -177,7 +254,7 @@ After setup, **`start_depthwizard.bat`** (Windows) or **`./start_depthwizard.sh`
 | `GET` | `/health` | status, model name / hash / device |
 | `GET` | `/api/system` | versions (GDAL, PROJ, torch), configuration, geoid grids, DEM tiles, mode semantics |
 | `GET` | `/api/demo` | bundled demo inputs and LiDAR references |
-| `POST` | `/api/jobs` | create a job: multipart `file` (+ optional `dem` GeoTIFF with `dem_vertical_crs`, `anchors` CSV, `footprints` GeoJSON) |
+| `POST` | `/api/jobs` | create a job: multipart `file` (image, GeoTIFF, or a zipped Cartosat / Resourcesat product) (+ optional `dem` GeoTIFF with `dem_vertical_crs`, `anchors` CSV, `footprints` GeoJSON) |
 | `POST` | `/api/jobs/{id}/run` | run the pipeline (UPLOADED → PREPROCESSING → INFERENCE → CALIBRATION / RASTERIZING → READY) |
 | `GET` | `/api/jobs/{id}` · `/result` · `/metadata` | status and stage timings · result manifest (mode, tier, quality, datum, layers) · provenance |
 | `GET` | `/api/jobs/{id}/artifact/{name}` | `dsm.tif`, `terrain.tif`, `ndsm.tif`, `dem.tif`, `slope.tif`, `aspect.tif`, `flags.tif`, `relative.tif`, `rdsm.tif`, `buildings.json`, heightfields, previews, `log.jsonl` |
@@ -189,6 +266,10 @@ After setup, **`start_depthwizard.bat`** (Windows) or **`./start_depthwizard.sh`
 | `GET` | `/api/jobs/{id}/export/package.zip` | GIS data package (COG + QGIS styles, GeoPackage, GLB, STAC, README) |
 | `GET` | `/api/jobs/{id}/change/candidates` | other finished results overlapping this one |
 | `POST` | `/api/jobs/{id}/change` | before/after change screening, body `{"after": "<job id>"}` |
+| `POST` | `/api/jobs/{id}/disaster/flood` · `/landing_zones` · `/landslide` · `/roads` · `/accessibility` | hazard screenings (see *Disaster screening*) |
+| `GET` | `/api/jobs/{id}/disaster/flood/relief` | terrain relief and the suggested flood model |
+| `GET` | `/api/jobs/{id}/bhuvan` · `/bhuvan/{layer}.png` | Bhuvan layers available for the scene · layer aligned to the job grid |
+| `GET` | `/api/jobs/{id}/report.pdf` · `/report` | damage-assessment report (PDF) · its numbers (JSON) |
 | `DELETE` | `/api/jobs/{id}` | delete a job |
 
 Anchors CSV: `id,x,y,z,type[,sigma]` with optional `# crs=EPSG:xxxx` and `# vcrs=EGM2008|EGM96|ellipsoidal|EPSG:code` comment lines (`type` = `ground` or `object`). Minimum 5 anchors.

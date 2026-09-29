@@ -16,8 +16,11 @@ Method:
      (one to four DEM postings). An affine map has the same scale at every spatial frequency, so the same `a`
      is applied to the model's high-pass detail (< one DEM posting). Negative fits are clamped to 0 (no detail),
      and regression dilution shrinks `a` automatically when the model and the DEM disagree.
-  3. Detail tiles are feather-blended and re-high-passed on the job grid, so every DEM-cell mean is preserved:
-     at the DEM's own resolution the fused surface equals the DEM (the fusion cannot degrade the DEM there).
+  3. Detail tiles are feather-blended and re-high-passed on the job grid (Gaussian high-pass), so the added detail
+     has zero mean at the DEM scale: the fused surface is unbiased against the DEM at 30 m. The Gaussian filter is
+     not a block filter, so single 30 m cells still move: measured on Sikkim / Zurich jobs, 30 m cell means of
+     DSM - DEM average 0.00 m with P95 |difference| 2.7-4.4 m (max 5.8-7.6 m). It does not guarantee the result
+     is never worse than the DEM, and the terrain layer (DSM - nDSM) deliberately departs from the DEM.
 
 The same routine refines Mode A: the base is then the whole-image prediction (unitless) instead of a DEM.
 """

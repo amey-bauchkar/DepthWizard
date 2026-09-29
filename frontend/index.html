@@ -89,7 +89,7 @@
               </div>
               <p class="dropzone-prompt"><strong>Drop an aerial photograph or GeoTIFF</strong></p>
               <p class="dropzone-sub">PNG / JPG / plain TIFF → Mode A relative surface · GeoTIFF → Mode B metric calibrated DSM</p>
-              <input id="file-input" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,image/png,image/jpeg,image/tiff" />
+              <input id="file-input" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,image/png,image/jpeg,image/tiff,.zip,application/zip" aria-label="Image to process (PNG, JPG, GeoTIFF, or a zipped Cartosat / Resourcesat product)" />
               <button type="button" class="btn-browse" onclick="document.getElementById('file-input').click()">Browse files</button>
             </div>
 
@@ -453,15 +453,25 @@
                       <option value="flood">Flood screening (inundation)</option>
                       <option value="accessibility">Terrain accessibility (slope)</option>
                       <option value="landing_zones">Helicopter landing zones (candidates)</option>
+                      <option value="landslide">Landslide hazard (IS 14496-2) · experimental, not yet validated</option>
+                      <option value="roads">Road access · settlements cut off (after a flood run)</option>
                     </select>
                   </label>
                 </div>
 
                 <!-- Flood Controls -->
                 <div id="flood-controls-wrap">
+                  <div class="flood-model-row">
+                    <label for="flood-model"><strong>Water model</strong></label>
+                    <select id="flood-model">
+                      <option value="river">River rise above the channel (valleys, hills)</option>
+                      <option value="level">Still water level (lakes, flat plains)</option>
+                    </select>
+                    <div id="flood-model-hint" class="hint"></div>
+                  </div>
                   <div class="slider-header-row">
                     <label for="flood-level-slider">
-                      <strong>Water level <span id="flood-level-val" class="highlight-val">0</span> m</strong>
+                      <strong><span id="flood-level-title">Water level</span> <span id="flood-level-val" class="highlight-val">0</span> m</strong>
                     </label>
                     <div class="slider-quick-btns">
                       <button type="button" class="micro-btn" id="flood-minus-1" title="Decrease by 1m">−1 m</button>
@@ -508,6 +518,32 @@
                   </label>
                 </div>
 
+                <!-- Landslide Controls -->
+                <div id="ls-controls-wrap" class="hidden">
+                  <div class="hint">Slope, relief and land cover come from the scene. Geology is not visible from the air: set it from GSI Bhukosh maps or a site visit, or leave it unknown (the result then shows best and worst cases).</div>
+                  <label class="grow"><strong>Lithology</strong><select id="ls-lithology"><option value="">unknown</option></select></label>
+                  <label class="grow"><strong>Structure</strong><select id="ls-structure"><option value="">unknown</option></select></label>
+                  <label class="grow"><strong>Ground water</strong><select id="ls-hydro"><option value="">unknown / from rainfall</option></select></label>
+                  <label class="toggle-wrap"><input type="checkbox" id="ls-rain" checked /><span>Rainfall trigger: last 5 days + 3-day forecast (Open-Meteo, online)</span></label>
+                  <label class="toggle-wrap"><input type="checkbox" id="ls-scars" /><span>Look for new slope scars in Sentinel-2 (last 60 days vs a year ago, online, slower)</span></label>
+                </div>
+
+                <!-- Road access Controls -->
+                <div id="roads-controls-wrap" class="hidden">
+                  <div class="hint">Uses the last flood run (its model and water height) and OpenStreetMap roads. Settlements are building clusters named after the nearest mapped place.</div>
+                  <label class="toggle-wrap"><input type="checkbox" id="roads-landslide" /><span>Also cut roads in high landslide hazard (last landslide run)</span></label>
+                </div>
+
+                <label class="grow bhuvan-row hidden" id="bhuvan-row">
+                  <strong>Bhuvan layer (NRSC / ISRO) · needs internet</strong>
+                  <select id="bhuvan-layer"><option value="">none</option></select>
+                </label>
+
+                <label class="toggle-wrap" title="Where can the heights be trusted? 80 % error interval per pixel (about 4x the model time of the job)">
+                  <input type="checkbox" id="confidence-toggle" />
+                  <span>Height confidence map (green = trustworthy, red = uncertain)</span>
+                </label>
+                <div id="disaster-status" class="status" role="status" aria-live="polite"></div>
                 <div class="run-row">
                   <button id="run-disaster-btn" class="primary inline grow">Run screening</button>
                   <label class="toggle-wrap" title="Auto-run analysis when slider is released">
@@ -545,6 +581,7 @@
                 <div class="disaster-downloads-row">
                   <a id="disaster-download-raster" href="#" class="linkbtn" download>Download depth raster (GeoTIFF)</a>
                   <a id="disaster-download-extra" href="#" class="linkbtn hidden" download></a>
+                  <a id="disaster-report-btn" href="#" class="linkbtn" target="_blank" title="Summary of the latest flood, road, landslide and landing-zone results">Damage report (PDF)</a>
                 </div>
 
                 <!-- Affected Buildings List -->
@@ -591,7 +628,7 @@
 
                   <div class="opacity-control" title="Adjust water layer transparency">
                     <span class="opacity-label">Opacity</span>
-                    <input id="disaster-overlay-opacity" type="range" min="10" max="100" value="75" step="5" />
+                    <input id="disaster-overlay-opacity" aria-label="Overlay opacity" type="range" min="10" max="100" value="75" step="5" />
                     <span id="disaster-opacity-val" class="mono">75%</span>
                   </div>
 
@@ -610,6 +647,8 @@
 
                   <!-- Water Overlay Layer (Directly on top of 2D map) -->
                   <img id="disaster-overlay-img" class="water-shimmer" alt="Water / Disaster Overlay" />
+                  <img id="bhuvan-overlay-img" class="bhuvan-overlay hidden" alt="Bhuvan layer" />
+                  <img id="confidence-overlay-img" class="bhuvan-overlay hidden" alt="Height confidence map" />
 
                   <!-- Vector SVG for building footprints, hover highlights, pins -->
                   <svg id="disaster-vector-svg" class="disaster-svg-layer"></svg>

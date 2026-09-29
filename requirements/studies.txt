@@ -1,0 +1,3 @@
+# Validation studies only (scripts/helipad_study.py etc.), not needed by the app
+-r base.txt
+shapely==2.1.2

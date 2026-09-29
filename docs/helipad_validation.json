@@ -1,0 +1,1180 @@
+[
+ {
+  "id": "way_605861241",
+  "osm": "https://www.openstreetmap.org/way/605861241",
+  "name": "Namchi Helipad",
+  "lat": 27.1566712,
+  "lon": 88.3220274,
+  "event": "India-Floods-Oct-2023",
+  "acq": "1040010073381800",
+  "date": "2022-03-14",
+  "offnadir": 26.4,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 8,
+    "hit": true,
+    "rank": 1,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 14.1,
+    "feasibleNearPct": 29.0,
+    "whyNotNearPct": {
+     "object": 16.0,
+     "slope": 71.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0106
+   },
+   {
+    "size": 2,
+    "sites": 4,
+    "hit": true,
+    "rank": 1,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 19.0,
+    "feasibleNearPct": 30.0,
+    "whyNotNearPct": {
+     "object": 30.0,
+     "slope": 65.0,
+     "rough": 9.0,
+     "noData": 0.0
+    },
+    "chance": 0.006
+   },
+   {
+    "size": 3,
+    "sites": 1,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 31.1,
+    "feasibleNearPct": 37.0,
+    "whyNotNearPct": {
+     "object": 60.0,
+     "slope": 0.0,
+     "rough": 42.0,
+     "noData": 0.0
+    },
+    "chance": 0.002
+   }
+  ]
+ },
+ {
+  "id": "way_1214968880",
+  "osm": "https://www.openstreetmap.org/way/1214968880",
+  "name": null,
+  "lat": 27.5902512,
+  "lon": 88.6518706,
+  "event": "India-Floods-Oct-2023",
+  "acq": "10300100CE8D0400",
+  "date": "2022-03-07",
+  "offnadir": 13.6,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 6,
+    "hit": true,
+    "rank": 1,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 10.1,
+    "feasibleNearPct": 16.0,
+    "whyNotNearPct": {
+     "object": 82.0,
+     "slope": 53.0,
+     "rough": 15.0,
+     "noData": 0.0
+    },
+    "chance": 0.0088
+   },
+   {
+    "size": 2,
+    "sites": 3,
+    "hit": true,
+    "rank": 1,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 13.2,
+    "feasibleNearPct": 3.0,
+    "whyNotNearPct": {
+     "object": 97.0,
+     "slope": 60.0,
+     "rough": 56.0,
+     "noData": 0.0
+    },
+    "chance": 0.0051
+   },
+   {
+    "size": 3,
+    "sites": 0,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": null,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 15.0,
+     "rough": 99.0,
+     "noData": 0.0
+    },
+    "chance": 0.0
+   }
+  ]
+ },
+ {
+  "id": "node_3061250262",
+  "osm": "https://www.openstreetmap.org/node/3061250262",
+  "name": null,
+  "lat": 28.6303688,
+  "lon": 82.1924267,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0921000",
+  "date": "2023-11-09",
+  "offnadir": 31.5,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 225.3,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 93.0,
+     "slope": 64.0,
+     "rough": 50.0,
+     "noData": 0.0
+    },
+    "chance": 0.0776
+   },
+   {
+    "size": 2,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 247.1,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 98.0,
+     "slope": 64.0,
+     "rough": 56.0,
+     "noData": 0.0
+    },
+    "chance": 0.0921
+   },
+   {
+    "size": 3,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 174.7,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 0.0,
+     "rough": 71.0,
+     "noData": 0.0
+    },
+    "chance": 0.0976
+   }
+  ]
+ },
+ {
+  "id": "node_3066837840",
+  "osm": "https://www.openstreetmap.org/node/3066837840",
+  "name": null,
+  "lat": 28.8735683,
+  "lon": 82.4816687,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0347800",
+  "date": "2023-11-09",
+  "offnadir": 37.2,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 129.6,
+    "feasibleNearPct": 15.0,
+    "whyNotNearPct": {
+     "object": 85.0,
+     "slope": 15.0,
+     "rough": 29.0,
+     "noData": 0.0
+    },
+    "chance": 0.0607
+   },
+   {
+    "size": 2,
+    "sites": 22,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 128.6,
+    "feasibleNearPct": 2.0,
+    "whyNotNearPct": {
+     "object": 98.0,
+     "slope": 2.0,
+     "rough": 38.0,
+     "noData": 0.0
+    },
+    "chance": 0.0364
+   },
+   {
+    "size": 3,
+    "sites": 8,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 231.9,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 0.0,
+     "rough": 59.0,
+     "noData": 0.0
+    },
+    "chance": 0.0155
+   }
+  ]
+ },
+ {
+  "id": "node_7315542714",
+  "osm": "https://www.openstreetmap.org/node/7315542714",
+  "name": null,
+  "lat": 28.477955,
+  "lon": 81.7846204,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0446700",
+  "date": "2023-11-09",
+  "offnadir": 28.6,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 0,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": null,
+    "feasibleNearPct": 13.0,
+    "whyNotNearPct": {
+     "object": 81.0,
+     "slope": 64.0,
+     "rough": 32.0,
+     "noData": 0.0
+    },
+    "chance": 0.0
+   },
+   {
+    "size": 2,
+    "sites": 0,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": null,
+    "feasibleNearPct": 2.0,
+    "whyNotNearPct": {
+     "object": 98.0,
+     "slope": 70.0,
+     "rough": 50.0,
+     "noData": 0.0
+    },
+    "chance": 0.0
+   },
+   {
+    "size": 3,
+    "sites": 0,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": null,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 24.0,
+     "rough": 80.0,
+     "noData": 0.0
+    },
+    "chance": 0.0
+   }
+  ]
+ },
+ {
+  "id": "node_8292586959",
+  "osm": "https://www.openstreetmap.org/node/8292586959",
+  "name": "Daira Helipad",
+  "lat": 29.0001587,
+  "lon": 82.6532873,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100EF530C00",
+  "date": "2023-11-09",
+  "offnadir": 41.0,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 1,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 55.4,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 0.0,
+     "slope": 100.0,
+     "rough": 63.0,
+     "noData": 0.0
+    },
+    "chance": 0.002
+   },
+   {
+    "size": 2,
+    "sites": 0,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": null,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 0.0,
+     "slope": 100.0,
+     "rough": 78.0,
+     "noData": 0.0
+    },
+    "chance": 0.0
+   },
+   {
+    "size": 3,
+    "sites": 1,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 45.7,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 0.0,
+     "slope": 91.0,
+     "rough": 92.0,
+     "noData": 0.0
+    },
+    "chance": 0.002
+   }
+  ]
+ },
+ {
+  "id": "node_8306207199",
+  "osm": "https://www.openstreetmap.org/node/8306207199",
+  "name": null,
+  "lat": 29.1271127,
+  "lon": 82.5632147,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100EF530C00",
+  "date": "2023-11-09",
+  "offnadir": 41.0,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 2,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 235.7,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 86.0,
+     "slope": 92.0,
+     "rough": 44.0,
+     "noData": 0.0
+    },
+    "chance": 0.003
+   },
+   {
+    "size": 2,
+    "sites": 1,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 244.7,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 95.0,
+     "slope": 91.0,
+     "rough": 87.0,
+     "noData": 0.0
+    },
+    "chance": 0.002
+   },
+   {
+    "size": 3,
+    "sites": 10,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 147.6,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 35.0,
+     "rough": 100.0,
+     "noData": 0.0
+    },
+    "chance": 0.0196
+   }
+  ]
+ },
+ {
+  "id": "node_9602664248",
+  "osm": "https://www.openstreetmap.org/node/9602664248",
+  "name": "Gurbhakot Municipality Helipad",
+  "lat": 28.4401761,
+  "lon": 81.8518943,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0446700",
+  "date": "2023-11-09",
+  "offnadir": 28.6,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 96.5,
+    "feasibleNearPct": 48.0,
+    "whyNotNearPct": {
+     "object": 52.0,
+     "slope": 15.0,
+     "rough": 16.0,
+     "noData": 0.0
+    },
+    "chance": 0.066
+   },
+   {
+    "size": 2,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 99.8,
+    "feasibleNearPct": 35.0,
+    "whyNotNearPct": {
+     "object": 65.0,
+     "slope": 22.0,
+     "rough": 31.0,
+     "noData": 0.0
+    },
+    "chance": 0.0811
+   },
+   {
+    "size": 3,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 100.0,
+    "feasibleNearPct": 19.0,
+    "whyNotNearPct": {
+     "object": 81.0,
+     "slope": 10.0,
+     "rough": 51.0,
+     "noData": 0.0
+    },
+    "chance": 0.0944
+   }
+  ]
+ },
+ {
+  "id": "way_306379935",
+  "osm": "https://www.openstreetmap.org/way/306379935",
+  "name": null,
+  "lat": 28.5013828,
+  "lon": 82.7128331,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100EF530C00",
+  "date": "2023-11-09",
+  "offnadir": 41.0,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 36,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 308.6,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 4.0,
+     "slope": 100.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0359
+   },
+   {
+    "size": 2,
+    "sites": 16,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 249.0,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 10.0,
+     "slope": 100.0,
+     "rough": 17.0,
+     "noData": 0.0
+    },
+    "chance": 0.0221
+   },
+   {
+    "size": 3,
+    "sites": 21,
+    "hit": true,
+    "rank": 10,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 19.7,
+    "feasibleNearPct": 27.0,
+    "whyNotNearPct": {
+     "object": 29.0,
+     "slope": 52.0,
+     "rough": 58.0,
+     "noData": 0.0
+    },
+    "chance": 0.0396
+   }
+  ]
+ },
+ {
+  "id": "way_334911188",
+  "osm": "https://www.openstreetmap.org/way/334911188",
+  "name": null,
+  "lat": 28.560735,
+  "lon": 82.407241,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0515300",
+  "date": "2023-11-09",
+  "offnadir": 33.3,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 1,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 212.3,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 83.0,
+     "rough": 41.0,
+     "noData": 0.0
+    },
+    "chance": 0.002
+   },
+   {
+    "size": 2,
+    "sites": 0,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": null,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 80.0,
+     "rough": 75.0,
+     "noData": 0.0
+    },
+    "chance": 0.0
+   },
+   {
+    "size": 3,
+    "sites": 1,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 75.1,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 36.0,
+     "rough": 100.0,
+     "noData": 0.0
+    },
+    "chance": 0.002
+   }
+  ]
+ },
+ {
+  "id": "way_340435192",
+  "osm": "https://www.openstreetmap.org/way/340435192",
+  "name": null,
+  "lat": 28.9806158,
+  "lon": 82.5425044,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0347800",
+  "date": "2023-11-09",
+  "offnadir": 37.2,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 50,
+    "hit": true,
+    "rank": 24,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 9.8,
+    "feasibleNearPct": 95.0,
+    "whyNotNearPct": {
+     "object": 5.0,
+     "slope": 0.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0758
+   },
+   {
+    "size": 2,
+    "sites": 50,
+    "hit": true,
+    "rank": 8,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 11.4,
+    "feasibleNearPct": 87.0,
+    "whyNotNearPct": {
+     "object": 13.0,
+     "slope": 0.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0789
+   },
+   {
+    "size": 3,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 54.3,
+    "feasibleNearPct": 67.0,
+    "whyNotNearPct": {
+     "object": 33.0,
+     "slope": 0.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0927
+   }
+  ]
+ },
+ {
+  "id": "way_383357452",
+  "osm": "https://www.openstreetmap.org/way/383357452",
+  "name": null,
+  "lat": 28.7952934,
+  "lon": 82.3616846,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0515300",
+  "date": "2023-11-09",
+  "offnadir": 33.3,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 50,
+    "hit": true,
+    "rank": 11,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 18.4,
+    "feasibleNearPct": 59.0,
+    "whyNotNearPct": {
+     "object": 0.0,
+     "slope": 41.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0765
+   },
+   {
+    "size": 2,
+    "sites": 50,
+    "hit": true,
+    "rank": 7,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 23.3,
+    "feasibleNearPct": 61.0,
+    "whyNotNearPct": {
+     "object": 0.0,
+     "slope": 39.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0836
+   },
+   {
+    "size": 3,
+    "sites": 49,
+    "hit": true,
+    "rank": 11,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 21.4,
+    "feasibleNearPct": 100.0,
+    "whyNotNearPct": {
+     "object": 0.0,
+     "slope": 0.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0923
+   }
+  ]
+ },
+ {
+  "id": "way_383360973",
+  "osm": "https://www.openstreetmap.org/way/383360973",
+  "name": null,
+  "lat": 28.7977899,
+  "lon": 82.3634829,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0515300",
+  "date": "2023-11-09",
+  "offnadir": 33.3,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 98.8,
+    "feasibleNearPct": 22.0,
+    "whyNotNearPct": {
+     "object": 0.0,
+     "slope": 78.0,
+     "rough": 4.0,
+     "noData": 0.0
+    },
+    "chance": 0.0721
+   },
+   {
+    "size": 2,
+    "sites": 50,
+    "hit": true,
+    "rank": 45,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 14.2,
+    "feasibleNearPct": 19.0,
+    "whyNotNearPct": {
+     "object": 1.0,
+     "slope": 80.0,
+     "rough": 26.0,
+     "noData": 0.0
+    },
+    "chance": 0.083
+   },
+   {
+    "size": 3,
+    "sites": 45,
+    "hit": true,
+    "rank": 22,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 13.8,
+    "feasibleNearPct": 36.0,
+    "whyNotNearPct": {
+     "object": 9.0,
+     "slope": 30.0,
+     "rough": 55.0,
+     "noData": 0.0
+    },
+    "chance": 0.0841
+   }
+  ]
+ },
+ {
+  "id": "way_722675869",
+  "osm": "https://www.openstreetmap.org/way/722675869",
+  "name": null,
+  "lat": 28.6366966,
+  "lon": 82.4492358,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0515300",
+  "date": "2023-11-09",
+  "offnadir": 33.3,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 46,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 60.2,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 61.0,
+     "slope": 100.0,
+     "rough": 30.0,
+     "noData": 0.0
+    },
+    "chance": 0.046
+   },
+   {
+    "size": 2,
+    "sites": 22,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 62.1,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 71.0,
+     "slope": 100.0,
+     "rough": 41.0,
+     "noData": 0.0
+    },
+    "chance": 0.0328
+   },
+   {
+    "size": 3,
+    "sites": 36,
+    "hit": true,
+    "rank": 18,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 17.5,
+    "feasibleNearPct": 15.0,
+    "whyNotNearPct": {
+     "object": 85.0,
+     "slope": 0.0,
+     "rough": 55.0,
+     "noData": 0.0
+    },
+    "chance": 0.066
+   }
+  ]
+ },
+ {
+  "id": "way_766025857",
+  "osm": "https://www.openstreetmap.org/way/766025857",
+  "name": "Nepal Army ground",
+  "lat": 28.8488802,
+  "lon": 81.7156143,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0446700",
+  "date": "2023-11-09",
+  "offnadir": 28.6,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 2,
+    "hit": true,
+    "rank": 1,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 16.7,
+    "feasibleNearPct": 12.0,
+    "whyNotNearPct": {
+     "object": 62.0,
+     "slope": 79.0,
+     "rough": 31.0,
+     "noData": 0.0
+    },
+    "chance": 0.003
+   },
+   {
+    "size": 2,
+    "sites": 1,
+    "hit": true,
+    "rank": 1,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 16.3,
+    "feasibleNearPct": 5.0,
+    "whyNotNearPct": {
+     "object": 79.0,
+     "slope": 85.0,
+     "rough": 42.0,
+     "noData": 0.0
+    },
+    "chance": 0.002
+   },
+   {
+    "size": 3,
+    "sites": 0,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": null,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 39.0,
+     "rough": 71.0,
+     "noData": 0.0
+    },
+    "chance": 0.0
+   }
+  ]
+ },
+ {
+  "id": "way_766834458",
+  "osm": "https://www.openstreetmap.org/way/766834458",
+  "name": null,
+  "lat": 28.8062998,
+  "lon": 81.6972641,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0446700",
+  "date": "2023-11-09",
+  "offnadir": 28.6,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 50,
+    "hit": true,
+    "rank": 40,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 26.0,
+    "feasibleNearPct": 80.0,
+    "whyNotNearPct": {
+     "object": 1.0,
+     "slope": 20.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0724
+   },
+   {
+    "size": 2,
+    "sites": 50,
+    "hit": true,
+    "rank": 26,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 18.4,
+    "feasibleNearPct": 82.0,
+    "whyNotNearPct": {
+     "object": 7.0,
+     "slope": 18.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0788
+   },
+   {
+    "size": 3,
+    "sites": 50,
+    "hit": true,
+    "rank": 15,
+    "confidence": "MEDIUM",
+    "nearestSiteM": 20.4,
+    "feasibleNearPct": 81.0,
+    "whyNotNearPct": {
+     "object": 19.0,
+     "slope": 0.0,
+     "rough": 1.0,
+     "noData": 0.0
+    },
+    "chance": 0.093
+   }
+  ]
+ },
+ {
+  "id": "way_1221253632",
+  "osm": "https://www.openstreetmap.org/way/1221253632",
+  "name": null,
+  "lat": 28.6926523,
+  "lon": 82.1897735,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0921000",
+  "date": "2023-11-09",
+  "offnadir": 31.5,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 0,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": null,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 97.0,
+     "rough": 88.0,
+     "noData": 0.0
+    },
+    "chance": 0.0
+   },
+   {
+    "size": 2,
+    "sites": 0,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": null,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 95.0,
+     "rough": 100.0,
+     "noData": 0.0
+    },
+    "chance": 0.0
+   },
+   {
+    "size": 3,
+    "sites": 0,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": null,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 66.0,
+     "rough": 100.0,
+     "noData": 0.0
+    },
+    "chance": 0.0
+   }
+  ]
+ },
+ {
+  "id": "way_1223160901",
+  "osm": "https://www.openstreetmap.org/way/1223160901",
+  "name": null,
+  "lat": 28.6918753,
+  "lon": 82.4823187,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0347800",
+  "date": "2023-11-09",
+  "offnadir": 37.2,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 243.4,
+    "feasibleNearPct": 2.0,
+    "whyNotNearPct": {
+     "object": 98.0,
+     "slope": 64.0,
+     "rough": 29.0,
+     "noData": 0.0
+    },
+    "chance": 0.0756
+   },
+   {
+    "size": 2,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 250.3,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 68.0,
+     "rough": 63.0,
+     "noData": 0.0
+    },
+    "chance": 0.0802
+   },
+   {
+    "size": 3,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 174.0,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 100.0,
+     "slope": 0.0,
+     "rough": 94.0,
+     "noData": 0.0
+    },
+    "chance": 0.0934
+   }
+  ]
+ },
+ {
+  "id": "way_1257176872",
+  "osm": "https://www.openstreetmap.org/way/1257176872",
+  "name": null,
+  "lat": 28.5061138,
+  "lon": 82.027771,
+  "event": "Nepal-Earthquake-Nov-2023",
+  "acq": "10300100F0D1BA00",
+  "date": "2023-11-09",
+  "offnadir": 28.7,
+  "quality": "LIMITED",
+  "sizes": [
+   {
+    "size": 1,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 378.7,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 32.0,
+     "slope": 100.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0596
+   },
+   {
+    "size": 2,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 359.2,
+    "feasibleNearPct": 0.0,
+    "whyNotNearPct": {
+     "object": 43.0,
+     "slope": 100.0,
+     "rough": 0.0,
+     "noData": 0.0
+    },
+    "chance": 0.0746
+   },
+   {
+    "size": 3,
+    "sites": 50,
+    "hit": false,
+    "rank": null,
+    "confidence": null,
+    "nearestSiteM": 356.6,
+    "feasibleNearPct": 11.0,
+    "whyNotNearPct": {
+     "object": 59.0,
+     "slope": 49.0,
+     "rough": 48.0,
+     "noData": 0.0
+    },
+    "chance": 0.0938
+   }
+  ]
+ }
+]

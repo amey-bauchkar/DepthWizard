@@ -20,6 +20,15 @@
         "output": "metric_ndsm_metres",
         "source": "local fine-tuning: notebooks/DepthWizard_FineTune_nDSM_Colab.ipynb",
         "card": "da-v2-small-ndsm/1.0.0/model_card.json"
+      },
+      "2.0.0": {
+        "file": "da-v2-small-ndsm/2.0.0/depth_anything_v2_ndsm_s.pth",
+        "sha256": "8e9e1438f7820c46f529bb6489de108a935dbe07059ca4cb66e07f94af1937c5",
+        "architecture": "Depth Anything V2 Small: DINOv2 ViT-S/14 encoder, DPT decoder, features=64, out_channels=[48,96,192,384]",
+        "licence": "Apache-2.0 (Depth Anything V2 Small derivative); training data (c) swisstopo OGD",
+        "output": "metric_ndsm_metres",
+        "source": "local fine-tuning: notebooks/DepthWizard_FineTune_nDSM_Colab.ipynb",
+        "card": "da-v2-small-ndsm/2.0.0/model_card.json"
       }
     }
   }

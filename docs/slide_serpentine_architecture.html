@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DepthWizard — 5-Step Serpentine Technical Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #090e17;
+    --canvas-bg: #0d1524;
+    --text-title: #ffffff;
+    --text-body: #94a3b8;
+    --border: rgba(255, 255, 255, 0.1);
+    
+    /* 5 Stage Colors matching the serpentine template */
+    --c1: #06b6d4; /* Teal / Ingestion */
+    --c2: #3b82f6; /* Blue / AI Engine */
+    --c3: #f97316; /* Orange / TL-CSM Fusion */
+    --c4: #eab308; /* Gold / 3D Digital Twin */
+    --c5: #f43f5e; /* Rose / Disaster Rescue */
+  }
+
+  /* Light mode option matching the user's template */
+  body.light-mode {
+    --bg: #eef2f6;
+    --canvas-bg: #ffffff;
+    --text-title: #0f172a;
+    --text-body: #475569;
+    --border: rgba(0, 0, 0, 0.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text-body);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 24px;
+    transition: background-color 0.3s ease;
+  }
+
+  /* 16:9 Presentation Canvas */
+  .slide-canvas {
+    width: 1340px;
+    max-width: 96vw;
+    aspect-ratio: 16 / 9;
+    background: var(--canvas-bg);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 36px 44px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: 0 25px 70px -15px rgba(0, 0, 0, 0.5);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    z-index: 2;
+  }
+  .header h1 {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--text-title);
+    letter-spacing: -0.5px;
+  }
+  .header p {
+    font-size: 13.5px;
+    color: var(--text-body);
+    margin-top: 3px;
+  }
+  .isro-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    color: var(--c1);
+  }
+
+  /* Serpentine Diagram Area */
+  .diagram-container {
+    position: relative;
+    width: 100%;
+    height: 480px;
+    margin: 10px 0;
+  }
+
+  /* SVG Wave Overlay */
+  .wave-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* 5 Node Circles */
+  .nodes-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .circle-node {
+    position: absolute;
+    width: 94px;
+    height: 94px;
+    border-radius: 50%;
+    background: var(--canvas-bg);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+    pointer-events: auto;
+    transition: transform 0.2s ease;
+  }
+  .circle-node:hover {
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+  .circle-inner {
+    width: 78px;
+    height: 78px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 2px dashed;
+  }
+  .circle-icon-box {
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 26px;
+  }
+
+  /* Step Descriptions (Alternating Top / Bottom) */
+  .text-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: auto;
+  }
+  .step-card {
+    position: absolute;
+    width: 220px;
+    transform: translateX(-50%);
+    text-align: left;
+  }
+  .step-card.top {
+    top: 15px;
+  }
+  .step-card.bottom {
+    top: 355px;
+  }
+
+  .step-num {
+    font-size: 32px;
+    font-weight: 800;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .step-title {
+    font-size: 13.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-title);
+    margin-bottom: 6px;
+  }
+  .step-desc {
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--text-body);
+  }
+  .step-tag {
+    display: inline-block;
+    font-size: 9.5px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-top: 6px;
+  }
+
+  /* Specific Node Positions (X: 110, 360, 610, 860, 1110) */
+  /* Node 1: High (Y=205) */
+  .node-1 { left: 110px; top: 205px; border: 4px solid var(--c1); }
+  .node-1 .circle-inner { border-color: var(--c1); }
+  .node-1 .circle-icon-box { background: rgba(6, 182, 212, 0.15); color: var(--c1); }
+
+  /* Node 2: Low (Y=295) */
+  .node-2 { left: 360px; top: 295px; border: 4px solid var(--c2); }
+  .node-2 .circle-inner { border-color: var(--c2); }
+  .node-2 .circle-icon-box { background: rgba(59, 130, 246, 0.15); color: var(--c2); }
+
+  /* Node 3: High (Y=205) */
+  .node-3 { left: 610px; top: 205px; border: 4px solid var(--c3); }
+  .node-3 .circle-inner { border-color: var(--c3); }
+  .node-3 .circle-icon-box { background: rgba(249, 115, 22, 0.15); color: var(--c3); }
+
+  /* Node 4: Low (Y=295) */
+  .node-4 { left: 860px; top: 295px; border: 4px solid var(--c4); }
+  .node-4 .circle-inner { border-color: var(--c4); }
+  .node-4 .circle-icon-box { background: rgba(234, 179, 8, 0.15); color: var(--c4); }
+
+  /* Node 5: High (Y=205) */
+  .node-5 { left: 1110px; top: 205px; border: 4px solid var(--c5); }
+  .node-5 .circle-inner { border-color: var(--c5); }
+  .node-5 .circle-icon-box { background: rgba(244, 63, 94, 0.15); color: var(--c5); }
+
+  /* Bottom Operational Footnote */
+  .footer-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    font-size: 11px;
+    color: var(--text-body);
+  }
+  .highlight-badge {
+    color: var(--text-title);
+    font-weight: 700;
+  }
+
+  /* Presentation Toolbar */
+  .toolbar {
+    position: fixed;
+    bottom: 12px;
+    display: flex;
+    gap: 10px;
+    z-index: 100;
+  }
+  .tool-btn {
+    background: #1e293b;
+    color: #cbd5e1;
+    border: 1px solid #334155;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tool-btn:hover { background: #334155; color: #fff; }
+
+  @media print {
+    body { background: transparent; padding: 0; }
+    .toolbar { display: none; }
+    .slide-canvas { width: 100vw; height: 100vh; max-width: none; border: none; border-radius: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="slide-canvas" id="slide">
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <h1>DepthWizard — End-to-End Technical Workflow</h1>
+      <p>From 2D satellite/drone imagery to certified 3D terrain and tactical disaster operations</p>
+    </div>
+    <div class="isro-badge">ISRO SIH 26175 · Disaster Management</div>
+  </div>
+
+  <!-- Serpentine Wave Area -->
+  <div class="diagram-container">
+    
+    <!-- SVG Serpentine Arcs -->
+    <svg class="wave-svg" viewBox="0 0 1220 480" fill="none">
+      <!-- Arc 1 -> 2 (Down) -->
+      <path d="M 110 205 C 110 320, 360 180, 360 295" stroke="var(--c1)" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.8"/>
+      <path d="M 110 205 C 110 320, 360 180, 360 295" stroke="var(--c2)" stroke-width="2" stroke-dasharray="6 6" fill="none"/>
+
+      <!-- Arc 2 -> 3 (Up) -->
+      <path d="M 360 295 C 360 410, 610 90, 610 205" stroke="var(--c2)" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.8"/>
+      <path d="M 360 295 C 360 410, 610 90, 610 205" stroke="var(--c3)" stroke-width="2" stroke-dasharray="6 6" fill="none"/>
+
+      <!-- Arc 3 -> 4 (Down) -->
+      <path d="M 610 205 C 610 320, 860 180, 860 295" stroke="var(--c3)" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.8"/>
+      <path d="M 610 205 C 610 320, 860 180, 860 295" stroke="var(--c4)" stroke-width="2" stroke-dasharray="6 6" fill="none"/>
+
+      <!-- Arc 4 -> 5 (Up) -->
+      <path d="M 860 295 C 860 410, 1110 90, 1110 205" stroke="var(--c4)" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.8"/>
+      <path d="M 860 295 C 860 410, 1110 90, 1110 205" stroke="var(--c5)" stroke-width="2" stroke-dasharray="6 6" fill="none"/>
+    </svg>
+
+    <!-- Circular Icon Nodes -->
+    <div class="nodes-layer">
+      <!-- Node 1 -->
+      <div class="circle-node node-1">
+        <div class="circle-inner">
+          <div class="circle-icon-box">📷</div>
+        </div>
+      </div>
+
+      <!-- Node 2 -->
+      <div class="circle-node node-2">
+        <div class="circle-inner">
+          <div class="circle-icon-box">🤖</div>
+        </div>
+      </div>
+
+      <!-- Node 3 -->
+      <div class="circle-node node-3">
+        <div class="circle-inner">
+          <div class="circle-icon-box">⚡</div>
+        </div>
+      </div>
+
+      <!-- Node 4 -->
+      <div class="circle-node node-4">
+        <div class="circle-inner">
+          <div class="circle-icon-box">🎮</div>
+        </div>
+      </div>
+
+      <!-- Node 5 -->
+      <div class="circle-node node-5">
+        <div class="circle-inner">
+          <div class="circle-icon-box">🚁</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alternating Text Content Cards -->
+    <div class="text-layer">
+      
+      <!-- 01 TOP: INGESTION -->
+      <div class="step-card top" style="left: 110px;">
+        <div class="step-num" style="color: var(--c1);">01</div>
+        <div class="step-title">Ingest & Datum</div>
+        <div class="step-desc">
+          • <b>Mode A:</b> Drone JPG/PNG &rarr; 0–1 Relative<br>
+          • <b>Mode B:</b> GeoTIFF &rarr; Local UTM zone<br>
+          • <b>C-1 Guard:</b> Auto-detects Ellipsoid vs Geoid; locks base DEM strictly to <b>EGM2008</b>.
+        </div>
+        <span class="step-tag" style="background: rgba(6, 182, 212, 0.15); color: var(--c1);">ZERO DATUM ERROR</span>
+      </div>
+
+      <!-- 02 BOTTOM: AI HEIGHTS -->
+      <div class="step-card bottom" style="left: 360px;">
+        <div class="step-num" style="color: var(--c2);">02</div>
+        <div class="step-title">AI Height Inference</div>
+        <div class="step-desc">
+          • Overlapping 518px native-res tiles.<br>
+          • <b>Fine-Tuned ViT-S/14</b> trained on LiDAR nDSM.<br>
+          • Inundation/obstacle heights inferred in <b>true metres</b> (3.86m RMSE, &minus;43% vs zero-shot).
+        </div>
+        <span class="step-tag" style="background: rgba(59, 130, 246, 0.15); color: var(--c2);">NO SCALE AMBIGUITY</span>
+      </div>
+
+      <!-- 03 TOP: SMART FUSION -->
+      <div class="step-card top" style="left: 610px;">
+        <div class="step-num" style="color: var(--c3);">03</div>
+        <div class="step-title">TL-CSM Detail Fusion</div>
+        <div class="step-desc">
+          • <b>Base (&ge;30m):</b> Locked to true DEM.<br>
+          • <b>Detail (&lt;30m):</b> Injected from AI model.<br>
+          • <b>Formula:</b> DSM = Ground + Heights.<br>
+          • Adds no bias at the DEM's 30 m scale (measured, not guaranteed).
+        </div>
+        <span class="step-tag" style="background: rgba(249, 115, 22, 0.15); color: var(--c3);">DEM PRESERVING</span>
+      </div>
+
+      <!-- 04 BOTTOM: 3D DIGITAL TWIN -->
+      <div class="step-card bottom" style="left: 860px;">
+        <div class="step-num" style="color: var(--c4);">04</div>
+        <div class="step-title">3D Digital Twin</div>
+        <div class="step-desc">
+          • Three.js engine with adaptive RTIN mesh.<br>
+          • <b>1.7m First-Person Walk</b> with wall collision.<br>
+          • Autonomous <b>drone orbit</b> & heatmaps.<br>
+          • LoD-1 extruded buildings with 3D measure.
+        </div>
+        <span class="step-tag" style="background: rgba(234, 179, 8, 0.15); color: var(--c4);">INTERACTIVE SCENE</span>
+      </div>
+
+      <!-- 05 TOP: DISASTER OPS & DEPLOY -->
+      <div class="step-card top" style="left: 1110px;">
+        <div class="step-num" style="color: var(--c5);">05</div>
+        <div class="step-title">Disaster Suite & Export</div>
+        <div class="step-desc">
+          • 🚁 <b>Helicopter Landing (HLZ):</b> FM 3-21.38.<br>
+          • 🌊 <b>HAND Flood Inundation:</b> building depth.<br>
+          • 🏚️ <b>Collapse Screening:</b> 71–88% precision.<br>
+          • 📦 <b>Single 8MB HTML:</b> 100% offline deployment.
+        </div>
+        <span class="step-tag" style="background: rgba(244, 63, 94, 0.15); color: var(--c5);">ZERO-SERVER FIELD DEPLOY</span>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Bottom Bar -->
+  <div class="footer-bar">
+    <div>
+      <span class="highlight-badge">SIH 26175 Evidence Base:</span> Validated against swisstopo 0.5m LiDAR & NASA ICESat-2 laser altimetry (1,114 checkpoints)
+    </div>
+    <div>
+      <span class="highlight-badge">Deployment:</span> Single self-contained HTML scene opens instantly in any browser without Python or internet
+    </div>
+  </div>
+
+</div>
+
+<!-- Helper Toolbar -->
+<div class="toolbar">
+  <button class="tool-btn" onclick="toggleTheme()">🌓 Toggle Light / Dark Theme</button>
+  <button class="tool-btn" onclick="toggleFullscreen()">⛶ Fullscreen Slide</button>
+  <button class="tool-btn" onclick="window.print()">🖨️ Export PDF / Print</button>
+</div>
+
+<script>
+  function toggleTheme() {
+    document.body.classList.toggle('light-mode');
+  }
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen();
+    }
+  }
+</script>
+
+</body>
+</html>

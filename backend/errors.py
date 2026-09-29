@@ -43,6 +43,13 @@ class ImageTooLargeError(DepthWizardError):
     http_status = 413
 
 
+class UploadTooLargeError(DepthWizardError):
+    code = "UPLOAD_TOO_LARGE"
+    user_message = "The uploaded file is larger than the configured limit."
+    recoverable = True
+    http_status = 413
+
+
 class EmptyInputError(DepthWizardError):
     code = "EMPTY_INPUT"
     user_message = "The uploaded file is empty."

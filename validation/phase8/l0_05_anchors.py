@@ -1,6 +1,5 @@
 """L0-05 Robust anchor fit: recover known terrain offset and object-layer scale with outliers; hold-out residuals."""
 import json, numpy as np
-from scipy import stats
 from sklearn.linear_model import RANSACRegressor, LinearRegression, HuberRegressor
 rng = np.random.default_rng(7)
 N = 300

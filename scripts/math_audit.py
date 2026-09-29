@@ -168,7 +168,6 @@ def _job_footprints(job: Path, ndsm: np.ndarray, terr: np.ndarray, tr):
 
 
 def real_study(job_id: str) -> dict | None:
-    import json
 
     import rasterio
 
@@ -371,12 +370,10 @@ def real_flood_study(job_id: str) -> dict | None:
     import tempfile
 
     import rasterio
-    from PIL import Image
 
     from core.disaster.flood import run_flood_screening
     from core.geo.grid import Grid
     from core.geo.raster_io import write_raster
-    from core.terrain.lod1 import extract_lod1_buildings
 
     job = ROOT / "data" / "jobs" / job_id
     if not (job / "terrain.tif").exists() or not (job / "ndsm.tif").exists():
