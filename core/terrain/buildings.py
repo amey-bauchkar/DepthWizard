@@ -83,6 +83,9 @@ def records(data: dict[str, Any], *, min_height_m: float = 0.0, min_area_m2: flo
             "floors_range": floors_range(h),
             "valid_fraction": b.get("valid_fraction"),
             "quality_flags": b.get("quality_flags", []) if exact else ["LEGACY_STATS_REPROCESS_JOB"],
+            # False: the model reads this known footprint below the detection height (LOW_PREDICTED_HEIGHT), so the
+            # height is not resolved and is at best a lower bound
+            "height_resolved": "LOW_PREDICTED_HEIGHT" not in (b.get("quality_flags") or []),
             "lon": round(lon, 6) if lon is not None else None,
             "lat": round(lat, 6) if lat is not None else None,
             "scene_xy": [round(scx, 2), round(scy, 2)],
@@ -94,14 +97,18 @@ def records(data: dict[str, Any], *, min_height_m: float = 0.0, min_area_m2: flo
 
 def summary(data: dict[str, Any], recs: list[dict[str, Any]]) -> dict[str, Any]:
     hs = sorted(r["height_m"] for r in recs)
+    hs_ok = sorted(r["height_m"] for r in recs if r.get("height_resolved", True))
     method = "pixelwise" if any("volume_m3" in b for b in data.get("buildings", [])) else "legacy (area x median height; reprocess the job)"
     classes = {"low_lt10m": sum(h < 10 for h in hs), "mid_10_25m": sum(10 <= h < 25 for h in hs), "high_ge25m": sum(h >= 25 for h in hs)}
     allb = data.get("buildings", [])  # all buildings, not the filtered table: the warning must not hide behind a height filter
     low = sum("LOW_PREDICTED_HEIGHT" in (b.get("quality_flags") or []) for b in allb)
     notes_extra = []
+    min_h = data.get("min_height_m", 2.2)
     if allb and low / len(allb) >= 0.25:
-        notes_extra.append(f"{low} of {len(allb)} buildings ({100 * low / len(allb):.0f} %) are read below 2.2 m by the model although the footprint says a building is there: "
-                           "small rural buildings are under-read (the model was trained on Swiss / US buildings), so treat their heights as lower bounds.")
+        notes_extra.append(f"{low} of {len(allb)} buildings ({100 * low / len(allb):.0f} %) are read below {min_h:g} m by the model although the footprint says a building is there: "
+                           "their height is NOT resolved (single-storey houses are about 3 m or more). Small rural buildings are under-read "
+                           "(the model was trained on Swiss / US buildings), so treat these heights as lower bounds; the median above excludes them.")
+    hsrc = data.get("height_source") or {}
     return {
         "low_height_buildings": low,
         "count_total": data.get("count", len(data.get("buildings", []))),
@@ -109,6 +116,10 @@ def summary(data: dict[str, Any], recs: list[dict[str, Any]]) -> dict[str, Any]:
         "height_classes": classes,
         "max_height_m": hs[-1] if hs else None,
         "median_height_m": round(statistics.median(hs), 1) if hs else None,
+        "median_height_resolved_m": round(statistics.median(hs_ok), 1) if hs_ok else None,
+        "unresolved_filtered": len(hs) - len(hs_ok),
+        "min_height_m": min_h,
+        "height_source": hsrc or None,
         "total_footprint_m2": round(sum(r["area_m2"] for r in recs)),
         "total_volume_m3": round(sum(r["volume_m3"] for r in recs)),
         "height_error": data.get("height_error"),
@@ -118,7 +129,8 @@ def summary(data: dict[str, Any], recs: list[dict[str, Any]]) -> dict[str, Any]:
         "stats_method": method,
         "quantity_category": QUANTITY_CATEGORY,
         "notes": notes_extra + [
-            "height = typical roof height = median of the model's nDSM over the footprint pixels; p10-p90 shows the spread (a wide spread means several roof levels or a pitched roof).",
+            "height = typical roof height = median of the model's nDSM over the footprint pixels; p10-p90 shows the spread (a wide spread means several roof levels or a pitched roof)."
+            + (f" Height layer: {hsrc['layer']}." if hsrc.get("layer") else ""),
             "volume = integral of the nDSM over the footprint (sum h_i x cell area); the 3D block height is volume / area, so the extruded block has exactly this volume.",
             "roof elevation is the median of (terrain + nDSM) per pixel, so it stays correct on sloped ground.",
             "height interval and volume range use the model card's per-object RMSE; they are not per-building calibrated uncertainties.",

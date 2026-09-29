@@ -878,6 +878,7 @@ function renderValidation(v: Record<string, any>) {
 // ──────────────────────────────────────── Building intelligence
 let bldRows: Record<string, any>[] = [];
 let bldTimer = 0;
+let bldMinHeight = 2.2;  // detection height of the current job's buildings (summary.min_height_m)
 
 async function loadBuildingsPanel() {
   const panel = $("panel-buildings");
@@ -892,12 +893,14 @@ async function loadBuildingsPanel() {
   try {
     const r = await api.buildings(state.jobId, minH, minA, 300);
     const s = r.summary; bldRows = r.buildings;
+    bldMinHeight = s.min_height_m ?? 2.2;
     const err = s.height_error ?? {};
     const errTxt = err.typical_m ? `±${fmt(err.typical_m, 1)} m typical (1 RMSE, held-out LiDAR)` : "not calibrated (zero-shot)";
     const cls = s.height_classes ?? {};
     const fields: [string, string][] = [
       ["Buildings", `${s.count_filtered} of ${s.count_total}`],
-      ["Tallest / median", `${fmt(s.max_height_m, 1)} m / ${fmt(s.median_height_m, 1)} m`],
+      ["Tallest / median", `${fmt(s.max_height_m, 1)} m / ${fmt(s.median_height_resolved_m ?? s.median_height_m, 1)} m${s.unresolved_filtered ? " (resolved heights)" : ""}`],
+      ...(s.unresolved_filtered ? [["Height not resolved", `${s.unresolved_filtered} of ${s.count_filtered}: the model reads them below ${fmt(s.min_height_m ?? 2.2, 1)} m (lower bounds, small houses under-read)`] as [string, string]] : []),
       ["Low · mid · high-rise", `${cls.low_lt10m ?? 0} · ${cls.mid_10_25m ?? 0} · ${cls.high_ge25m ?? 0}`],
       ["Footprint · volume", `${(s.total_footprint_m2 / 1e4).toFixed(2)} ha · ${(s.total_volume_m3 / 1e6).toFixed(2)} Mm³`],
       ["Height error", errTxt],
@@ -908,7 +911,7 @@ async function loadBuildingsPanel() {
       : "LoD-1 blocks · outlines from building footprints · heights from the nDSM";
     $("bld-summary").innerHTML = fields.map(([l, v]) => `<div class="result-field"><div class="result-field-label">${l}</div><div class="result-field-value">${esc(v)}</div></div>`).join("");
     $("bld-table").innerHTML = `<thead><tr><th>#</th><th>Height (m)</th><th>Roof spread p10–p90</th><th>Floors (approx.)</th><th>Footprint (m²)</th><th>Volume (m³)</th><th>Ground elev. (m)</th></tr></thead><tbody>` +
-      bldRows.map((b) => `<tr data-bid="${b.id}" style="cursor:pointer"><td>${b.id}</td><td><b>${fmt(b.height_m, 1)}</b>${b.height_interval_m ? ` <span class="hint">(${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)})</span>` : ""}</td><td>${fmt(b.height_p10_m, 1)}–${fmt(b.height_p90_m, 1)}</td><td>${b.floors_range[0]}–${b.floors_range[1]}</td><td>${fmt(b.area_m2, 0)}</td><td>${b.volume_m3.toLocaleString()}</td><td>${fmt(b.ground_elev_m, 1)}</td></tr>`).join("") + "</tbody>";
+      bldRows.map((b) => `<tr data-bid="${b.id}" style="cursor:pointer"${b.height_resolved === false ? ' class="bld-unresolved" title="Height not resolved: the model reads this building below its detection height; the value is a lower bound"' : ""}><td>${b.id}</td><td>${b.height_resolved === false ? `<span class="hint">not resolved (≥ ${fmt(b.height_m, 1)})</span>` : `<b>${fmt(b.height_m, 1)}</b>${b.height_interval_m ? ` <span class="hint">(${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)})</span>` : ""}`}</td><td>${fmt(b.height_p10_m, 1)}–${fmt(b.height_p90_m, 1)}</td><td>${b.height_resolved === false ? "–" : `${b.floors_range[0]}–${b.floors_range[1]}`}</td><td>${fmt(b.area_m2, 0)}</td><td>${b.volume_m3.toLocaleString()}</td><td>${fmt(b.ground_elev_m, 1)}</td></tr>`).join("") + "</tbody>";
     $("bld-notes").innerHTML = [s.footprints?.note ? `<b>Outlines:</b> ${esc(s.footprints.note)}` : "", err.source ? `Height error source: ${esc(err.source)}` : "", ...(s.notes ?? []).map((n: string) => esc(n))].filter(Boolean).join("<br>");
     $("bld-table").querySelectorAll<HTMLTableRowElement>("tr[data-bid]").forEach((tr) => tr.addEventListener("click", () => selectBuilding(Number(tr.dataset.bid), true)));
   } catch (e) { $("bld-summary").textContent = userMessage(e); }
@@ -921,8 +924,12 @@ function selectBuilding(id: number, fly: boolean) {
   const d = $("bld-detail");
   if (!b) { d.classList.remove("hidden"); d.innerHTML = `Building #${id} is outside the current filter.`; return; }
   d.classList.remove("hidden");
-  d.innerHTML = `<div class="quality-card-header"><span class="q-badge q-GOOD">BUILDING #${b.id}</span><span class="quality-card-title">${fmt(b.height_m, 1)} m tall${b.height_interval_m ? ` (typical range ${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)} m)` : ""} · approx. ${b.floors_range[0]}–${b.floors_range[1]} floors</span></div>
-    <ul class="quality-triggers"><li>Ground ${fmt(b.ground_elev_m, 1)} m · roof ${fmt(b.roof_elev_m, 1)} m (${esc(state.result?.vertical_reference ?? "")})</li>
+  const unresolved = b.height_resolved === false;
+  const title = unresolved
+    ? `height not resolved · the model reads ${fmt(b.height_m, 1)} m (a lower bound)`
+    : `${fmt(b.height_m, 1)} m tall${b.height_interval_m ? ` (typical range ${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)} m)` : ""} · approx. ${b.floors_range[0]}–${b.floors_range[1]} floors`;
+  d.innerHTML = `<div class="quality-card-header"><span class="q-badge ${unresolved ? "q-LIMITED" : "q-GOOD"}">BUILDING #${b.id}</span><span class="quality-card-title">${title}</span></div>
+    <ul class="quality-triggers">${unresolved ? `<li>The footprint marks a building, but the model sees less than ${fmt(bldMinHeight, 1)} m of height here. Single-storey houses are about 3 m or more: small rural houses are under-read by the model (trained on Swiss / US buildings), so the true height is probably higher.</li>` : ""}<li>Ground ${fmt(b.ground_elev_m, 1)} m · roof ${fmt(b.roof_elev_m, 1)} m (${esc(state.result?.vertical_reference ?? "")})</li>
     <li>Footprint ${fmt(b.area_m2, 0)} m² · volume ≈ ${b.volume_m3.toLocaleString()} m³ · roof height spread ${fmt(b.height_p10_m, 1)}–${fmt(b.height_p90_m, 1)} m</li>
     <li>Location ${fmt(b.lat, 5)}° N, ${fmt(b.lon, 5)}° E</li></ul>`;
   if (fly && state.viewer) { state.viewer.setBuildingsVisible(true); ($("lod1-chk") as HTMLInputElement).checked = true; state.viewer.focusBuilding(id); }
@@ -1073,7 +1080,6 @@ async function open3d() {
 }
 
 // ──────────────────────────────────────── Disaster 2D Map & Hydrological Screening
-let disasterDebounceTimer: any = null;
 
 function initDisasterMap() {
   if (!state.result || !state.jobId) return;
@@ -1082,15 +1088,17 @@ function initDisasterMap() {
 
   updateDisasterBaseMap();
 
+  // a new job: no overlay of the previous one on this map (the baseline screening draws the new one)
+  ($("disaster-overlay-img") as HTMLImageElement).style.display = "none";
+  liveField = null;
+  hideLiveCanvas();
+
   // Reset pick dot and inspector
   const pickDot = $("disaster-pick-dot");
   if (pickDot) pickDot.classList.add("hidden");
   resetHudInfo();
 
-  // Auto-run baseline screening if Mode B and terrain exists
-  if (state.result.mode === "B" && (state.result.artifacts.terrain_tif || state.result.artifacts.dsm_tif)) {
-    runDisasterAnalysis(true);
-  }
+  // the baseline screening runs from initFloodModel(), once the flood model suggested by the relief is set
 }
 
 function updateDisasterBaseMap() {
@@ -1163,9 +1171,11 @@ async function initIndiaLayers() {
 
 async function initFloodModel() {
   if (!state.jobId || state.result?.mode !== "B") return;
+  const job = state.jobId;
   let m: "river" | "level" = "level";
   try {
-    const r = await fetch(`/api/jobs/${state.jobId}/disaster/flood/relief`).then((x) => x.json());
+    const r = await fetch(`/api/jobs/${job}/disaster/flood/relief`).then((x) => x.json());
+    if (state.jobId !== job) return;  // another job was opened meanwhile
     m = r.suggestedModel === "river" ? "river" : "level";
     $("flood-model-hint").textContent = m === "river"
       ? `Hilly scene (${r.relief_m} m relief): water rises above the river channels.`
@@ -1173,6 +1183,140 @@ async function initFloodModel() {
   } catch { /* keep the still-level model */ }
   ($("flood-model") as HTMLSelectElement).value = m;
   configureFloodSlider(m);
+  liveField = null;
+  hideLiveCanvas();
+  void ensureLiveField();
+  // baseline screening of the new job (Mode B with a terrain layer), with the model the selector now shows
+  if (state.result?.artifacts.terrain_tif || state.result?.artifacts.dsm_tif) scheduleScreening();
+}
+
+// ── Live slider preview. The browser colours the surface the screening thresholds (HAND / terrain for flood, slope
+// for accessibility; GET .../disaster/<scenario>/field) for every slider position, with the backend's own rule and
+// colours, so the overlay follows the slider at frame rate. The full-resolution server run replaces it on release.
+type LiveField = { key: string; w: number; h: number; data: Float32Array; meta: any; img: ImageData };
+let liveField: LiveField | null = null;
+let liveFieldLoading: string | null = null;
+let liveRaf = 0;
+
+function liveFieldKey(): string | null {
+  if (!state.jobId || !state.result) return null;
+  const mode = ($("disaster-scenario") as HTMLSelectElement | null)?.value ?? "flood";
+  if (mode === "flood") return `${state.jobId}|flood|${floodModel()}`;
+  if (mode === "accessibility") return `${state.jobId}|accessibility`;
+  return null;
+}
+
+async function ensureLiveField(): Promise<LiveField | null> {
+  const key = liveFieldKey();
+  if (!key) return null;
+  if (liveField?.key === key) return liveField;
+  if (liveFieldLoading === key) return null;
+  liveFieldLoading = key;
+  try {
+    const [job, kind, model] = key.split("|");
+    const r = await fetch(kind === "flood" ? `/api/jobs/${job}/disaster/flood/field?model=${model}` : `/api/jobs/${job}/disaster/accessibility/field`);
+    if (!r.ok) return null;
+    const meta = JSON.parse(r.headers.get("X-Field-Meta") || "{}");
+    const data = new Float32Array(await r.arrayBuffer());
+    if (!meta.width || data.length !== meta.width * meta.height || liveFieldKey() !== key) return null;
+    liveField = { key, w: meta.width, h: meta.height, data, meta, img: new ImageData(meta.width, meta.height) };
+    return liveField;
+  } catch {
+    return null;
+  } finally {
+    if (liveFieldLoading === key) liveFieldLoading = null;
+  }
+}
+
+const hexRgb = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+
+/** Colour the live field for the current slider value into the overlay canvas; false if no field is loaded. */
+function drawLivePreview(): boolean {
+  const f = liveField;
+  if (!f || f.key !== liveFieldKey()) return false;
+  const px = f.img.data, d = f.data, n = d.length;
+  px.fill(0);
+  if (f.key.includes("|flood|")) {
+    // flood.py: wet = S <= W, depth = W - S, ramp colour i at depth maxDepth * i / (n - 1), linear in between
+    const W = Number(($("flood-level-slider") as HTMLInputElement).value);
+    const cols = (f.meta.ramp.colours as string[]).map(hexRgb), k = cols.length - 1, a = f.meta.ramp.alpha, maxD = f.meta.ramp.maxDepthM;
+    for (let i = 0; i < n; i++) {
+      const sv = d[i];
+      if (!(sv <= W)) continue;  // NaN: no defined surface, never wet
+      const idx = Math.min(Math.max((W - sv) / maxD, 0), 1) * k;
+      const i0 = Math.floor(idx), i1 = Math.min(i0 + 1, k), fr = idx - i0, o = i * 4;
+      px[o] = Math.floor(cols[i0][0] * (1 - fr) + cols[i1][0] * fr);
+      px[o + 1] = Math.floor(cols[i0][1] * (1 - fr) + cols[i1][1] * fr);
+      px[o + 2] = Math.floor(cols[i0][2] * (1 - fr) + cols[i1][2] * fr);
+      px[o + 3] = a;
+    }
+  } else {
+    // accessibility.py: building (-1) grey, slope <= threshold green, steeper red
+    const T = Number(($("access-slope-slider") as HTMLInputElement).value);
+    const c = f.meta.rgba;
+    for (let i = 0; i < n; i++) {
+      const sv = d[i];
+      if (sv !== sv) continue;
+      const col = sv < 0 ? c.building : sv <= T ? c.accessible : c.steep, o = i * 4;
+      px[o] = col[0]; px[o + 1] = col[1]; px[o + 2] = col[2]; px[o + 3] = col[3];
+    }
+  }
+  const cv = $("disaster-live-canvas") as HTMLCanvasElement;
+  if (cv.width !== f.w || cv.height !== f.h) { cv.width = f.w; cv.height = f.h; }
+  cv.getContext("2d")!.putImageData(f.img, 0, 0);
+  cv.style.opacity = String(state.disaster.opacity);
+  cv.style.display = state.disaster.overlayVisible ? "block" : "none";
+  cv.classList.toggle("water-shimmer", state.disaster.shimmer && f.key.includes("|flood|"));
+  cv.classList.remove("hidden");
+  ($("disaster-overlay-img") as HTMLImageElement).style.visibility = "hidden";
+  return true;
+}
+
+function requestLiveDraw() {
+  if (liveRaf) return;
+  liveRaf = requestAnimationFrame(() => {
+    liveRaf = 0;
+    if (!drawLivePreview()) void ensureLiveField().then((f) => { if (f) drawLivePreview(); });
+  });
+}
+
+function hideLiveCanvas() {
+  $("disaster-live-canvas").classList.add("hidden");
+  ($("disaster-overlay-img") as HTMLImageElement).style.visibility = "visible";
+}
+
+/** Swap the overlay to a new server preview only once it is decoded (no blank frame between old and new). */
+async function swapOverlayImage(url: string, mode: string, seq: number) {
+  const pre = new Image();
+  pre.src = url;
+  try { await pre.decode(); } catch { /* shown anyway; the <img> reports its own error */ }
+  if (seq !== disasterSeq) return;
+  const img = $("disaster-overlay-img") as HTMLImageElement;
+  img.src = url;
+  img.style.display = state.disaster.overlayVisible ? "block" : "none";
+  img.style.opacity = String(state.disaster.opacity);
+  img.classList.toggle("water-shimmer", state.disaster.shimmer && mode === "flood");
+  hideLiveCanvas();
+}
+
+// One screening request in flight at a time; while it runs, only the newest wish is kept (a full run is never
+// downgraded to a live one) and sent when it returns. Scrubbing therefore never piles up requests on the server.
+let screenBusy = false;
+let screenNext: boolean | null = null;  // queued run: true = live preview, false = full run
+function scheduleScreening(live = false) {
+  if (screenBusy) {
+    screenNext = screenNext === false ? false : live;
+    return;
+  }
+  screenBusy = true;
+  $("disaster-stage-wrap").classList.add("busy");
+  void runDisasterAnalysis(live).finally(() => {
+    screenBusy = false;
+    const next = screenNext;
+    screenNext = null;
+    if (next !== null) scheduleScreening(next);
+    else $("disaster-stage-wrap").classList.remove("busy");
+  });
 }
 
 let disasterSeq = 0;  // only the newest request may update the panel (a slower older response must not overwrite it)
@@ -1197,6 +1341,7 @@ async function runDisasterAnalysis(silent = false) {
       : mode === "landslide" ? { lithology: sel("ls-lithology"), structure: sel("ls-structure"), hydrogeology: sel("ls-hydro"), fetchRainfall: chk("ls-rain"), scars: chk("ls-scars") ? scarWindows() : null }
       : mode === "roads" ? { includeLandslide: chk("roads-landslide") }
       : { maxSlopeDeg: Number(aSlp.value || 15) };
+    if (silent && (mode === "flood" || mode === "accessibility")) (body as any).live = true;
 
     const res = await fetch(`/api/jobs/${state.jobId}/disaster/${mode}`, {
       method: "POST",
@@ -1403,15 +1548,9 @@ async function runDisasterAnalysis(silent = false) {
       wDiv.classList.add("hidden");
     }
 
-    // Update 2D Water Overlay Image on top of the 2D Map!
-    if (resp.previewResult) {
-      const overlayImg = $("disaster-overlay-img") as HTMLImageElement;
-      if (overlayImg) {
-        overlayImg.src = `/api/jobs/${state.jobId}/artifact/${resp.previewResult}?t=${Date.now()}`;
-        overlayImg.style.display = state.disaster.overlayVisible ? "block" : "none";
-        overlayImg.style.opacity = String(state.disaster.opacity);
-        overlayImg.classList.toggle("water-shimmer", state.disaster.shimmer && mode === "flood");
-      }
+    // overlay: a live run leaves the browser-drawn preview in place; a full run swaps in its decoded server preview
+    if (resp.previewResult && !resp.live) {
+      void swapOverlayImage(`/api/jobs/${state.jobId}/artifact/${resp.previewResult}?t=${Date.now()}`, mode, seq);
     }
 
     // Render building vector layer on 2D map
@@ -1893,55 +2032,57 @@ function wire() {
       $("hlz-controls-wrap").classList.toggle("hidden", disScen.value !== "landing_zones");
       $("ls-controls-wrap").classList.toggle("hidden", disScen.value !== "landslide");
       $("roads-controls-wrap").classList.toggle("hidden", disScen.value !== "roads");
-      runDisasterAnalysis();
+      // a different hazard: the old overlay must not stay on screen while the new one is computed
+      ($("disaster-overlay-img") as HTMLImageElement).style.display = "none";
+      hideLiveCanvas();
+      void ensureLiveField();
+      scheduleScreening();
     });
   }
 
   if (fLvl) {
     fLvl.addEventListener("input", () => {
       $("flood-level-val").textContent = Number(fLvl.value).toFixed(1);
-      const live = ($("disaster-live-scrub") as HTMLInputElement)?.checked;
-      if (live) {
-        clearTimeout(disasterDebounceTimer);
-        disasterDebounceTimer = setTimeout(() => runDisasterAnalysis(true), 160);
-      }
+      requestLiveDraw();
+      // live numbers while dragging, throttled by scheduleScreening (one request in flight, newest value next)
+      if (($("disaster-live-scrub") as HTMLInputElement)?.checked) scheduleScreening(true);
     });
-    fLvl.addEventListener("change", () => runDisasterAnalysis());
+    fLvl.addEventListener("change", () => scheduleScreening());
   }
 
   if (aSlp) {
     aSlp.addEventListener("input", () => {
       $("access-slope-val").textContent = aSlp.value;
-      const live = ($("disaster-live-scrub") as HTMLInputElement)?.checked;
-      if (live) {
-        clearTimeout(disasterDebounceTimer);
-        disasterDebounceTimer = setTimeout(() => runDisasterAnalysis(true), 160);
-      }
+      requestLiveDraw();
+      if (($("disaster-live-scrub") as HTMLInputElement)?.checked) scheduleScreening(true);
     });
-    aSlp.addEventListener("change", () => runDisasterAnalysis());
+    aSlp.addEventListener("change", () => scheduleScreening());
   }
 
   // Step buttons (-1m, +1m, Auto)
   $("flood-minus-1")?.addEventListener("click", () => {
     fLvl.value = String(Math.max(Number(fLvl.min), Number(fLvl.value) - 1.0));
     $("flood-level-val").textContent = Number(fLvl.value).toFixed(1);
-    runDisasterAnalysis();
+    requestLiveDraw();
+    scheduleScreening();
   });
   $("flood-plus-1")?.addEventListener("click", () => {
     fLvl.value = String(Math.min(Number(fLvl.max), Number(fLvl.value) + 1.0));
     $("flood-level-val").textContent = Number(fLvl.value).toFixed(1);
-    runDisasterAnalysis();
+    requestLiveDraw();
+    scheduleScreening();
   });
   $("flood-auto-btn")?.addEventListener("click", () => {
     if (state.disaster.autoFloodVal) {
       fLvl.value = state.disaster.autoFloodVal.toFixed(1);
       $("flood-level-val").textContent = fLvl.value;
-      runDisasterAnalysis();
+      requestLiveDraw();
+      scheduleScreening();
     }
   });
 
-  $("run-disaster-btn")?.addEventListener("click", () => runDisasterAnalysis());
-  $("flood-model")?.addEventListener("change", () => { configureFloodSlider(floodModel()); runDisasterAnalysis(); });
+  $("run-disaster-btn")?.addEventListener("click", () => scheduleScreening());
+  $("flood-model")?.addEventListener("change", () => { configureFloodSlider(floodModel()); hideLiveCanvas(); void ensureLiveField(); scheduleScreening(); });
 
   // Base map buttons
   document.querySelectorAll("#disaster-base-group button").forEach((btn) => {
@@ -1959,6 +2100,7 @@ function wire() {
       state.disaster.overlayVisible = overToggle.checked;
       const img = $("disaster-overlay-img") as HTMLImageElement;
       if (img) img.style.display = overToggle.checked ? "block" : "none";
+      $("disaster-live-canvas").style.display = overToggle.checked ? "block" : "none";
     });
   }
 
@@ -1970,6 +2112,7 @@ function wire() {
       $("disaster-opacity-val").textContent = `${opSlider.value}%`;
       const img = $("disaster-overlay-img") as HTMLImageElement;
       if (img) img.style.opacity = String(state.disaster.opacity);
+      $("disaster-live-canvas").style.opacity = String(state.disaster.opacity);
     });
   }
 
@@ -1981,6 +2124,7 @@ function wire() {
       shimBtn.classList.toggle("active", state.disaster.shimmer);
       const img = $("disaster-overlay-img") as HTMLImageElement;
       if (img) img.classList.toggle("water-shimmer", state.disaster.shimmer);
+      $("disaster-live-canvas").classList.toggle("water-shimmer", state.disaster.shimmer && liveFieldKey()?.includes("|flood|") === true);
     });
   }
 

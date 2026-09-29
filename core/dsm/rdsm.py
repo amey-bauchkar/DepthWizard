@@ -103,5 +103,5 @@ def write_preview(path: str | Path, rel: np.ndarray, nodata: float, *, mode: str
     im = Image.fromarray(arr)
     if max(im.size) > max_dim:
         im.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
-    im.save(path)
+    im.save(path, compress_level=1)  # PNG is lossless: same pixels, ~4x faster to encode than the default level 6
     return path

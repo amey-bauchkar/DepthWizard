@@ -7,6 +7,7 @@ On startup, jobs found mid-flight are marked FAILED (interrupted) — never resu
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import threading
 import time
@@ -28,6 +29,7 @@ from core.inference.predictor import BasePredictor, build_metric_predictor, buil
 
 STATES = ["CREATED", "UPLOADED", "PREPROCESSING", "INFERENCE", "CALIBRATION", "RASTERIZING", "READY", "FAILED"]
 IN_FLIGHT = {"PREPROCESSING", "INFERENCE", "CALIBRATION", "RASTERIZING"}
+log = logging.getLogger("depthwizard.jobs")
 
 
 def _now() -> str:
@@ -73,6 +75,8 @@ class JobManager:
         self._metric: BasePredictor | None = None
         self._metric_error: DepthWizardError | None = None
         self._metric_tried = False
+        # measured post-processing seconds per megapixel (last job; default = measured on a laptop CPU), for the ETA
+        self._post_s_per_mpx = {"B": 1.7, "A": 0.3}
         self._load_existing()
 
     # ---- persistence -------------------------------------------------------
@@ -117,6 +121,25 @@ class JobManager:
                 except DepthWizardError as e:
                     self._metric_error = e
             return self._metric
+
+    def warm_up_in_background(self) -> threading.Thread:
+        """Load both models and run one blank forward pass each on a daemon thread (server start), so the first job
+        does not wait for the weights and the backend's one-off kernel setup. Failures are left to the first job,
+        which reports them as before."""
+        def work() -> None:
+            t0 = time.perf_counter()
+            try:
+                preds = [self.predictor(), self.metric_predictor()]
+                for p in preds:
+                    if p is not None:
+                        p.warm_up()
+                log.info("models warmed up in %.1f s", time.perf_counter() - t0)
+            except Exception as e:  # noqa: BLE001
+                log.warning("model warm-up skipped: %s", e)
+
+        t = threading.Thread(target=work, name="dw-warmup", daemon=True)
+        t.start()
+        return t
 
     def model_status(self) -> dict[str, Any]:
         mp = self.metric_predictor()
@@ -220,7 +243,7 @@ class JobManager:
                 "percent": 5,
                 "stage": "PREPROCESSING",
                 "message": "Ingesting and validating input…",
-                "eta_s": 50.0,
+                "eta_s": None,  # unknown until the tiles are counted and timed
             })
             mode_b = src.suffix.lower() in (".tif", ".tiff") and is_georeferenced_tiff(src)
             job.mode = "B" if mode_b else "A"
@@ -236,7 +259,7 @@ class JobManager:
                 "percent": 15,
                 "stage": "INFERENCE",
                 "message": "Depth Anything V2 — whole image pass…",
-                "eta_s": 45.0,
+                "eta_s": None,
             })
             predictor = self.predictor()
             job.model = {"name": predictor.card.name, "version": predictor.card.version, "sha256": predictor.card.sha256_actual, "device": predictor.device}
@@ -256,13 +279,14 @@ class JobManager:
                 if tile_pred is not predictor:
                     job.model["tiles"] = {"name": tile_pred.card.name, "version": tile_pred.card.version, "sha256": tile_pred.card.sha256_actual, "output_quantity": tile_pred.card.output_quantity}
 
+                post_est_s = self._post_s_per_mpx[job.mode] * rgb.shape[0] * rgb.shape[1] / 1e6
+
                 def on_tile_progress(done_n: int, total_n: int, elapsed_s: float) -> None:
                     # Scale tile progress linearly from 20% to 80%
                     pct = int(20 + round((done_n / max(total_n, 1)) * 60))
                     avg_per_tile = elapsed_s / max(done_n, 1)
                     rem_tiles = total_n - done_n
-                    calib_est_s = 5.0 if mode_b else 1.0
-                    eta_s = max(1.0, round(rem_tiles * avg_per_tile + calib_est_s, 1))
+                    eta_s = max(1.0, round(rem_tiles * avg_per_tile + post_est_s, 1))
                     job.progress = {
                         "percent": pct,
                         "current": done_n,
@@ -282,7 +306,7 @@ class JobManager:
                 self._set(job, "CALIBRATION", {
                     "percent": 85,
                     "stage": "CALIBRATION",
-                    "eta_s": 5.0,
+                    "eta_s": round(self._post_s_per_mpx["B"] * rgb.shape[0] * rgb.shape[1] / 1e6, 1),
                     "message": "DEM fusion, ground separation & LoD-1 buildings…",
                 })
                 dem_file = d / job.inputs["dem"] if "dem" in job.inputs else None
@@ -294,12 +318,13 @@ class JobManager:
                 self._set(job, "RASTERIZING", {
                     "percent": 85,
                     "stage": "RASTERIZING",
-                    "eta_s": 2.0,
+                    "eta_s": round(self._post_s_per_mpx["A"] * rgb.shape[0] * rgb.shape[1] / 1e6, 1),
                     "message": "Generating relative surface & heightfield…",
                 })
                 pipeline.stage_rasterize(d, ing_a, rel_depth, prov, self.settings, log, tiled=tiled)
                 job.stages_ms["raster_ms"] = round((time.perf_counter() - t2) * 1000, 1)
             job.stages_ms["total_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+            self._post_s_per_mpx[job.mode] = (time.perf_counter() - t2) / max(rgb.shape[0] * rgb.shape[1] / 1e6, 0.01)
             self._set(job, "READY", {
                 "percent": 100,
                 "stage": "READY",

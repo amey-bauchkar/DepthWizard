@@ -119,6 +119,7 @@ def extract_lod1_buildings(
     transform: Any = None,
     footprints: tuple[np.ndarray, dict[int, list[tuple[float, float]]]] | None = None,
     object_filter: bool = True,
+    heights: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Extract LoD-1 buildings — one clean block per building.
 
@@ -132,6 +133,9 @@ def extract_lod1_buildings(
     footprints=(labels, {id: outer ring in pixel coordinates}) (core.terrain.footprints.to_labels) replaces steps 1-2:
     the outlines come from a footprint dataset and only the heights from the nDSM. Without footprints, detected
     candidates are scored by the object filter (core.terrain.building_filter) and trees / rock are dropped.
+
+    heights: optional raster for the per-building height statistics (default: ndsm). Detection (mask, watershed,
+    object filter, detection gate) always uses ndsm, so passing heights never changes which buildings are found.
 
     With return_labels=True the result also carries "_labels": an int32 raster where pixel value k is building id k
     (0 = none). It is the exact pixel set every per-building statistic is computed on; callers must pop it before
@@ -148,7 +152,7 @@ def extract_lod1_buildings(
     if footprints is not None:
         return _finish(footprints[0], {k: v + [v[0]] for k, v in footprints[1].items()}, ndsm, terrain, tr, pixel_area_m2, gsd_m, H, W,
                        min_height_m=min_height_m, min_area_m2=min_area_m2, max_area_m2=max_area_m2, simplify_tol_m=0.0,
-                       max_buildings=10 ** 9, return_labels=return_labels, segmentation_method="reference_footprints", gate_height=False, dedupe=False)
+                       max_buildings=10 ** 9, return_labels=return_labels, segmentation_method="reference_footprints", gate_height=False, dedupe=False, heights=heights)
 
     # ── Step 1: Build unified building mask ───────────────────────────────
     if rgb is not None:
@@ -224,7 +228,7 @@ def extract_lod1_buildings(
     log.info("Unique building labels with valid polygons: %d", len(best_per_label))
     out = _finish(labeled, {k: g["coordinates"][0] for k, (g, _a) in best_per_label.items()}, ndsm, terrain, tr, pixel_area_m2, gsd_m, H, W,
                   min_height_m=min_height_m, min_area_m2=min_area_m2, max_area_m2=max_area_m2, simplify_tol_m=simplify_tol_m,
-                  max_buildings=max_buildings, return_labels=return_labels, segmentation_method=segmentation_method, gate_height=True, dedupe=True)
+                  max_buildings=max_buildings, return_labels=return_labels, segmentation_method=segmentation_method, gate_height=True, dedupe=True, heights=heights)
     if filter_report:
         out["object_filter"] = filter_report
     return out
@@ -232,7 +236,7 @@ def extract_lod1_buildings(
 
 def _finish(labeled: np.ndarray, rings: dict[int, list], ndsm: np.ndarray, terrain: np.ndarray, tr: Any, pixel_area_m2: float, gsd_m: float, H: int, W: int, *,
             min_height_m: float, min_area_m2: float, max_area_m2: float, simplify_tol_m: float, max_buildings: int, return_labels: bool,
-            segmentation_method: str, gate_height: bool, dedupe: bool) -> dict[str, Any]:
+            segmentation_method: str, gate_height: bool, dedupe: bool, heights: np.ndarray | None = None) -> dict[str, Any]:
     """Per-building statistics + scene-coordinate polygons for labelled footprints (detected or from a dataset)."""
     from scipy.ndimage import find_objects
 
@@ -255,13 +259,15 @@ def _finish(labeled: np.ndarray, rings: dict[int, list], ndsm: np.ndarray, terra
             continue
         sub_ndsm = ndsm[sl]
         det_h = sub_ndsm[sub_mask & np.isfinite(sub_ndsm)]
-        low = det_h.size == 0 or float(np.percentile(det_h, 85)) < min_height_m
         # detection gate (segmentation rule): the upper roof level must clear min_height_m. A footprint from a dataset
         # is a known building: it is kept and flagged when the model sees it lower than that.
-        if det_h.size == 0 or (gate_height and low):
+        if det_h.size == 0 or (gate_height and float(np.percentile(det_h, 85)) < min_height_m):
             continue
+        sub_h = heights[sl] if heights is not None else sub_ndsm
+        hh = sub_h[sub_mask & np.isfinite(sub_h)]
+        low = hh.size == 0 or float(np.percentile(hh, 85)) < min_height_m
         touches = sl[0].start == 0 or sl[1].start == 0 or sl[0].stop == H or sl[1].stop == W
-        st = footprint_stats(sub_ndsm, terrain[sl], sub_mask, transform=tr, row0=sl[0].start, col0=sl[1].start, touches_edge=touches)
+        st = footprint_stats(sub_h, terrain[sl], sub_mask, transform=tr, row0=sl[0].start, col0=sl[1].start, touches_edge=touches)
         if st is None:
             continue
         if low:

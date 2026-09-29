@@ -127,8 +127,11 @@ def tiled_relative(
     overlap: float = 0.25,
     inference_gsd_m: float | None = None,
     progress_cb: Callable[[int, int, float], None] | None = None,
+    predict_many: Callable[[list[np.ndarray]], list[np.ndarray]] | None = None,
+    batch: int = 1,
 ) -> TiledPrediction:
-    """Run `predict` (HxWx3 uint8 -> HxW relative depth) on overlapping tiles of `rgb` resampled by `upsample`."""
+    """Run `predict` (HxWx3 uint8 -> HxW relative depth) on overlapping tiles of `rgb` resampled by `upsample`.
+    With predict_many and batch > 1, tiles go through the model `batch` at a time (same tiles, same order)."""
     t0 = time.perf_counter()
     h, w = rgb.shape[:2]
     hb, wb = max(tile, int(round(h * upsample))), max(tile, int(round(w * upsample)))
@@ -138,17 +141,18 @@ def tiled_relative(
     origins_c = list(_tile_origins(wb, tile, step))
     total_tiles = len(origins_r) * len(origins_c)
     tiles = []
-    done_count = 0
-    for r0 in origins_r:
-        for c0 in origins_c:
-            tile_img = big[r0 : r0 + tile, c0 : c0 + tile]
-            tiles.append((r0, c0, np.asarray(predict(tile_img), dtype=np.float64)))
-            done_count += 1
-            if progress_cb is not None:
-                try:
-                    progress_cb(done_count, total_tiles, time.perf_counter() - t0)
-                except Exception:
-                    pass
+    origins = [(r0, c0) for r0 in origins_r for c0 in origins_c]
+    step_n = max(1, int(batch)) if predict_many is not None else 1
+    for i in range(0, len(origins), step_n):
+        chunk = origins[i : i + step_n]
+        imgs = [big[r0 : r0 + tile, c0 : c0 + tile] for r0, c0 in chunk]
+        outs = predict_many(imgs) if step_n > 1 else [predict(imgs[0])]
+        tiles += [(r0, c0, np.asarray(o, dtype=np.float64)) for (r0, c0), o in zip(chunk, outs)]
+        if progress_cb is not None:
+            try:
+                progress_cb(len(tiles), total_tiles, time.perf_counter() - t0)
+            except Exception:
+                pass
     return TiledPrediction(tiles, (hb, wb), (h, w), hb / h, tile, overlap, (time.perf_counter() - t0) * 1000.0, inference_gsd_m)
 
 

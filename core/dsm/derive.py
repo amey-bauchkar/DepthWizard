@@ -96,27 +96,46 @@ _SLOPE_RAMP = np.array([[240, 248, 255], [173, 216, 230], [255, 236, 130], [255,
 
 
 def _apply_ramp(v01: np.ndarray, ramp: np.ndarray, invalid: np.ndarray) -> np.ndarray:
+    """Linear colour ramp. One channel at a time (no H x W x 3 float temporaries): the same arithmetic per pixel as
+    ramp[i0] * (1 - fr) + ramp[i1] * fr, so the bytes are identical (tests/unit/test_previews.py), ~2x faster."""
     idx = np.clip(np.nan_to_num(v01), 0, 1) * (len(ramp) - 1)
     i0 = np.floor(idx).astype(int)
     i1 = np.clip(i0 + 1, 0, len(ramp) - 1)
-    fr = (idx - i0)[..., None]
-    rgb = ramp[i0] * (1 - fr) + ramp[i1] * fr
-    rgb[invalid] = 0
-    return rgb.astype(np.uint8)
+    fr = idx - i0
+    w0 = 1 - fr
+    out = np.empty((*idx.shape, 3), np.uint8)
+    for c in range(3):
+        ch = ramp[:, c]
+        v = ch[i0] * w0 + ch[i1] * fr
+        v[invalid] = 0
+        out[..., c] = v.astype(np.uint8)
+    return out
 
 
-def elevation_preview(path, z: np.ndarray, *, lo: float | None = None, hi: float | None = None, max_dim: int = 2048) -> dict:
+def elevation_legend(z: np.ndarray, *, lo: float | None = None, hi: float | None = None) -> dict:
+    """The legend elevation_preview draws with (lo / hi default to P1 / P99 of the valid cells)."""
     v = np.isfinite(z)
     if lo is None or hi is None:
         lo, hi = (float(np.percentile(z[v], 1)), float(np.percentile(z[v], 99))) if v.any() else (0.0, 1.0)
     if hi <= lo:
         hi = lo + 1e-6
+    return {"lo": lo, "hi": hi, "ramp": "terrain (dark-blue low -> white high)"}
+
+
+def slope_legend(max_deg: float = 45.0) -> dict:
+    return {"lo": 0.0, "hi": max_deg, "ramp": "slope 0 (white) -> 45+ deg (dark red)"}
+
+
+def elevation_preview(path, z: np.ndarray, *, lo: float | None = None, hi: float | None = None, max_dim: int = 2048) -> dict:
+    v = np.isfinite(z)
+    leg = elevation_legend(z, lo=lo, hi=hi)
+    lo, hi = leg["lo"], leg["hi"]
     rgb = _apply_ramp((z - lo) / (hi - lo), _RAMP, ~v)
     im = Image.fromarray(rgb)
     if max(im.size) > max_dim:
         im.thumbnail((max_dim, max_dim))
-    im.save(path)
-    return {"lo": lo, "hi": hi, "ramp": "terrain (dark-blue low -> white high)"}
+    im.save(path, compress_level=1)  # PNG is lossless: same pixels, ~4x faster to encode than the default level 6
+    return leg
 
 
 def slope_preview(path, slope_deg: np.ndarray, *, max_deg: float = 45.0, max_dim: int = 2048) -> dict:
@@ -125,8 +144,8 @@ def slope_preview(path, slope_deg: np.ndarray, *, max_deg: float = 45.0, max_dim
     im = Image.fromarray(rgb)
     if max(im.size) > max_dim:
         im.thumbnail((max_dim, max_dim))
-    im.save(path)
-    return {"lo": 0.0, "hi": max_deg, "ramp": "slope 0 (white) -> 45+ deg (dark red)"}
+    im.save(path, compress_level=1)  # PNG is lossless: same pixels, ~4x faster to encode than the default level 6
+    return slope_legend(max_deg)
 
 
 def hillshade(z: np.ndarray, gsd_x: float, gsd_y: float, azimuth_deg: float = 315.0, altitude_deg: float = 45.0) -> np.ndarray:
@@ -152,7 +171,7 @@ def hillshade_preview(path, z: np.ndarray, gsd_x: float, gsd_y: float, *, max_di
     im = Image.fromarray(np.dstack([g, g, g]))
     if max(im.size) > max_dim:
         im.thumbnail((max_dim, max_dim))
-    im.save(path)
+    im.save(path, compress_level=1)  # PNG is lossless: same pixels, ~4x faster to encode than the default level 6
 
 
 def flags_preview(path, flags: np.ndarray, *, max_dim: int = 2048) -> None:
@@ -166,4 +185,4 @@ def flags_preview(path, flags: np.ndarray, *, max_dim: int = 2048) -> None:
     im = Image.fromarray(rgb, "RGBA")
     if max(im.size) > max_dim:
         im.thumbnail((max_dim, max_dim))
-    im.save(path)
+    im.save(path, compress_level=1)  # PNG is lossless: same pixels, ~4x faster to encode than the default level 6
