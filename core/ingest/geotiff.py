@@ -44,6 +44,7 @@ class GeoInputMeta:
     vertical_crs_tag: str | None
     sha256: str
     size_bytes: int
+    resampled: dict | None = None  # set when an oversized input was processed on a coarser grid
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -75,8 +76,6 @@ def ingest_geotiff(path: str | Path, work_dir: str | Path, *, max_dim: int = 409
             crs = CRS.from_wkt(ds.crs.to_wkt()) if ds.crs else None
             if crs is None or ds.transform is None or ds.transform.is_identity:
                 raise InvalidFileError("GeoTIFF has no CRS/geotransform")
-            if max(ds.width, ds.height) > max_dim:
-                raise ImageTooLargeError(f"{ds.width}x{ds.height} exceeds max_image_dim={max_dim}")
             fmt = ds.driver
     except (InvalidFileError, ImageTooLargeError):
         raise
@@ -89,6 +88,11 @@ def ingest_geotiff(path: str | Path, work_dir: str | Path, *, max_dim: int = 409
         _grid, rec = ensure_metric_grid(str(p), str(out))
         reproj_rec = rec.to_dict()
         src_for_read = out
+    resampled = None
+    with rasterio.open(src_for_read) as ds:
+        big = max(ds.width, ds.height) > max_dim
+    if big:  # larger than the RAM budget: same area, coarser working grid (area average), never refused
+        src_for_read, resampled = _resample_to_fit(src_for_read, Path(work_dir) / "input_resampled.tif", max_dim)
     img: GeoImage = read_georeferenced_rgb(src_for_read, max_dim=max_dim)
     g = img.grid
     gsd = g.pixel_size
@@ -115,5 +119,25 @@ def ingest_geotiff(path: str | Path, work_dir: str | Path, *, max_dim: int = 409
         vertical_crs_tag=img.vertical_crs_tag,
         sha256=hashlib.sha256(p.read_bytes()).hexdigest(),
         size_bytes=int(p.stat().st_size),
+        resampled=resampled,
     )
     return GeoIngestResult(img.rgb, img.valid_mask, g, meta, src_for_read)
+
+
+def _resample_to_fit(src: Path, out: Path, max_dim: int) -> tuple[Path, dict]:
+    """Area-averaged copy whose longer side is max_dim pixels (same bounds and CRS, larger pixels)."""
+    from rasterio.enums import Resampling
+
+    with rasterio.open(src) as ds:
+        f = max(ds.width, ds.height) / max_dim
+        w, h = max(8, int(round(ds.width / f))), max(8, int(round(ds.height / f)))
+        data = ds.read(out_shape=(ds.count, h, w), resampling=Resampling.average)
+        tr = ds.transform * ds.transform.scale(ds.width / w, ds.height / h)
+        prof = {**ds.profile, "width": w, "height": h, "transform": tr, "compress": "deflate", "tiled": True, "blockxsize": 256, "blockysize": 256}
+        for k in ("photometric", "jpeg_quality"):
+            prof.pop(k, None)
+        rec = {"from_px": [ds.width, ds.height], "to_px": [w, h], "from_gsd_m": round(abs(ds.transform.a), 3), "to_gsd_m": round(abs(tr.a), 3),
+               "reason": f"larger than the {max_dim} px working limit (RAM): processed on a coarser grid covering the same area"}
+    with rasterio.open(out, "w", **prof) as o:
+        o.write(data)
+    return out, rec

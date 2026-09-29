@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from backend.errors import EmptyInputError, ImageTooLargeError, InvalidFileError, UnsupportedFormatError
+from backend.errors import EmptyInputError, InvalidFileError, UnsupportedFormatError
 from core.ingest.ingest import ingest_image
 
 
@@ -51,9 +51,25 @@ def test_empty_file(tmp_path):
         ingest_image(_write(tmp_path, "e.png", b""))
 
 
-def test_too_large(tmp_path, png_bytes):
-    with pytest.raises(ImageTooLargeError):
-        ingest_image(_write(tmp_path, "a.png", png_bytes), max_dim=100)
+def test_oversized_image_is_resampled_not_refused(tmp_path, png_bytes):
+    res = ingest_image(_write(tmp_path, "a.png", png_bytes), max_dim=100)  # 320 x 240 checkerboard
+    assert max(res.rgb.shape[:2]) == 100 and res.rgb.shape[:2] == (75, 100)
+
+
+def test_oversized_geotiff_keeps_its_extent(tmp_path):
+    import numpy as np
+    import rasterio
+    from rasterio.transform import from_origin
+
+    from core.ingest.geotiff import ingest_geotiff
+
+    src = tmp_path / "big.tif"
+    with rasterio.open(src, "w", driver="GTiff", width=400, height=300, count=3, dtype="uint8", crs="EPSG:32645", transform=from_origin(600000, 3000000, 0.6, 0.6)) as ds:
+        ds.write(np.random.default_rng(0).integers(0, 255, (3, 300, 400), dtype=np.uint8))
+    res = ingest_geotiff(src, tmp_path, max_dim=200)
+    assert (res.grid.width, res.grid.height) == (200, 150)
+    assert abs(res.meta.gsd_m - 1.2) < 1e-6 and res.meta.resampled["from_px"] == [400, 300]
+    assert np.allclose(res.grid.bounds, (600000, 3000000 - 180, 600000 + 240, 3000000))
 
 
 def test_missing_file(tmp_path):

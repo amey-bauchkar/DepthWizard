@@ -35,7 +35,7 @@ class MetricModelCfg(BaseModel):
 
 
 class IngestCfg(BaseModel):
-    max_image_dim: int = 4096
+    max_image_dim: int = 6400  # working-grid limit (px); larger inputs are area-averaged to it (6000 px peaked at 6.6 GB RAM)
     max_upload_mb: float = 600.0  # any single uploaded file (image, DEM, zip product); larger -> 413
     max_zip_uncompressed_mb: float = 3000.0  # zipped ISRO product, total size once extracted (zip-bomb guard)
     allowed_extensions: list[str] = Field(default_factory=lambda: [".png", ".jpg", ".jpeg", ".tif", ".tiff"])
@@ -65,7 +65,7 @@ class FusionCfg(BaseModel):
     max_upsample: float = 4.0
     tile_px: int = 518  # DA-V2 native input size (multiple of 14)
     overlap: float = 0.25
-    max_tiles: int = 64  # CPU budget; the inference GSD is coarsened automatically to stay within it
+    max_tiles: int = 400  # model tiles per job: full 0.5 m detail up to ~3.5 x 3.5 km at 0.6 m (CPU ~2 s / tile)
     max_tile_gain: float | None = None  # optional cap on the per-tile DEM-band gain (m per relative unit)
     anchor_gain_max: float = 4.0  # plausibility bound on the anchor-fitted detail gain
     mode_a_tiling: bool = True  # Mode A: refine large images with native-resolution tiles

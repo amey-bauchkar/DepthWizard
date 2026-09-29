@@ -17,7 +17,7 @@ model_metric:                     # optional fine-tuned metric nDSM model (tier 
   verify_hash: true
 
 ingest:
-  max_image_dim: 4096             # pixels; larger inputs are rejected with IMAGE_TOO_LARGE
+  max_image_dim: 6400             # working-grid pixels; larger inputs are area-averaged to it (RAM budget)
   max_upload_mb: 600              # per uploaded file; larger -> 413 UPLOAD_TOO_LARGE
   max_zip_uncompressed_mb: 3000   # zipped Cartosat / Resourcesat product once extracted (zip-bomb guard)
   allowed_extensions: [".png", ".jpg", ".jpeg", ".tif", ".tiff"]
@@ -55,7 +55,7 @@ fusion:                           # tiled inference + DEM-preserving detail fusi
   max_upsample: 4.0
   tile_px: 518
   overlap: 0.25
-  max_tiles: 64                   # CPU budget; inference GSD is coarsened automatically to stay within it
+  max_tiles: 400                  # full 0.5 m detail up to ~3.5 km scenes at 0.6 m; CPU ~2 s per tile
   max_tile_gain: null             # optional cap on per-tile DEM-band gain (m per relative unit)
   anchor_gain_max: 4.0            # plausibility bound on the anchor-fitted detail gain
   mode_a_tiling: true             # Mode A: refine large images with native-resolution tiles

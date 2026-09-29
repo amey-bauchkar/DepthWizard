@@ -15,6 +15,8 @@ from typing import Any
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
+Image.MAX_IMAGE_PIXELS = 1_000_000_000  # large satellite PNG / JPG are legitimate; uploads are size-capped (ingest.max_upload_mb)
+
 from backend.errors import EmptyInputError, ImageTooLargeError, InvalidFileError, UnsupportedFormatError
 
 MAGIC = {
@@ -42,13 +44,16 @@ def _read_tiff_rgb(p: Path, max_dim: int) -> tuple[np.ndarray, np.ndarray | None
         with rasterio.open(p) as ds:
             if ds.width < 8 or ds.height < 8:
                 raise InvalidFileError(f"image too small: {ds.width}x{ds.height}")
-            if max(ds.width, ds.height) > max_dim:
-                raise ImageTooLargeError(f"{ds.width}x{ds.height} exceeds max_image_dim={max_dim}")
-            bands = [ds.read(1)] * 3 if ds.count < 3 else [ds.read(b) for b in (1, 2, 3)]
+            f = max(ds.width, ds.height) / max_dim
+            shape = (int(round(ds.height / f)), int(round(ds.width / f))) if f > 1 else (ds.height, ds.width)
+            from rasterio.enums import Resampling
+
+            rd = (lambda b: ds.read(b, out_shape=shape, resampling=Resampling.average)) if f > 1 else (lambda b: ds.read(b))
+            bands = [rd(1)] * 3 if ds.count < 3 else [rd(b) for b in (1, 2, 3)]
             u8, masks = zip(*[_to_uint8(b, ds.nodata) for b in bands])
             valid = masks[0] & masks[1] & masks[2]
             if ds.count >= 4 and any(str(ci).lower().endswith("alpha") for ci in ds.colorinterp):
-                valid &= ds.read(ds.count) > 0
+                valid &= rd(ds.count) > 0
             return np.dstack(u8), (None if valid.all() else valid), int(ds.count)
 
 
@@ -121,8 +126,10 @@ def ingest_image(path: str | Path, *, max_dim: int = 4096, allowed_extensions: t
             width, height = im.size
             if width < 8 or height < 8:
                 raise InvalidFileError(f"image too small: {width}x{height}")
-            if max(width, height) > max_dim:
-                raise ImageTooLargeError(f"{width}x{height} exceeds max_image_dim={max_dim}")
+            if max(width, height) > max_dim:  # larger than the RAM budget: area-average down, never refused
+                f = max(width, height) / max_dim
+                im = im.resize((max(8, int(round(width / f))), max(8, int(round(height / f)))), Image.Resampling.BOX)
+                width, height = im.size
             has_alpha = im.mode in ("RGBA", "LA", "PA") or ("transparency" in im.info)
             valid_mask = None
             if has_alpha:
