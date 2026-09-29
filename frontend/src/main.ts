@@ -10,7 +10,7 @@
  * Measurement architecture: measurements are ALWAYS sampled server-side from the DSM raster.
  * The Three.js mesh is a visual representation only; picks are converted to raster pixel coords.
  */
-import { api, ApiFailure, pollUntilDone, type DemoItem, type Job, type Result, type Sample } from "./api";
+import { api, apiUrl, API_BASE, ApiFailure, pollUntilDone, type DemoItem, type Job, type Result, type Sample } from "./api";
 import { HeightfieldViewer } from "./viewer";
 import { resolveState, STATE_DISPLAY, type ResultState } from "./resultState";
 
@@ -60,7 +60,7 @@ const state: State = {
 
 // ──────────────────────────────────────── Helpers
 const isTiff = (f: File) => /\.tiff?$/i.test(f.name);
-function setStatus(msg: string, kind: "" | "ok" | "err" = "", el = "status") {
+function setStatus(msg: string, kind: "" | "ok" | "err" | "warn" = "", el = "status") {
   const e = $(el); e.textContent = msg; e.className = `status ${kind}`;
 }
 function userMessage(e: unknown): string {
@@ -95,6 +95,98 @@ const LAYER_DEFS: Record<string, LayerDef> = {
 };
 
 // ──────────────────────────────────────── System / demo init
+const FALLBACK_DEMO_ITEMS: DemoItem[] = [
+  {
+    id: "urban_jpg",
+    label: "Zürich (urban) · Aerial Photo · Mode A",
+    file: "sample_urban.jpg",
+    mode: "A",
+    source: "swisstopo SWISSIMAGE 10 cm crystal clear aerial photo",
+  },
+  {
+    id: "rural_jpg",
+    label: "Emmental (rural) · Aerial Photo · Mode A",
+    file: "sample_rural.jpg",
+    mode: "A",
+    source: "swisstopo SWISSIMAGE tile exported without georeferencing",
+  },
+  {
+    id: "urban_geotiff",
+    label: "Zürich (urban) · GeoTIFF 2 m · Mode B",
+    file: "swissimage_2019_2682-1247_2m.tif",
+    mode: "B",
+    anchors: "anchors_urban_simulated.csv",
+    reference_dsm: "swisssurface3d_urban_2682-1247_dsm_0.5m.tif",
+    source: "swisstopo SWISSIMAGE 2 m tile",
+  },
+];
+
+function renderDemoItems(items: DemoItem[], references: string[]) {
+  state.demo = items;
+  state.references = references;
+  const wrap = $("demo-buttons");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  // Priority order: Indian scenes first (SIH / ISRO), then Change / Disaster screening scenes, then Swiss benchmark tiles
+  const priority = (it: DemoItem) => (it.country === "IN" ? 0 : (it.country === "TR" || it.pair || it.id.startsWith("change_")) ? 1 : 2);
+  [...items].sort((x, y) => priority(x) - priority(y)).forEach((it) => {
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = `demo-pill demo-mode-${it.mode.toLowerCase()}`;
+    const isHD = it.id.includes("hd");
+    const isRural = it.id.includes("rural");
+    const isChange = Boolean(it.pair || it.country === "TR" || it.id.startsWith("change_"));
+    const india = it.country === "IN";
+    const icon = isChange
+      ? (it.role === "before" ? "🏛️" : "🏚️")
+      : india
+        ? "🇮🇳"
+        : isRural
+          ? (it.mode === "B" ? "🌲" : "🏞️")
+          : (it.mode === "B" ? (isHD ? "🏙️" : "🏢") : "📷");
+    const title = isChange
+      ? (it.role === "before" ? "Islahiye, Türkiye · BEFORE" : "Islahiye, Türkiye · AFTER")
+      : india
+        ? it.id.replace(/^india_/, "").split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ").replace(/^North Sikkim /, "N. Sikkim ")
+        : isRural
+          ? (it.mode === "B" ? "Emmental Ridge" : "Emmental Photo")
+          : (it.mode === "B" ? (isHD ? "Zürich Core HD" : "Zürich City 2m") : (isHD ? "Zürich Photo HD" : "Zürich Photo"));
+    const tag = isChange
+      ? (it.role === "before" ? "0.5m · Pre" : "0.5m · Post")
+      : india
+        ? "0.5m · ICESat-2"
+        : it.mode === "B"
+          ? (isHD ? "0.5m DSM" : "2m DSM")
+          : "Mode A";
+
+    pill.innerHTML = `<span class="demo-icon">${icon}</span><span class="demo-name">${title}</span><span class="demo-tag">${tag}</span>`;
+    pill.title = `${it.label} — ${it.source ?? ""}`;
+    pill.addEventListener("click", () => {
+      wrap.querySelectorAll(".demo-pill").forEach((c) => c.classList.remove("active"));
+      pill.classList.add("active");
+      loadDemo(it);
+    });
+    wrap.appendChild(pill);
+  });
+  const aw = $("anchor-demo-buttons");
+  if (aw) {
+    aw.innerHTML = "";
+    ["urban", "rural"].forEach((t, i) => {
+      const b = document.createElement("button"); b.className = "linkbtn"; b.textContent = t;
+      b.addEventListener("click", () => loadDemoAnchors(t)); aw.appendChild(b);
+      if (i === 0) aw.append(" · ");
+    });
+  }
+  const sel = $("ref-bundled") as HTMLSelectElement | null;
+  if (sel) {
+    references.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; sel.appendChild(o); });
+  }
+  const psel = $("pts-bundled") as HTMLSelectElement | null;
+  if (psel) {
+    items.filter((it) => it.reference_points).forEach((it) => { const o = document.createElement("option"); o.value = it.reference_points!; o.textContent = `ICESat-2 · ${it.id.replace(/^india_/, "")}`; psel.appendChild(o); });
+  }
+}
+
 async function initSystem() {
   initDemo(); // independent of model loading (first /health call loads + hashes the weights)
   const badge = $("system-badge");
@@ -116,74 +208,27 @@ async function initSystem() {
       setStatus("Model weights are not installed. Run scripts/fetch_model.py.", "err");
     }
   } catch {
-    badge.textContent = "backend unreachable";
-    badge.className = "badge bad";
-    setStatus("Backend unreachable. Is the server running?", "err");
+    badge.textContent = API_BASE ? "connecting to cloud..." : "cloud standby · 3D ready";
+    badge.className = "badge warn";
+    setStatus("Backend is starting up or in standby. 3D viewer & tools ready.", "warn");
   }
 }
 
 async function initDemo() {
   try {
     const d = await api.demo();
-    state.demo = d.items; state.references = d.references;
-    const wrap = $("demo-buttons"); wrap.innerHTML = "";
-    // Priority order: Indian scenes first (SIH / ISRO), then Change / Disaster screening scenes, then Swiss benchmark tiles
-    const priority = (it: DemoItem) => (it.country === "IN" ? 0 : (it.country === "TR" || it.pair || it.id.startsWith("change_")) ? 1 : 2);
-    [...d.items].sort((x, y) => priority(x) - priority(y)).forEach((it) => {
-      const pill = document.createElement("button");
-      pill.type = "button";
-      pill.className = `demo-pill demo-mode-${it.mode.toLowerCase()}`;
-      const isHD = it.id.includes("hd");
-      const isRural = it.id.includes("rural");
-      const isChange = Boolean(it.pair || it.country === "TR" || it.id.startsWith("change_"));
-      const india = it.country === "IN";
-      const icon = isChange
-        ? (it.role === "before" ? "🏛️" : "🏚️")
-        : india
-          ? "🇮🇳"
-          : isRural
-            ? (it.mode === "B" ? "🌲" : "🏞️")
-            : (it.mode === "B" ? (isHD ? "🏙️" : "🏢") : "📷");
-      const title = isChange
-        ? (it.role === "before" ? "Islahiye, Türkiye · BEFORE" : "Islahiye, Türkiye · AFTER")
-        : india
-          ? it.id.replace(/^india_/, "").split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ").replace(/^North Sikkim /, "N. Sikkim ")
-          : isRural
-            ? (it.mode === "B" ? "Emmental Ridge" : "Emmental Photo")
-            : (it.mode === "B" ? (isHD ? "Zürich Core HD" : "Zürich City 2m") : (isHD ? "Zürich Photo HD" : "Zürich Photo"));
-      const tag = isChange
-        ? (it.role === "before" ? "0.5m · Pre" : "0.5m · Post")
-        : india
-          ? "0.5m · ICESat-2"
-          : it.mode === "B"
-            ? (isHD ? "0.5m DSM" : "2m DSM")
-            : "Mode A";
-
-      pill.innerHTML = `<span class="demo-icon">${icon}</span><span class="demo-name">${title}</span><span class="demo-tag">${tag}</span>`;
-      pill.title = `${it.label} — ${it.source ?? ""}`;
-      pill.addEventListener("click", () => {
-        wrap.querySelectorAll(".demo-pill").forEach((c) => c.classList.remove("active"));
-        pill.classList.add("active");
-        loadDemo(it);
-      });
-      wrap.appendChild(pill);
-    });
-    const aw = $("anchor-demo-buttons"); aw.innerHTML = "";
-    ["urban", "rural"].forEach((t, i) => {
-      const b = document.createElement("button"); b.className = "linkbtn"; b.textContent = t;
-      b.addEventListener("click", () => loadDemoAnchors(t)); aw.appendChild(b);
-      if (i === 0) aw.append(" · ");
-    });
-    const sel = $("ref-bundled") as HTMLSelectElement;
-    d.references.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; sel.appendChild(o); });
-    const psel = $("pts-bundled") as HTMLSelectElement;
-    d.items.filter((it) => it.reference_points).forEach((it) => { const o = document.createElement("option"); o.value = it.reference_points!; o.textContent = `ICESat-2 · ${it.id.replace(/^india_/, "")}`; psel.appendChild(o); });
-  } catch { /* demo assets optional */ }
+    renderDemoItems(d.items, d.references);
+  } catch {
+    renderDemoItems(FALLBACK_DEMO_ITEMS, []);
+  }
 }
 
 async function loadDemo(it: DemoItem) {
   try {
-    const r = await fetch(`/demo/${it.file}`);
+    let r = await fetch(apiUrl(`/demo/${it.file}`));
+    if (!r.ok && API_BASE) {
+      r = await fetch(`/demo/${it.file}`);
+    }
     if (!r.ok) throw new Error("demo missing");
     const blob = await r.blob();
     showInput(new File([blob], it.file.split("/").pop() ?? it.file, { type: blob.type || (it.mode === "B" ? "image/tiff" : "image/jpeg") }));
@@ -202,7 +247,10 @@ async function loadDemo(it: DemoItem) {
 
 async function loadDemoAnchors(t: string) {
   try {
-    const r = await fetch(`/demo/anchors_${t}_simulated.csv`);
+    let r = await fetch(apiUrl(`/demo/anchors_${t}_simulated.csv`));
+    if (!r.ok && API_BASE) {
+      r = await fetch(`/demo/anchors_${t}_simulated.csv`);
+    }
     if (!r.ok) throw new Error("missing");
     state.anchors = new File([await r.blob()], `anchors_${t}_simulated.csv`, { type: "text/csv" });
     state.anchorsLabel = `simulated ${t} anchors (sampled from LiDAR — NOT surveyed ground control)`;
@@ -888,8 +936,8 @@ async function loadBuildingsPanel() {
   const minA = Number(($("bld-mina") as HTMLInputElement).value) || 0;
   $("bld-minh-val").textContent = `${minH} m`;
   const q = `min_height=${minH}&min_area=${minA}`;
-  ($("bld-geojson") as HTMLAnchorElement).href = `/api/jobs/${state.jobId}/buildings.geojson?${q}`;
-  ($("bld-csv") as HTMLAnchorElement).href = `/api/jobs/${state.jobId}/buildings.csv?${q}`;
+  ($("bld-geojson") as HTMLAnchorElement).href = apiUrl(`/api/jobs/${state.jobId}/buildings.geojson?${q}`);
+  ($("bld-csv") as HTMLAnchorElement).href = apiUrl(`/api/jobs/${state.jobId}/buildings.csv?${q}`);
   try {
     const r = await api.buildings(state.jobId, minH, minA, 300);
     const s = r.summary; bldRows = r.buildings;
@@ -1156,14 +1204,14 @@ function scarWindows(): { before: string; after: string } {
 
 async function initIndiaLayers() {
   if (!state.jobId) return;
-  ($("disaster-report-btn") as HTMLAnchorElement).href = `/api/jobs/${state.jobId}/report.pdf`;
+  ($("disaster-report-btn") as HTMLAnchorElement).href = apiUrl(`/api/jobs/${state.jobId}/report.pdf`);
   $("bhuvan-overlay-img").classList.add("hidden");
   $("confidence-overlay-img").classList.add("hidden");
   ($("confidence-toggle") as HTMLInputElement).checked = false;
   const sel = $("bhuvan-layer") as HTMLSelectElement;
   sel.innerHTML = `<option value="">none</option>`;
   try {
-    const r = await (await fetch(`/api/jobs/${state.jobId}/bhuvan`)).json();
+    const r = await (await fetch(apiUrl(`/api/jobs/${state.jobId}/bhuvan`))).json();
     for (const l of r.layers ?? []) sel.insertAdjacentHTML("beforeend", `<option value="${l.id}">${esc(l.label)}</option>`);
     $("bhuvan-row").classList.toggle("hidden", !(r.layers ?? []).length);
   } catch { $("bhuvan-row").classList.add("hidden"); }
@@ -1174,7 +1222,7 @@ async function initFloodModel() {
   const job = state.jobId;
   let m: "river" | "level" = "level";
   try {
-    const r = await fetch(`/api/jobs/${job}/disaster/flood/relief`).then((x) => x.json());
+    const r = await fetch(apiUrl(`/api/jobs/${job}/disaster/flood/relief`)).then((x) => x.json());
     if (state.jobId !== job) return;  // another job was opened meanwhile
     m = r.suggestedModel === "river" ? "river" : "level";
     $("flood-model-hint").textContent = m === "river"
@@ -1214,7 +1262,7 @@ async function ensureLiveField(): Promise<LiveField | null> {
   liveFieldLoading = key;
   try {
     const [job, kind, model] = key.split("|");
-    const r = await fetch(kind === "flood" ? `/api/jobs/${job}/disaster/flood/field?model=${model}` : `/api/jobs/${job}/disaster/accessibility/field`);
+    const r = await fetch(apiUrl(kind === "flood" ? `/api/jobs/${job}/disaster/flood/field?model=${model}` : `/api/jobs/${job}/disaster/accessibility/field`));
     if (!r.ok) return null;
     const meta = JSON.parse(r.headers.get("X-Field-Meta") || "{}");
     const data = new Float32Array(await r.arrayBuffer());
@@ -1343,7 +1391,7 @@ async function runDisasterAnalysis(silent = false) {
       : { maxSlopeDeg: Number(aSlp.value || 15) };
     if (silent && (mode === "flood" || mode === "accessibility")) (body as any).live = true;
 
-    const res = await fetch(`/api/jobs/${state.jobId}/disaster/${mode}`, {
+    const res = await fetch(apiUrl(`/api/jobs/${state.jobId}/disaster/${mode}`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -1382,7 +1430,7 @@ async function runDisasterAnalysis(silent = false) {
 
       const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
       if (dlLink) {
-        dlLink.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+        dlLink.href = apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`);
         dlLink.textContent = "Download depth raster (GeoTIFF)";
       }
 
@@ -1435,10 +1483,10 @@ async function runDisasterAnalysis(silent = false) {
       setStat("stat-meandepth-card", "Clear approach bearings", String(nClear), `of ${r.bearings} per site · 10:1 checked to ${r.approachLengthM} m`);
 
       const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
-      dlLink.href = resp.vectorResult ? `/api/jobs/${state.jobId}/artifact/${resp.vectorResult}` : "#";
+      dlLink.href = resp.vectorResult ? apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.vectorResult}`) : "#";
       dlLink.textContent = "Download sites (GeoJSON, WGS84)";
       const dlExtra = $("disaster-download-extra") as HTMLAnchorElement;
-      dlExtra.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+      dlExtra.href = apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`);
       dlExtra.textContent = "Download reason raster (GeoTIFF)";
 
       $("disaster-buildings-wrap").classList.add("hidden");
@@ -1482,7 +1530,7 @@ async function runDisasterAnalysis(silent = false) {
       setStat("stat-meandepth-card", "New slope scars", resp.scars ? (resp.scars.error ? "–" : String(resp.scars.count)) : "not checked",
         resp.scars ? (resp.scars.error ?? `${fmtArea(resp.scars.areaM2)} new bare ground (Sentinel-2)`) : "tick the Sentinel-2 option");
       const dl = $("disaster-download-raster") as HTMLAnchorElement;
-      dl.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+      dl.href = apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`);
       dl.textContent = "Download hazard classes (GeoTIFF)";
       $("disaster-buildings-wrap").classList.add("hidden");
       $("disaster-legend-title").textContent = "Landslide hazard (IS 14496-2, TEHD)";
@@ -1497,7 +1545,7 @@ async function runDisasterAnalysis(silent = false) {
       setStat("stat-maxdepth-card", "Hazard used", hz, resp.hazards.map((h: any) => h.rule).join("; "));
       setStat("stat-meandepth-card", "Settlements checked", String(resp.nSettlements), "building clusters + OSM places");
       const dl = $("disaster-download-raster") as HTMLAnchorElement;
-      dl.href = `/api/jobs/${state.jobId}/artifact/${resp.vectorResult}`;
+      dl.href = apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.vectorResult}`);
       dl.textContent = "Download roads + settlements (GeoJSON)";
       $("disaster-buildings-wrap").classList.remove("hidden");
       $("disaster-bldg-count").textContent = String(resp.nSettlements);
@@ -1522,7 +1570,7 @@ async function runDisasterAnalysis(silent = false) {
 
       const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
       if (dlLink) {
-        dlLink.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+        dlLink.href = apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`);
         dlLink.textContent = "Download accessibility mask (GeoTIFF)";
       }
 
@@ -1550,7 +1598,7 @@ async function runDisasterAnalysis(silent = false) {
 
     // overlay: a live run leaves the browser-drawn preview in place; a full run swaps in its decoded server preview
     if (resp.previewResult && !resp.live) {
-      void swapOverlayImage(`/api/jobs/${state.jobId}/artifact/${resp.previewResult}?t=${Date.now()}`, mode, seq);
+      void swapOverlayImage(apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.previewResult}?t=${Date.now()}`), mode, seq);
     }
 
     // Render building vector layer on 2D map
@@ -2004,10 +2052,10 @@ function wire() {
     if (!on || !state.jobId) { img.classList.add("hidden"); return; }
     setStatus("Computing the confidence map (the model runs 4 more times; about 2 minutes on a CPU)…", "", "disaster-status");
     try {
-      const r = await fetch(`/api/jobs/${state.jobId}/confidence`, { method: "POST" });
+      const r = await fetch(apiUrl(`/api/jobs/${state.jobId}/confidence`), { method: "POST" });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error?.message ?? r.statusText);
-      img.src = `/api/jobs/${state.jobId}/artifact/${j.previewResult}?t=${Date.now()}`;
+      img.src = apiUrl(`/api/jobs/${state.jobId}/artifact/${j.previewResult}?t=${Date.now()}`);
       img.classList.remove("hidden");
       setStatus(`Height confidence: median ±${j.medianIntervalM} m (80 % interval); ${j.shareWithin2mPct}% of the scene within ±2 m, ${j.shareOver5mPct}% worse than ±5 m.`, "ok", "disaster-status");
     } catch (err: any) {
@@ -2021,7 +2069,7 @@ function wire() {
     const img = $("bhuvan-overlay-img") as HTMLImageElement;
     if (!v || !state.jobId) { img.classList.add("hidden"); return; }
     img.onerror = () => { img.classList.add("hidden"); setStatus("Bhuvan did not answer for this layer (it needs internet); try again later.", "err", "disaster-status"); };
-    img.src = `/api/jobs/${state.jobId}/bhuvan/${v}.png`;
+    img.src = apiUrl(`/api/jobs/${state.jobId}/bhuvan/${v}.png`);
     img.classList.remove("hidden");
   });
 

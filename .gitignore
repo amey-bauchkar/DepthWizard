@@ -14,6 +14,7 @@ dist/
 build/
 .env
 .env.*
+!.env.example
 
 # large / generated artefacts (fetched by scripts, never committed)
 models/**/*.pth

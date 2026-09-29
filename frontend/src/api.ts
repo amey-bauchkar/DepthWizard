@@ -63,57 +63,63 @@ async function handle<T>(r: Response): Promise<T> {
   throw new ApiFailure(r.status, err);
 }
 
+export const API_BASE = ((import.meta as any).env?.VITE_API_URL || "").replace(/\/+$/, "");
+export const apiUrl = (path: string): string => {
+  if (!API_BASE) return path;
+  return `${API_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+};
+
 export interface CreateOptions { dem?: File | null; demVerticalCrs?: string; anchors?: File | null; footprints?: File | null }
 
 export const api = {
-  health: () => fetch("/health").then((r) => handle<Record<string, any>>(r)),
-  system: () => fetch("/api/system").then((r) => handle<Record<string, any>>(r)),
-  demo: () => fetch("/api/demo").then((r) => handle<{ items: DemoItem[]; references: string[] }>(r)),
+  health: () => fetch(apiUrl("/health")).then((r) => handle<Record<string, any>>(r)),
+  system: () => fetch(apiUrl("/api/system")).then((r) => handle<Record<string, any>>(r)),
+  demo: () => fetch(apiUrl("/api/demo")).then((r) => handle<{ items: DemoItem[]; references: string[] }>(r)),
   createJob: async (file: File, opts: CreateOptions = {}) => {
     const fd = new FormData(); fd.append("file", file, file.name);
     if (opts.dem) { fd.append("dem", opts.dem, opts.dem.name); fd.append("dem_vertical_crs", opts.demVerticalCrs ?? "EGM2008"); }
     if (opts.anchors) fd.append("anchors", opts.anchors, opts.anchors.name);
     if (opts.footprints) fd.append("footprints", opts.footprints, opts.footprints.name);
-    return handle<Job>(await fetch("/api/jobs", { method: "POST", body: fd }));
+    return handle<Job>(await fetch(apiUrl("/api/jobs"), { method: "POST", body: fd }));
   },
   inspect: async (file: File, hasDem: boolean, hasAnchors: boolean) => {
     const fd = new FormData(); fd.append("file", file, file.name);
     fd.append("has_dem", String(hasDem)); fd.append("has_anchors", String(hasAnchors));
-    return handle<InputCheck>(await fetch("/api/inspect", { method: "POST", body: fd }));
+    return handle<InputCheck>(await fetch(apiUrl("/api/inspect"), { method: "POST", body: fd }));
   },
-  changeCandidates: async (id: string) => handle<{ candidates: { job_id: string; input_filename?: string | null; created_at: string; overlap_fraction: number; calibration_tier?: string }[] }>(await fetch(`/api/jobs/${id}/change/candidates`)),
-  change: async (id: string, after: string) => handle<{ summary: Record<string, any>; buildings: Record<string, any>[] }>(await fetch(`/api/jobs/${id}/change`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ after }) })),
-  run: async (id: string) => handle<Job>(await fetch(`/api/jobs/${id}/run`, { method: "POST" })),
-  job: async (id: string) => handle<Job>(await fetch(`/api/jobs/${id}`)),
-  result: async (id: string) => handle<Result>(await fetch(`/api/jobs/${id}/result`)),
-  metadata: async (id: string) => handle<Record<string, any>>(await fetch(`/api/jobs/${id}/metadata`)),
-  artifactUrl: (id: string, name: string) => `/api/jobs/${id}/artifact/${name}`,
-  exportUrl: (id: string, kind: "scene.html" | "package.zip", inline = false) => `/api/jobs/${id}/export/${kind}${inline ? "?inline=1" : ""}`,
-  sample: async (id: string, x: number, y: number, crs = "pixel") => handle<Sample>(await fetch(`/api/jobs/${id}/sample?x=${x}&y=${y}&crs=${crs}`)),
+  changeCandidates: async (id: string) => handle<{ candidates: { job_id: string; input_filename?: string | null; created_at: string; overlap_fraction: number; calibration_tier?: string }[] }>(await fetch(apiUrl(`/api/jobs/${id}/change/candidates`))),
+  change: async (id: string, after: string) => handle<{ summary: Record<string, any>; buildings: Record<string, any>[] }>(await fetch(apiUrl(`/api/jobs/${id}/change`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ after }) })),
+  run: async (id: string) => handle<Job>(await fetch(apiUrl(`/api/jobs/${id}/run`), { method: "POST" })),
+  job: async (id: string) => handle<Job>(await fetch(apiUrl(`/api/jobs/${id}`))),
+  result: async (id: string) => handle<Result>(await fetch(apiUrl(`/api/jobs/${id}/result`))),
+  metadata: async (id: string) => handle<Record<string, any>>(await fetch(apiUrl(`/api/jobs/${id}/metadata`))),
+  artifactUrl: (id: string, name: string) => apiUrl(`/api/jobs/${id}/artifact/${name}`),
+  exportUrl: (id: string, kind: "scene.html" | "package.zip", inline = false) => apiUrl(`/api/jobs/${id}/export/${kind}${inline ? "?inline=1" : ""}`),
+  sample: async (id: string, x: number, y: number, crs = "pixel") => handle<Sample>(await fetch(apiUrl(`/api/jobs/${id}/sample?x=${x}&y=${y}&crs=${crs}`))),
   measure: async (id: string, points: { x: number; y: number }[], crs = "pixel") =>
-    handle<Measure>(await fetch(`/api/jobs/${id}/measure`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ points, crs }) })),
+    handle<Measure>(await fetch(apiUrl(`/api/jobs/${id}/measure`), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ points, crs }) })),
   validate: async (id: string, opts: { reference?: File | null; bundled?: string | null; refType: string; verticalCrs: string; sourceNote?: string }) => {
     const fd = new FormData();
     if (opts.reference) fd.append("reference", opts.reference, opts.reference.name);
     if (opts.bundled) fd.append("bundled", opts.bundled);
     fd.append("ref_type", opts.refType); fd.append("vertical_crs", opts.verticalCrs); fd.append("source_note", opts.sourceNote ?? "");
-    return handle<Record<string, any>>(await fetch(`/api/jobs/${id}/validate`, { method: "POST", body: fd }));
+    return handle<Record<string, any>>(await fetch(apiUrl(`/api/jobs/${id}/validate`), { method: "POST", body: fd }));
   },
   validatePoints: async (id: string, opts: { points?: File | null; bundled?: string | null }) => {
     const fd = new FormData();
     if (opts.points) fd.append("points", opts.points, opts.points.name);
     if (opts.bundled) fd.append("bundled", opts.bundled);
-    return handle<Record<string, any>>(await fetch(`/api/jobs/${id}/validate_points`, { method: "POST", body: fd }));
+    return handle<Record<string, any>>(await fetch(apiUrl(`/api/jobs/${id}/validate_points`), { method: "POST", body: fd }));
   },
   buildings: async (id: string, minHeight = 0, minArea = 0, limit = 500) =>
-    handle<{ summary: Record<string, any>; buildings: Record<string, any>[] }>(await fetch(`/api/jobs/${id}/buildings?min_height=${minHeight}&min_area=${minArea}&limit=${limit}`)),
-  validation: async (id: string) => handle<{ runs: Record<string, any>[]; latest: Record<string, any> | null }>(await fetch(`/api/jobs/${id}/validation`)),
+    handle<{ summary: Record<string, any>; buildings: Record<string, any>[] }>(await fetch(apiUrl(`/api/jobs/${id}/buildings?min_height=${minHeight}&min_area=${minArea}&limit=${limit}`))),
+  validation: async (id: string) => handle<{ runs: Record<string, any>[]; latest: Record<string, any> | null }>(await fetch(apiUrl(`/api/jobs/${id}/validation`))),
   heightfield: async (id: string, name = "heightfield.f32"): Promise<Float32Array> => {
-    const r = await fetch(`/api/jobs/${id}/artifact/${name}`);
+    const r = await fetch(apiUrl(`/api/jobs/${id}/artifact/${name}`));
     if (!r.ok) throw new ApiFailure(r.status, { code: "HEIGHTFIELD_MISSING", message: "Heightfield not available." });
     return new Float32Array(await r.arrayBuffer()); // little-endian float32, row-major, NaN = nodata
   },
-  heightfieldMeta: async (id: string, name: string) => handle<HeightfieldMeta>(await fetch(`/api/jobs/${id}/artifact/${name}`)),
+  heightfieldMeta: async (id: string, name: string) => handle<HeightfieldMeta>(await fetch(apiUrl(`/api/jobs/${id}/artifact/${name}`))),
 };
 
 export async function pollUntilDone(id: string, onUpdate: (j: Job) => void, intervalMs = 400, timeoutMs = 600000): Promise<Job> {
