@@ -6,6 +6,8 @@ Serves the API under /api and the built frontend (frontend/dist) at / when prese
 from __future__ import annotations
 
 import logging
+import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -38,9 +40,28 @@ def create_app(settings=None) -> FastAPI:
     setup_logging()
     register_bundled_grids()  # offline PROJ grids (C-1): bundled assets/proj or DW_PROJ_GRIDS; network stays disabled
     settings = settings or load_settings()
-    app = FastAPI(title="DepthWizard", version=__version__)
+
+    @asynccontextmanager
+    async def _lifespan(a: FastAPI):
+        # server start (uvicorn): models load while the user picks a file. Test clients without a `with` block skip it.
+        if a.state.settings.server.warm_up_models and os.environ.get("DW_NO_WARMUP") != "1":
+            a.state.jobs.warm_up_in_background()
+        yield
+
+    app = FastAPI(title="DepthWizard", version=__version__, lifespan=_lifespan)
     app.state.settings = settings
     app.state.jobs = JobManager(settings)
+
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     app.include_router(router)
 
     @app.middleware("http")

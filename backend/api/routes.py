@@ -394,9 +394,47 @@ def job_disaster_flood(request: Request, job_id: str, body: dict[str, Any] = Bod
     try:
         water_level = float(body.get("waterLevel_m", 0.0))
         da = body.get("drainageAreaM2")
-        return run_flood_screening(job_dir, water_level, result, connected_only=bool(body.get("connectedOnly", False)), model=str(body.get("model", "level")), drainage_area_m2=None if da is None else float(da))
+        return run_flood_screening(job_dir, water_level, result, connected_only=bool(body.get("connectedOnly", False)), model=str(body.get("model", "level")), drainage_area_m2=None if da is None else float(da),
+                                   write_outputs=not bool(body.get("live", False)))
     except ValueError as e:
         return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
+
+
+def _field_response(arr, meta: dict[str, Any]) -> Response:
+    """float32 little-endian raster (row-major, meta["width"] x meta["height"]) with its metadata in X-Field-Meta."""
+    import numpy as np
+
+    return Response(content=np.ascontiguousarray(arr, dtype="<f4").tobytes(), media_type="application/octet-stream",
+                    headers={"X-Field-Meta": json.dumps(meta), "Cache-Control": "no-store"})
+
+
+@router.get("/api/jobs/{job_id}/disaster/flood/field")
+def job_disaster_flood_field(request: Request, job_id: str, model: str = "river"):
+    """Display copy of the surface the water level is compared with, so the browser can draw the water for every
+    slider position without a round trip (core.disaster.flood.display_field)."""
+    from core.disaster.flood import display_field
+
+    mgr = _mgr(request)
+    mgr.result(job_id)
+    try:
+        return _field_response(*display_field(mgr._job_dir(job_id), model))
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
+    except FileNotFoundError as e:
+        return JSONResponse(status_code=409, content={"error": {"code": "NO_TERRAIN", "message": str(e)}})
+
+
+@router.get("/api/jobs/{job_id}/disaster/accessibility/field")
+def job_disaster_accessibility_field(request: Request, job_id: str):
+    """Display copy of the slope (buildings = -1) for the live slope-threshold preview."""
+    from core.disaster.accessibility import display_field
+
+    mgr = _mgr(request)
+    mgr.result(job_id)
+    try:
+        return _field_response(*display_field(mgr._job_dir(job_id)))
+    except FileNotFoundError as e:
+        return JSONResponse(status_code=409, content={"error": {"code": "NO_TERRAIN", "message": str(e)}})
 
 
 @router.get("/api/jobs/{job_id}/disaster/flood/relief")
@@ -416,7 +454,7 @@ def job_disaster_accessibility(request: Request, job_id: str, body: dict[str, An
     result = mgr.result(job_id)
     try:
         max_slope = float(body.get("maxSlopeDeg", DEFAULT_MAX_SLOPE_DEG))
-        return run_accessibility_screening(job_dir, max_slope, result)
+        return run_accessibility_screening(job_dir, max_slope, result, write_outputs=not bool(body.get("live", False)))
     except ValueError as e:
         return JSONResponse(status_code=422, content={"error": {"code": "INVALID_PARAMETER", "message": str(e)}})
 

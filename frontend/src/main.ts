@@ -10,7 +10,7 @@
  * Measurement architecture: measurements are ALWAYS sampled server-side from the DSM raster.
  * The Three.js mesh is a visual representation only; picks are converted to raster pixel coords.
  */
-import { api, ApiFailure, pollUntilDone, type DemoItem, type Job, type Result, type Sample } from "./api";
+import { api, apiUrl, API_BASE, ApiFailure, pollUntilDone, type DemoItem, type Job, type Result, type Sample } from "./api";
 import { HeightfieldViewer } from "./viewer";
 import { resolveState, STATE_DISPLAY, type ResultState } from "./resultState";
 
@@ -58,9 +58,14 @@ const state: State = {
   },
 };
 
+// Tracks whether the last health check succeeded — guards against misleading
+// "NOT READABLE" errors that are really just "backend not connected" (HTTP 405 /
+// network failure when the static Vercel host receives a POST it cannot handle).
+let backendOnline = false;
+
 // ──────────────────────────────────────── Helpers
 const isTiff = (f: File) => /\.tiff?$/i.test(f.name);
-function setStatus(msg: string, kind: "" | "ok" | "err" = "", el = "status") {
+function setStatus(msg: string, kind: "" | "ok" | "err" | "warn" = "", el = "status") {
   const e = $(el); e.textContent = msg; e.className = `status ${kind}`;
 }
 function userMessage(e: unknown): string {
@@ -95,6 +100,200 @@ const LAYER_DEFS: Record<string, LayerDef> = {
 };
 
 // ──────────────────────────────────────── System / demo init
+const FALLBACK_DEMO_ITEMS: DemoItem[] = [
+  // ── Swiss benchmark tiles ──────────────────────────────────────
+  {
+    id: "urban_geotiff_hd",
+    label: "Zürich (urban) · Ultra-Clear HD 0.5 m · Mode B",
+    file: "swissimage_2019_2682-1247_0.5m.tif",
+    mode: "B",
+    anchors: "anchors_urban_simulated.csv",
+    reference_dsm: "swisssurface3d_urban_2682-1247_dsm_0.5m.tif",
+    reference_vertical_crs: "EPSG:5728",
+    source: "swisstopo SWISSIMAGE 10 cm (0.5 m GSD high-res, 2000×2000 px); references swissSURFACE3D / swissALTI3D 0.5 m (LN02)",
+  },
+  {
+    id: "urban_geotiff",
+    label: "Zürich (urban) · GeoTIFF 2 m · Mode B",
+    file: "swissimage_2019_2682-1247_2m.tif",
+    mode: "B",
+    anchors: "anchors_urban_simulated.csv",
+    reference_dsm: "swisssurface3d_urban_2682-1247_dsm_0.5m.tif",
+    reference_vertical_crs: "EPSG:5728",
+    source: "swisstopo SWISSIMAGE 10 cm (resampled 2 m) tile 2682-1247, 2019",
+  },
+  {
+    id: "rural_geotiff",
+    label: "Emmental (rural, hilly, forest) · GeoTIFF 2 m · Mode B",
+    file: "swissimage_2021_2621-1202_2m.tif",
+    mode: "B",
+    anchors: "anchors_rural_simulated.csv",
+    reference_dsm: "swisssurface3d_rural_2621-1202_dsm_0.5m.tif",
+    reference_vertical_crs: "EPSG:5728",
+    source: "swisstopo SWISSIMAGE tile 2621-1202, 2021",
+  },
+  {
+    id: "urban_jpg_hd",
+    label: "Zürich (urban) · Ultra-Clear HD JPEG · Mode A",
+    file: "sample_urban_hd.jpg",
+    mode: "A",
+    source: "swisstopo SWISSIMAGE 2000×2000 px crystal clear aerial photo",
+  },
+  {
+    id: "urban_jpg",
+    label: "Zürich (urban) · JPEG · Mode A",
+    file: "sample_urban.jpg",
+    mode: "A",
+    source: "same tile exported without georeferencing",
+  },
+  {
+    id: "rural_jpg",
+    label: "Emmental (rural) · JPEG · Mode A",
+    file: "sample_rural.jpg",
+    mode: "A",
+    source: "same tile exported without georeferencing",
+  },
+  // ── India / SIH — ICESat-2 validation scenes ──────────────────
+  {
+    id: "india_namchi",
+    label: "Namchi, South Sikkim (hill town) · Maxar WorldView 2022-03-14 · 0.5 m · Mode B",
+    file: "india/namchi_rgb_0.5m.tif",
+    mode: "B",
+    country: "IN",
+    reference_points: "india/namchi_icesat2.csv",
+    source: "Maxar Open Data Program (CC BY-NC 4.0); Dense hill town on steep slopes; district HQ of Namchi (South Sikkim).",
+  },
+  {
+    id: "india_chungthang",
+    label: "Chungthang, North Sikkim (valley town, forest) · Maxar WorldView 2022-03-07 · 0.5 m · Mode B",
+    file: "india/chungthang_rgb_0.5m.tif",
+    mode: "B",
+    country: "IN",
+    reference_points: "india/chungthang_icesat2.csv",
+    source: "Maxar Open Data Program (CC BY-NC 4.0); Steep forested valley and town; Teesta-III dam area hit by the Oct-2023 GLOF.",
+  },
+  {
+    id: "india_teesta_east",
+    label: "Teesta valley east, South Sikkim (hill villages) · Maxar WorldView 2022-03-14 · 0.5 m · Mode B",
+    file: "india/teesta_east_rgb_0.5m.tif",
+    mode: "B",
+    country: "IN",
+    reference_points: "india/teesta_east_icesat2.csv",
+    source: "Maxar Open Data Program (CC BY-NC 4.0); Terraced slopes and scattered villages east of Namchi.",
+  },
+  {
+    id: "india_teesta_west",
+    label: "Teesta valley west, South Sikkim (rural slopes) · Maxar WorldView 2022-03-14 · 0.5 m · Mode B",
+    file: "india/teesta_west_rgb_0.5m.tif",
+    mode: "B",
+    country: "IN",
+    reference_points: "india/teesta_west_icesat2.csv",
+    source: "Maxar Open Data Program (CC BY-NC 4.0); Rural terraced hillsides and forest patches west of Namchi.",
+  },
+  {
+    id: "india_chungthang_west",
+    label: "Chungthang west, North Sikkim (forested slopes) · Maxar WorldView 2022-03-07 · 0.5 m · Mode B",
+    file: "india/chungthang_west_rgb_0.5m.tif",
+    mode: "B",
+    country: "IN",
+    reference_points: "india/chungthang_west_icesat2.csv",
+    source: "Maxar Open Data Program (CC BY-NC 4.0); Steep forested mountainside above the Lachen valley.",
+  },
+  {
+    id: "india_north_sikkim_alpine",
+    label: "North Sikkim alpine (barren / glacial) · Maxar WorldView 2022-03-07 · 0.5 m · Mode B",
+    file: "india/north_sikkim_alpine_rgb_0.5m.tif",
+    mode: "B",
+    country: "IN",
+    reference_points: "india/north_sikkim_alpine_icesat2.csv",
+    source: "Maxar Open Data Program (CC BY-NC 4.0); High-altitude barren and glacial terrain in the South Lhonak region.",
+  },
+  // ── Change / Disaster screening — Türkiye 2023 ─────────────────
+  {
+    id: "change_islahiye_before",
+    label: "Islahiye, Türkiye · BEFORE 2022-12-27 · Maxar WorldView · 0.5 m · Mode B (change demo)",
+    file: "change/islahiye_before_2022-12-27_0.5m.tif",
+    mode: "B",
+    country: "TR",
+    pair: "islahiye",
+    role: "before",
+    date: "2022-12-27",
+    source: "Maxar Open Data Program (CC BY-NC 4.0); Town centre of Islahiye, heavily damaged by the Mw 7.8 Kahramanmaras earthquake of 6 Feb 2023.",
+  },
+  {
+    id: "change_islahiye_after",
+    label: "Islahiye, Türkiye · AFTER 2023-02-07 · Maxar WorldView · 0.5 m · Mode B (change demo)",
+    file: "change/islahiye_after_2023-02-07_0.5m.tif",
+    mode: "B",
+    country: "TR",
+    pair: "islahiye",
+    role: "after",
+    date: "2023-02-07",
+    source: "Maxar Open Data Program (CC BY-NC 4.0); Town centre of Islahiye, heavily damaged by the Mw 7.8 Kahramanmaras earthquake of 6 Feb 2023.",
+  },
+];
+
+function renderDemoItems(items: DemoItem[], references: string[]) {
+  state.demo = items;
+  state.references = references;
+  const wrap = $("demo-buttons");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  // Priority order: Indian scenes first (SIH / ISRO), then Change / Disaster screening scenes, then Swiss benchmark tiles
+  const priority = (it: DemoItem) => (it.country === "IN" ? 0 : (it.country === "TR" || it.pair || it.id.startsWith("change_")) ? 1 : 2);
+  [...items].sort((x, y) => priority(x) - priority(y)).forEach((it) => {
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = `demo-pill demo-mode-${it.mode.toLowerCase()}`;
+    const isHD = it.id.includes("hd");
+    const isRural = it.id.includes("rural");
+    const isChange = Boolean(it.pair || it.country === "TR" || it.id.startsWith("change_"));
+    const india = it.country === "IN";
+    const title = isChange
+      ? (it.role === "before" ? "Islahiye, Türkiye · BEFORE" : "Islahiye, Türkiye · AFTER")
+      : india
+        ? it.id.replace(/^india_/, "").split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ").replace(/^North Sikkim /, "N. Sikkim ")
+        : isRural
+          ? (it.mode === "B" ? "Emmental Ridge" : "Emmental Photo")
+          : (it.mode === "B" ? (isHD ? "Zürich Core HD" : "Zürich City 2m") : (isHD ? "Zürich Photo HD" : "Zürich Photo"));
+    const tag = isChange
+      ? (it.role === "before" ? "0.5m · Pre" : "0.5m · Post")
+      : india
+        ? "0.5m · ICESat-2"
+        : it.mode === "B"
+          ? (isHD ? "0.5m DSM" : "2m DSM")
+          : "Mode A";
+
+    pill.innerHTML = `<span class="demo-name">${title}</span><span class="demo-tag">${tag}</span>`;
+    pill.title = `${it.label} — ${it.source ?? ""}`;
+    pill.addEventListener("click", () => {
+      wrap.querySelectorAll(".demo-pill").forEach((c) => c.classList.remove("active"));
+      pill.classList.add("active");
+      loadDemo(it);
+    });
+    wrap.appendChild(pill);
+  });
+  const aw = $("anchor-demo-buttons");
+  if (aw) {
+    aw.innerHTML = "";
+    ["urban", "rural"].forEach((t, i) => {
+      const b = document.createElement("button"); b.className = "linkbtn"; b.textContent = t;
+      b.addEventListener("click", () => loadDemoAnchors(t)); aw.appendChild(b);
+      if (i === 0) aw.append(" · ");
+    });
+  }
+  const sel = $("ref-bundled") as HTMLSelectElement | null;
+  if (sel) {
+    sel.innerHTML = `<option value="">—</option>`;
+    references.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; sel.appendChild(o); });
+  }
+  const psel = $("pts-bundled") as HTMLSelectElement | null;
+  if (psel) {
+    psel.innerHTML = `<option value="">—</option>`;
+    items.filter((it) => it.reference_points).forEach((it) => { const o = document.createElement("option"); o.value = it.reference_points!; o.textContent = `ICESat-2 · ${it.id.replace(/^india_/, "")}`; psel.appendChild(o); });
+  }
+}
+
 async function initSystem() {
   initDemo(); // independent of model loading (first /health call loads + hashes the weights)
   const badge = $("system-badge");
@@ -115,10 +314,32 @@ async function initSystem() {
       $("m-model").textContent = "Model weights not installed. Run scripts/fetch_model.py.";
       setStatus("Model weights are not installed. Run scripts/fetch_model.py.", "err");
     }
+    backendOnline = true;
   } catch {
-    badge.textContent = "backend unreachable";
-    badge.className = "badge bad";
-    setStatus("Backend unreachable. Is the server running?", "err");
+    backendOnline = false;
+    badge.textContent = API_BASE ? "connecting to cloud..." : "cloud standby · 3D ready";
+    badge.className = "badge warn";
+    setStatus("Backend is starting up or in standby. 3D viewer & tools ready.", "warn");
+    // Reconnect timer: retry /health every 20 seconds while offline.
+    // Stops once the backend responds (Render cold-start typically 30-90s).
+    const reconnect = setInterval(async () => {
+      try {
+        const h = await api.health();
+        clearInterval(reconnect);
+        backendOnline = true;
+        const m = h.model;
+        if (m?.available) {
+          badge.textContent = `${m.name}@${m.version} · ${m.device}`;
+          badge.className = "badge ok";
+          setStatus("Backend connected. Ready to process.", "ok");
+        } else {
+          badge.textContent = "model weights not installed";
+          badge.className = "badge bad";
+        }
+        // Re-run input check if a file is already loaded
+        if (state.file) void runInputCheck();
+      } catch { /* still offline, timer continues */ }
+    }, 20_000);
   }
 }
 
@@ -129,71 +350,23 @@ async function initDemo() {
 
   try {
     const d = await api.demo();
-    state.demo = d.items; state.references = d.references;
-    wrap.innerHTML = "";
-    // Priority order: Indian scenes first (SIH / ISRO), then Change / Disaster screening scenes, then Swiss benchmark tiles
-    const priority = (it: DemoItem) => (it.country === "IN" ? 0 : (it.country === "TR" || it.pair || it.id.startsWith("change_")) ? 1 : 2);
-    [...d.items].sort((x, y) => priority(x) - priority(y)).forEach((it) => {
-      const pill = document.createElement("button");
-      pill.type = "button";
-      pill.className = `demo-pill demo-mode-${it.mode.toLowerCase()}`;
-      const isHD = it.id.includes("hd");
-      const isRural = it.id.includes("rural");
-      const isChange = Boolean(it.pair || it.country === "TR" || it.id.startsWith("change_"));
-      const india = it.country === "IN";
-      const title = isChange
-        ? (it.role === "before" ? "Islahiye, Türkiye · BEFORE" : "Islahiye, Türkiye · AFTER")
-        : india
-          ? it.id.replace(/^india_/, "").split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ").replace(/^North Sikkim /, "N. Sikkim ")
-          : isRural
-            ? (it.mode === "B" ? "Emmental Ridge" : "Emmental Photo")
-            : (it.mode === "B" ? (isHD ? "Zürich Core HD" : "Zürich City 2m") : (isHD ? "Zürich Photo HD" : "Zürich Photo"));
-      const tag = isChange
-        ? (it.role === "before" ? "0.5m · Pre" : "0.5m · Post")
-        : india
-          ? "0.5m · ICESat-2"
-          : it.mode === "B"
-            ? (isHD ? "0.5m DSM" : "2m DSM")
-            : "Mode A";
-
-      pill.innerHTML = `<span class="demo-name">${title}</span><span class="demo-tag">${tag}</span>`;
-      pill.title = `${it.label} — ${it.source ?? ""}`;
-      pill.addEventListener("click", () => {
-        wrap.querySelectorAll(".demo-pill").forEach((c) => c.classList.remove("active"));
-        pill.classList.add("active");
-        loadDemo(it);
-      });
-      wrap.appendChild(pill);
-    });
-    const aw = $("anchor-demo-buttons");
-    if (aw) {
-      aw.innerHTML = "";
-      ["urban", "rural"].forEach((t, i) => {
-        const b = document.createElement("button"); b.className = "linkbtn"; b.textContent = t;
-        b.addEventListener("click", () => loadDemoAnchors(t)); aw.appendChild(b);
-        if (i === 0) aw.append(" · ");
-      });
-    }
-    const sel = $("ref-bundled") as HTMLSelectElement | null;
-    if (sel) {
-      sel.innerHTML = `<option value="">—</option>`;
-      d.references.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; sel.appendChild(o); });
-    }
-    const psel = $("pts-bundled") as HTMLSelectElement | null;
-    if (psel) {
-      psel.innerHTML = `<option value="">—</option>`;
-      d.items.filter((it) => it.reference_points).forEach((it) => { const o = document.createElement("option"); o.value = it.reference_points!; o.textContent = `ICESat-2 · ${it.id.replace(/^india_/, "")}`; psel.appendChild(o); });
-    }
-  } catch (err) {
-    console.error("Failed to load demo list:", err);
-    wrap.innerHTML = `<div style="padding: 10px; font-size: 11px; color: var(--bad); text-align: center;">Unable to load demos. <button type="button" class="linkbtn" onclick="initDemo()">Retry</button></div>`;
+    renderDemoItems(d.items, d.references);
+  } catch {
+    renderDemoItems(FALLBACK_DEMO_ITEMS, []);
   }
 }
 
 async function loadDemo(it: DemoItem) {
   try {
-    const r = await fetch(`/demo/${it.file}`);
+    let r = await fetch(apiUrl(`/demo/${it.file}`));
+    if (!r.ok && API_BASE) {
+      r = await fetch(`/demo/${it.file}`);
+    }
     if (!r.ok) throw new Error("demo missing");
+    // Guard: Vercel's SPA catch-all rewrite returns index.html (text/html, 200)
+    // for any path that doesn't physically exist. Detect that and treat as missing.
+    const ct = r.headers.get("content-type") || "";
+    if (ct.includes("text/html")) throw new Error("demo file served as HTML (SPA rewrite)");
     const blob = await r.blob();
     showInput(new File([blob], it.file.split("/").pop() ?? it.file, { type: blob.type || (it.mode === "B" ? "image/tiff" : "image/jpeg") }));
     ($("ref-bundled") as HTMLSelectElement).value = it.mode === "B" && it.reference_dsm ? it.reference_dsm : "";
@@ -206,13 +379,26 @@ async function loadDemo(it: DemoItem) {
       // demo anchors belong to their own tile; never carry them over to another scene
       state.anchors = null; state.anchorsLabel = ""; updateOptSummary();
     }
-  } catch { setStatus("Demo asset not available on this server.", "err"); }
+  } catch {
+    setStatus(
+      backendOnline
+        ? "Demo asset not available on this server."
+        : "Demo assets require the backend. It is starting up - try again in a moment.",
+      backendOnline ? "err" : "warn"
+    );
+  }
 }
 
 async function loadDemoAnchors(t: string) {
   try {
-    const r = await fetch(`/demo/anchors_${t}_simulated.csv`);
+    let r = await fetch(apiUrl(`/demo/anchors_${t}_simulated.csv`));
+    if (!r.ok && API_BASE) {
+      r = await fetch(`/demo/anchors_${t}_simulated.csv`);
+    }
     if (!r.ok) throw new Error("missing");
+    // Guard: same SPA-rewrite check as loadDemo
+    const ct = r.headers.get("content-type") || "";
+    if (ct.includes("text/html")) throw new Error("anchors served as HTML");
     state.anchors = new File([await r.blob()], `anchors_${t}_simulated.csv`, { type: "text/csv" });
     state.anchorsLabel = `simulated ${t} anchors (sampled from LiDAR — NOT surveyed ground control)`;
     updateOptSummary();
@@ -225,6 +411,17 @@ async function runInputCheck() {
   const box = $("input-check");
   if (!state.file) { box.classList.add("hidden"); return; }
   const seq = ++checkSeq;
+
+  // If the backend is known offline, show a neutral info box rather than
+  // firing a doomed POST that would return HTTP 405 from Vercel's static
+  // server and mislead the user into thinking their file is unreadable.
+  if (!backendOnline) {
+    box.className = "input-check warn";
+    box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">BACKEND OFFLINE</span></div>
+      <div class="ic-d">File loaded — input check requires a connected backend. The backend is starting up or in standby; try clicking Generate Surface once it comes online.</div>`;
+    return;
+  }
+
   box.className = "input-check"; box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">checking…</span></div>`;
   try {
     const r = await api.inspect(state.file, !!state.dem, !!state.anchors);
@@ -248,8 +445,20 @@ async function runInputCheck() {
       <ul class="ic-list">${r.checks.map((c) => `<li class="${c.level}"><span class="ic-i">${icon[c.level]}</span><div><b>${esc(c.title)}</b><div class="ic-d">${esc(c.detail)}</div></div></li>`).join("")}</ul>${acc}`;
   } catch (e) {
     if (seq !== checkSeq) return;
-    box.className = "input-check bad";
-    box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">NOT READABLE</span></div><div class="ic-d">${esc(userMessage(e))}</div>`;
+    // Distinguish backend-connectivity errors (405, TypeError from fetch, etc.)
+    // from genuine file-parse failures reported by the server.
+    const isConnErr = e instanceof ApiFailure
+      ? (e.status === 405 || e.status === 0 || e.status >= 500)
+      : (e instanceof TypeError); // network / CORS failure
+    if (isConnErr) {
+      backendOnline = false;
+      box.className = "input-check warn";
+      box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">BACKEND OFFLINE</span></div>
+        <div class="ic-d">File loaded — backend unreachable (${userMessage(e)}). Input check will retry when the backend comes online.</div>`;
+    } else {
+      box.className = "input-check bad";
+      box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">NOT READABLE</span></div><div class="ic-d">${esc(userMessage(e))}</div>`;
+    }
   }
 }
 
@@ -306,8 +515,17 @@ function showInput(file: File) {
 async function run() {
   if (!state.file) return;
   const btn = $("run-btn") as HTMLButtonElement; btn.disabled = true;
-  ($("open3d-btn") as HTMLButtonElement).disabled = true;
+
+
+  // Guard: backend offline -> show standby message, re-enable button, return early.
+  // Avoids confusing HTTP 405 from Vercel static server receiving a POST.
+  if (!backendOnline) {
+    setStatus("Backend is starting up or in standby - please wait a moment, then try again.", "warn");
+    btn.disabled = false;
+    return;
+  }
   ($("validate-btn") as HTMLButtonElement).disabled = true;
+  ($("open3d-btn") as HTMLButtonElement).disabled = true;
   state.jobId = null;
   state.result = null;
   state.job = null;
@@ -887,6 +1105,7 @@ function renderValidation(v: Record<string, any>) {
 // ──────────────────────────────────────── Building intelligence
 let bldRows: Record<string, any>[] = [];
 let bldTimer = 0;
+let bldMinHeight = 2.2;  // detection height of the current job's buildings (summary.min_height_m)
 
 async function loadBuildingsPanel() {
   const panel = $("panel-buildings");
@@ -896,17 +1115,19 @@ async function loadBuildingsPanel() {
   const minA = Number(($("bld-mina") as HTMLInputElement).value) || 0;
   $("bld-minh-val").textContent = `${minH} m`;
   const q = `min_height=${minH}&min_area=${minA}`;
-  ($("bld-geojson") as HTMLAnchorElement).href = `/api/jobs/${state.jobId}/buildings.geojson?${q}`;
-  ($("bld-csv") as HTMLAnchorElement).href = `/api/jobs/${state.jobId}/buildings.csv?${q}`;
+  ($("bld-geojson") as HTMLAnchorElement).href = apiUrl(`/api/jobs/${state.jobId}/buildings.geojson?${q}`);
+  ($("bld-csv") as HTMLAnchorElement).href = apiUrl(`/api/jobs/${state.jobId}/buildings.csv?${q}`);
   try {
     const r = await api.buildings(state.jobId, minH, minA, 300);
     const s = r.summary; bldRows = r.buildings;
+    bldMinHeight = s.min_height_m ?? 2.2;
     const err = s.height_error ?? {};
     const errTxt = err.typical_m ? `±${fmt(err.typical_m, 1)} m typical (1 RMSE, held-out LiDAR)` : "not calibrated (zero-shot)";
     const cls = s.height_classes ?? {};
     const fields: [string, string][] = [
       ["Buildings", `${s.count_filtered} of ${s.count_total}`],
-      ["Tallest / median", `${fmt(s.max_height_m, 1)} m / ${fmt(s.median_height_m, 1)} m`],
+      ["Tallest / median", `${fmt(s.max_height_m, 1)} m / ${fmt(s.median_height_resolved_m ?? s.median_height_m, 1)} m${s.unresolved_filtered ? " (resolved heights)" : ""}`],
+      ...(s.unresolved_filtered ? [["Height not resolved", `${s.unresolved_filtered} of ${s.count_filtered}: the model reads them below ${fmt(s.min_height_m ?? 2.2, 1)} m (lower bounds, small houses under-read)`] as [string, string]] : []),
       ["Low · mid · high-rise", `${cls.low_lt10m ?? 0} · ${cls.mid_10_25m ?? 0} · ${cls.high_ge25m ?? 0}`],
       ["Footprint · volume", `${(s.total_footprint_m2 / 1e4).toFixed(2)} ha · ${(s.total_volume_m3 / 1e6).toFixed(2)} Mm³`],
       ["Height error", errTxt],
@@ -917,7 +1138,7 @@ async function loadBuildingsPanel() {
       : "LoD-1 blocks · outlines from building footprints · heights from the nDSM";
     $("bld-summary").innerHTML = fields.map(([l, v]) => `<div class="result-field"><div class="result-field-label">${l}</div><div class="result-field-value">${esc(v)}</div></div>`).join("");
     $("bld-table").innerHTML = `<thead><tr><th>#</th><th>Height (m)</th><th>Roof spread p10–p90</th><th>Floors (approx.)</th><th>Footprint (m²)</th><th>Volume (m³)</th><th>Ground elev. (m)</th></tr></thead><tbody>` +
-      bldRows.map((b) => `<tr data-bid="${b.id}" style="cursor:pointer"><td>${b.id}</td><td><b>${fmt(b.height_m, 1)}</b>${b.height_interval_m ? ` <span class="hint">(${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)})</span>` : ""}</td><td>${fmt(b.height_p10_m, 1)}–${fmt(b.height_p90_m, 1)}</td><td>${b.floors_range[0]}–${b.floors_range[1]}</td><td>${fmt(b.area_m2, 0)}</td><td>${b.volume_m3.toLocaleString()}</td><td>${fmt(b.ground_elev_m, 1)}</td></tr>`).join("") + "</tbody>";
+      bldRows.map((b) => `<tr data-bid="${b.id}" style="cursor:pointer"${b.height_resolved === false ? ' class="bld-unresolved" title="Height not resolved: the model reads this building below its detection height; the value is a lower bound"' : ""}><td>${b.id}</td><td>${b.height_resolved === false ? `<span class="hint">not resolved (≥ ${fmt(b.height_m, 1)})</span>` : `<b>${fmt(b.height_m, 1)}</b>${b.height_interval_m ? ` <span class="hint">(${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)})</span>` : ""}`}</td><td>${fmt(b.height_p10_m, 1)}–${fmt(b.height_p90_m, 1)}</td><td>${b.height_resolved === false ? "–" : `${b.floors_range[0]}–${b.floors_range[1]}`}</td><td>${fmt(b.area_m2, 0)}</td><td>${b.volume_m3.toLocaleString()}</td><td>${fmt(b.ground_elev_m, 1)}</td></tr>`).join("") + "</tbody>";
     $("bld-notes").innerHTML = [s.footprints?.note ? `<b>Outlines:</b> ${esc(s.footprints.note)}` : "", err.source ? `Height error source: ${esc(err.source)}` : "", ...(s.notes ?? []).map((n: string) => esc(n))].filter(Boolean).join("<br>");
     $("bld-table").querySelectorAll<HTMLTableRowElement>("tr[data-bid]").forEach((tr) => tr.addEventListener("click", () => selectBuilding(Number(tr.dataset.bid), true)));
   } catch (e) { $("bld-summary").textContent = userMessage(e); }
@@ -930,8 +1151,12 @@ function selectBuilding(id: number, fly: boolean) {
   const d = $("bld-detail");
   if (!b) { d.classList.remove("hidden"); d.innerHTML = `Building #${id} is outside the current filter.`; return; }
   d.classList.remove("hidden");
-  d.innerHTML = `<div class="quality-card-header"><span class="q-badge q-GOOD">BUILDING #${b.id}</span><span class="quality-card-title">${fmt(b.height_m, 1)} m tall${b.height_interval_m ? ` (typical range ${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)} m)` : ""} · approx. ${b.floors_range[0]}–${b.floors_range[1]} floors</span></div>
-    <ul class="quality-triggers"><li>Ground ${fmt(b.ground_elev_m, 1)} m · roof ${fmt(b.roof_elev_m, 1)} m (${esc(state.result?.vertical_reference ?? "")})</li>
+  const unresolved = b.height_resolved === false;
+  const title = unresolved
+    ? `height not resolved · the model reads ${fmt(b.height_m, 1)} m (a lower bound)`
+    : `${fmt(b.height_m, 1)} m tall${b.height_interval_m ? ` (typical range ${fmt(b.height_interval_m[0], 0)}–${fmt(b.height_interval_m[1], 0)} m)` : ""} · approx. ${b.floors_range[0]}–${b.floors_range[1]} floors`;
+  d.innerHTML = `<div class="quality-card-header"><span class="q-badge ${unresolved ? "q-LIMITED" : "q-GOOD"}">BUILDING #${b.id}</span><span class="quality-card-title">${title}</span></div>
+    <ul class="quality-triggers">${unresolved ? `<li>The footprint marks a building, but the model sees less than ${fmt(bldMinHeight, 1)} m of height here. Single-storey houses are about 3 m or more: small rural houses are under-read by the model (trained on Swiss / US buildings), so the true height is probably higher.</li>` : ""}<li>Ground ${fmt(b.ground_elev_m, 1)} m · roof ${fmt(b.roof_elev_m, 1)} m (${esc(state.result?.vertical_reference ?? "")})</li>
     <li>Footprint ${fmt(b.area_m2, 0)} m² · volume ≈ ${b.volume_m3.toLocaleString()} m³ · roof height spread ${fmt(b.height_p10_m, 1)}–${fmt(b.height_p90_m, 1)} m</li>
     <li>Location ${fmt(b.lat, 5)}° N, ${fmt(b.lon, 5)}° E</li></ul>`;
   if (fly && state.viewer) { state.viewer.setBuildingsVisible(true); ($("lod1-chk") as HTMLInputElement).checked = true; state.viewer.focusBuilding(id); }
@@ -1082,7 +1307,6 @@ async function open3d() {
 }
 
 // ──────────────────────────────────────── Disaster 2D Map & Hydrological Screening
-let disasterDebounceTimer: any = null;
 
 function initDisasterMap() {
   if (!state.result || !state.jobId) return;
@@ -1091,15 +1315,17 @@ function initDisasterMap() {
 
   updateDisasterBaseMap();
 
+  // a new job: no overlay of the previous one on this map (the baseline screening draws the new one)
+  ($("disaster-overlay-img") as HTMLImageElement).style.display = "none";
+  liveField = null;
+  hideLiveCanvas();
+
   // Reset pick dot and inspector
   const pickDot = $("disaster-pick-dot");
   if (pickDot) pickDot.classList.add("hidden");
   resetHudInfo();
 
-  // Auto-run baseline screening if Mode B and terrain exists
-  if (state.result.mode === "B" && (state.result.artifacts.terrain_tif || state.result.artifacts.dsm_tif)) {
-    runDisasterAnalysis(true);
-  }
+  // the baseline screening runs from initFloodModel(), once the flood model suggested by the relief is set
 }
 
 function updateDisasterBaseMap() {
@@ -1157,14 +1383,14 @@ function scarWindows(): { before: string; after: string } {
 
 async function initIndiaLayers() {
   if (!state.jobId) return;
-  ($("disaster-report-btn") as HTMLAnchorElement).href = `/api/jobs/${state.jobId}/report.pdf`;
+  ($("disaster-report-btn") as HTMLAnchorElement).href = apiUrl(`/api/jobs/${state.jobId}/report.pdf`);
   $("bhuvan-overlay-img").classList.add("hidden");
   $("confidence-overlay-img").classList.add("hidden");
   ($("confidence-toggle") as HTMLInputElement).checked = false;
   const sel = $("bhuvan-layer") as HTMLSelectElement;
   sel.innerHTML = `<option value="">none</option>`;
   try {
-    const r = await (await fetch(`/api/jobs/${state.jobId}/bhuvan`)).json();
+    const r = await (await fetch(apiUrl(`/api/jobs/${state.jobId}/bhuvan`))).json();
     for (const l of r.layers ?? []) sel.insertAdjacentHTML("beforeend", `<option value="${l.id}">${esc(l.label)}</option>`);
     $("bhuvan-row").classList.toggle("hidden", !(r.layers ?? []).length);
   } catch { $("bhuvan-row").classList.add("hidden"); }
@@ -1172,9 +1398,11 @@ async function initIndiaLayers() {
 
 async function initFloodModel() {
   if (!state.jobId || state.result?.mode !== "B") return;
+  const job = state.jobId;
   let m: "river" | "level" = "level";
   try {
-    const r = await fetch(`/api/jobs/${state.jobId}/disaster/flood/relief`).then((x) => x.json());
+    const r = await fetch(apiUrl(`/api/jobs/${job}/disaster/flood/relief`)).then((x) => x.json());
+    if (state.jobId !== job) return;  // another job was opened meanwhile
     m = r.suggestedModel === "river" ? "river" : "level";
     $("flood-model-hint").textContent = m === "river"
       ? `Hilly scene (${r.relief_m} m relief): water rises above the river channels.`
@@ -1182,6 +1410,140 @@ async function initFloodModel() {
   } catch { /* keep the still-level model */ }
   ($("flood-model") as HTMLSelectElement).value = m;
   configureFloodSlider(m);
+  liveField = null;
+  hideLiveCanvas();
+  void ensureLiveField();
+  // baseline screening of the new job (Mode B with a terrain layer), with the model the selector now shows
+  if (state.result?.artifacts.terrain_tif || state.result?.artifacts.dsm_tif) scheduleScreening();
+}
+
+// ── Live slider preview. The browser colours the surface the screening thresholds (HAND / terrain for flood, slope
+// for accessibility; GET .../disaster/<scenario>/field) for every slider position, with the backend's own rule and
+// colours, so the overlay follows the slider at frame rate. The full-resolution server run replaces it on release.
+type LiveField = { key: string; w: number; h: number; data: Float32Array; meta: any; img: ImageData };
+let liveField: LiveField | null = null;
+let liveFieldLoading: string | null = null;
+let liveRaf = 0;
+
+function liveFieldKey(): string | null {
+  if (!state.jobId || !state.result) return null;
+  const mode = ($("disaster-scenario") as HTMLSelectElement | null)?.value ?? "flood";
+  if (mode === "flood") return `${state.jobId}|flood|${floodModel()}`;
+  if (mode === "accessibility") return `${state.jobId}|accessibility`;
+  return null;
+}
+
+async function ensureLiveField(): Promise<LiveField | null> {
+  const key = liveFieldKey();
+  if (!key) return null;
+  if (liveField?.key === key) return liveField;
+  if (liveFieldLoading === key) return null;
+  liveFieldLoading = key;
+  try {
+    const [job, kind, model] = key.split("|");
+    const r = await fetch(apiUrl(kind === "flood" ? `/api/jobs/${job}/disaster/flood/field?model=${model}` : `/api/jobs/${job}/disaster/accessibility/field`));
+    if (!r.ok) return null;
+    const meta = JSON.parse(r.headers.get("X-Field-Meta") || "{}");
+    const data = new Float32Array(await r.arrayBuffer());
+    if (!meta.width || data.length !== meta.width * meta.height || liveFieldKey() !== key) return null;
+    liveField = { key, w: meta.width, h: meta.height, data, meta, img: new ImageData(meta.width, meta.height) };
+    return liveField;
+  } catch {
+    return null;
+  } finally {
+    if (liveFieldLoading === key) liveFieldLoading = null;
+  }
+}
+
+const hexRgb = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+
+/** Colour the live field for the current slider value into the overlay canvas; false if no field is loaded. */
+function drawLivePreview(): boolean {
+  const f = liveField;
+  if (!f || f.key !== liveFieldKey()) return false;
+  const px = f.img.data, d = f.data, n = d.length;
+  px.fill(0);
+  if (f.key.includes("|flood|")) {
+    // flood.py: wet = S <= W, depth = W - S, ramp colour i at depth maxDepth * i / (n - 1), linear in between
+    const W = Number(($("flood-level-slider") as HTMLInputElement).value);
+    const cols = (f.meta.ramp.colours as string[]).map(hexRgb), k = cols.length - 1, a = f.meta.ramp.alpha, maxD = f.meta.ramp.maxDepthM;
+    for (let i = 0; i < n; i++) {
+      const sv = d[i];
+      if (!(sv <= W)) continue;  // NaN: no defined surface, never wet
+      const idx = Math.min(Math.max((W - sv) / maxD, 0), 1) * k;
+      const i0 = Math.floor(idx), i1 = Math.min(i0 + 1, k), fr = idx - i0, o = i * 4;
+      px[o] = Math.floor(cols[i0][0] * (1 - fr) + cols[i1][0] * fr);
+      px[o + 1] = Math.floor(cols[i0][1] * (1 - fr) + cols[i1][1] * fr);
+      px[o + 2] = Math.floor(cols[i0][2] * (1 - fr) + cols[i1][2] * fr);
+      px[o + 3] = a;
+    }
+  } else {
+    // accessibility.py: building (-1) grey, slope <= threshold green, steeper red
+    const T = Number(($("access-slope-slider") as HTMLInputElement).value);
+    const c = f.meta.rgba;
+    for (let i = 0; i < n; i++) {
+      const sv = d[i];
+      if (sv !== sv) continue;
+      const col = sv < 0 ? c.building : sv <= T ? c.accessible : c.steep, o = i * 4;
+      px[o] = col[0]; px[o + 1] = col[1]; px[o + 2] = col[2]; px[o + 3] = col[3];
+    }
+  }
+  const cv = $("disaster-live-canvas") as HTMLCanvasElement;
+  if (cv.width !== f.w || cv.height !== f.h) { cv.width = f.w; cv.height = f.h; }
+  cv.getContext("2d")!.putImageData(f.img, 0, 0);
+  cv.style.opacity = String(state.disaster.opacity);
+  cv.style.display = state.disaster.overlayVisible ? "block" : "none";
+  cv.classList.toggle("water-shimmer", state.disaster.shimmer && f.key.includes("|flood|"));
+  cv.classList.remove("hidden");
+  ($("disaster-overlay-img") as HTMLImageElement).style.visibility = "hidden";
+  return true;
+}
+
+function requestLiveDraw() {
+  if (liveRaf) return;
+  liveRaf = requestAnimationFrame(() => {
+    liveRaf = 0;
+    if (!drawLivePreview()) void ensureLiveField().then((f) => { if (f) drawLivePreview(); });
+  });
+}
+
+function hideLiveCanvas() {
+  $("disaster-live-canvas").classList.add("hidden");
+  ($("disaster-overlay-img") as HTMLImageElement).style.visibility = "visible";
+}
+
+/** Swap the overlay to a new server preview only once it is decoded (no blank frame between old and new). */
+async function swapOverlayImage(url: string, mode: string, seq: number) {
+  const pre = new Image();
+  pre.src = url;
+  try { await pre.decode(); } catch { /* shown anyway; the <img> reports its own error */ }
+  if (seq !== disasterSeq) return;
+  const img = $("disaster-overlay-img") as HTMLImageElement;
+  img.src = url;
+  img.style.display = state.disaster.overlayVisible ? "block" : "none";
+  img.style.opacity = String(state.disaster.opacity);
+  img.classList.toggle("water-shimmer", state.disaster.shimmer && mode === "flood");
+  hideLiveCanvas();
+}
+
+// One screening request in flight at a time; while it runs, only the newest wish is kept (a full run is never
+// downgraded to a live one) and sent when it returns. Scrubbing therefore never piles up requests on the server.
+let screenBusy = false;
+let screenNext: boolean | null = null;  // queued run: true = live preview, false = full run
+function scheduleScreening(live = false) {
+  if (screenBusy) {
+    screenNext = screenNext === false ? false : live;
+    return;
+  }
+  screenBusy = true;
+  $("disaster-stage-wrap").classList.add("busy");
+  void runDisasterAnalysis(live).finally(() => {
+    screenBusy = false;
+    const next = screenNext;
+    screenNext = null;
+    if (next !== null) scheduleScreening(next);
+    else $("disaster-stage-wrap").classList.remove("busy");
+  });
 }
 
 let disasterSeq = 0;  // only the newest request may update the panel (a slower older response must not overwrite it)
@@ -1206,8 +1568,9 @@ async function runDisasterAnalysis(silent = false) {
       : mode === "landslide" ? { lithology: sel("ls-lithology"), structure: sel("ls-structure"), hydrogeology: sel("ls-hydro"), fetchRainfall: chk("ls-rain"), scars: chk("ls-scars") ? scarWindows() : null }
       : mode === "roads" ? { includeLandslide: chk("roads-landslide") }
       : { maxSlopeDeg: Number(aSlp.value || 15) };
+    if (silent && (mode === "flood" || mode === "accessibility")) (body as any).live = true;
 
-    const res = await fetch(`/api/jobs/${state.jobId}/disaster/${mode}`, {
+    const res = await fetch(apiUrl(`/api/jobs/${state.jobId}/disaster/${mode}`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -1246,7 +1609,7 @@ async function runDisasterAnalysis(silent = false) {
 
       const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
       if (dlLink) {
-        dlLink.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+        dlLink.href = apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`);
         dlLink.textContent = "Download depth raster (GeoTIFF)";
       }
 
@@ -1299,10 +1662,10 @@ async function runDisasterAnalysis(silent = false) {
       setStat("stat-meandepth-card", "Clear approach bearings", String(nClear), `of ${r.bearings} per site · 10:1 checked to ${r.approachLengthM} m`);
 
       const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
-      dlLink.href = resp.vectorResult ? `/api/jobs/${state.jobId}/artifact/${resp.vectorResult}` : "#";
+      dlLink.href = resp.vectorResult ? apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.vectorResult}`) : "#";
       dlLink.textContent = "Download sites (GeoJSON, WGS84)";
       const dlExtra = $("disaster-download-extra") as HTMLAnchorElement;
-      dlExtra.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+      dlExtra.href = apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`);
       dlExtra.textContent = "Download reason raster (GeoTIFF)";
 
       $("disaster-buildings-wrap").classList.add("hidden");
@@ -1346,7 +1709,7 @@ async function runDisasterAnalysis(silent = false) {
       setStat("stat-meandepth-card", "New slope scars", resp.scars ? (resp.scars.error ? "–" : String(resp.scars.count)) : "not checked",
         resp.scars ? (resp.scars.error ?? `${fmtArea(resp.scars.areaM2)} new bare ground (Sentinel-2)`) : "tick the Sentinel-2 option");
       const dl = $("disaster-download-raster") as HTMLAnchorElement;
-      dl.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+      dl.href = apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`);
       dl.textContent = "Download hazard classes (GeoTIFF)";
       $("disaster-buildings-wrap").classList.add("hidden");
       $("disaster-legend-title").textContent = "Landslide hazard (IS 14496-2, TEHD)";
@@ -1361,7 +1724,7 @@ async function runDisasterAnalysis(silent = false) {
       setStat("stat-maxdepth-card", "Hazard used", hz, resp.hazards.map((h: any) => h.rule).join("; "));
       setStat("stat-meandepth-card", "Settlements checked", String(resp.nSettlements), "building clusters + OSM places");
       const dl = $("disaster-download-raster") as HTMLAnchorElement;
-      dl.href = `/api/jobs/${state.jobId}/artifact/${resp.vectorResult}`;
+      dl.href = apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.vectorResult}`);
       dl.textContent = "Download roads + settlements (GeoJSON)";
       $("disaster-buildings-wrap").classList.remove("hidden");
       $("disaster-bldg-count").textContent = String(resp.nSettlements);
@@ -1386,7 +1749,7 @@ async function runDisasterAnalysis(silent = false) {
 
       const dlLink = $("disaster-download-raster") as HTMLAnchorElement;
       if (dlLink) {
-        dlLink.href = `/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`;
+        dlLink.href = apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.rasterResult}`);
         dlLink.textContent = "Download accessibility mask (GeoTIFF)";
       }
 
@@ -1412,15 +1775,9 @@ async function runDisasterAnalysis(silent = false) {
       wDiv.classList.add("hidden");
     }
 
-    // Update 2D Water Overlay Image on top of the 2D Map!
-    if (resp.previewResult) {
-      const overlayImg = $("disaster-overlay-img") as HTMLImageElement;
-      if (overlayImg) {
-        overlayImg.src = `/api/jobs/${state.jobId}/artifact/${resp.previewResult}?t=${Date.now()}`;
-        overlayImg.style.display = state.disaster.overlayVisible ? "block" : "none";
-        overlayImg.style.opacity = String(state.disaster.opacity);
-        overlayImg.classList.toggle("water-shimmer", state.disaster.shimmer && mode === "flood");
-      }
+    // overlay: a live run leaves the browser-drawn preview in place; a full run swaps in its decoded server preview
+    if (resp.previewResult && !resp.live) {
+      void swapOverlayImage(apiUrl(`/api/jobs/${state.jobId}/artifact/${resp.previewResult}?t=${Date.now()}`), mode, seq);
     }
 
     // Render building vector layer on 2D map
@@ -1871,6 +2228,7 @@ function wire() {
       for (const [label, v] of Object.entries(opts)) el.insertAdjacentHTML("beforeend", `<option value="${v}">${esc(label)} (${v})</option>`);
     }
   }
+
   const confToggle = $("confidence-toggle") as HTMLInputElement | null;
   if (confToggle) {
     confToggle.addEventListener("change", async (e) => {
@@ -1879,10 +2237,10 @@ function wire() {
       if (!on || !state.jobId || !img) { img?.classList.add("hidden"); return; }
       setStatus("Computing the confidence map (the model runs 4 more times; about 2 minutes on a CPU)…", "", "disaster-status");
       try {
-        const r = await fetch(`/api/jobs/${state.jobId}/confidence`, { method: "POST" });
+        const r = await fetch(apiUrl(`/api/jobs/${state.jobId}/confidence`), { method: "POST" });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error?.message ?? r.statusText);
-        img.src = `/api/jobs/${state.jobId}/artifact/${j.previewResult}?t=${Date.now()}`;
+        img.src = apiUrl(`/api/jobs/${state.jobId}/artifact/${j.previewResult}?t=${Date.now()}`);
         img.classList.remove("hidden");
         setStatus(`Height confidence: median ±${j.medianIntervalM} m (80 % interval); ${j.shareWithin2mPct}% of the scene within ±2 m, ${j.shareOver5mPct}% worse than ±5 m.`, "ok", "disaster-status");
       } catch (err: any) {
@@ -1899,7 +2257,7 @@ function wire() {
       const img = $("bhuvan-overlay-img") as HTMLImageElement | null;
       if (!v || !state.jobId || !img) { img?.classList.add("hidden"); return; }
       img.onerror = () => { img.classList.add("hidden"); setStatus("Bhuvan did not answer for this layer (it needs internet); try again later.", "err", "disaster-status"); };
-      img.src = `/api/jobs/${state.jobId}/bhuvan/${v}.png`;
+      img.src = apiUrl(`/api/jobs/${state.jobId}/bhuvan/${v}.png`);
       img.classList.remove("hidden");
     });
   }
@@ -1911,55 +2269,57 @@ function wire() {
       $("hlz-controls-wrap").classList.toggle("hidden", disScen.value !== "landing_zones");
       $("ls-controls-wrap").classList.toggle("hidden", disScen.value !== "landslide");
       $("roads-controls-wrap").classList.toggle("hidden", disScen.value !== "roads");
-      runDisasterAnalysis();
+      // a different hazard: the old overlay must not stay on screen while the new one is computed
+      ($("disaster-overlay-img") as HTMLImageElement).style.display = "none";
+      hideLiveCanvas();
+      void ensureLiveField();
+      scheduleScreening();
     });
   }
 
   if (fLvl) {
     fLvl.addEventListener("input", () => {
       $("flood-level-val").textContent = Number(fLvl.value).toFixed(1);
-      const live = ($("disaster-live-scrub") as HTMLInputElement)?.checked;
-      if (live) {
-        clearTimeout(disasterDebounceTimer);
-        disasterDebounceTimer = setTimeout(() => runDisasterAnalysis(true), 160);
-      }
+      requestLiveDraw();
+      // live numbers while dragging, throttled by scheduleScreening (one request in flight, newest value next)
+      if (($("disaster-live-scrub") as HTMLInputElement)?.checked) scheduleScreening(true);
     });
-    fLvl.addEventListener("change", () => runDisasterAnalysis());
+    fLvl.addEventListener("change", () => scheduleScreening());
   }
 
   if (aSlp) {
     aSlp.addEventListener("input", () => {
       $("access-slope-val").textContent = aSlp.value;
-      const live = ($("disaster-live-scrub") as HTMLInputElement)?.checked;
-      if (live) {
-        clearTimeout(disasterDebounceTimer);
-        disasterDebounceTimer = setTimeout(() => runDisasterAnalysis(true), 160);
-      }
+      requestLiveDraw();
+      if (($("disaster-live-scrub") as HTMLInputElement)?.checked) scheduleScreening(true);
     });
-    aSlp.addEventListener("change", () => runDisasterAnalysis());
+    aSlp.addEventListener("change", () => scheduleScreening());
   }
 
   // Step buttons (-1m, +1m, Auto)
   $("flood-minus-1")?.addEventListener("click", () => {
     fLvl.value = String(Math.max(Number(fLvl.min), Number(fLvl.value) - 1.0));
     $("flood-level-val").textContent = Number(fLvl.value).toFixed(1);
-    runDisasterAnalysis();
+    requestLiveDraw();
+    scheduleScreening();
   });
   $("flood-plus-1")?.addEventListener("click", () => {
     fLvl.value = String(Math.min(Number(fLvl.max), Number(fLvl.value) + 1.0));
     $("flood-level-val").textContent = Number(fLvl.value).toFixed(1);
-    runDisasterAnalysis();
+    requestLiveDraw();
+    scheduleScreening();
   });
   $("flood-auto-btn")?.addEventListener("click", () => {
     if (state.disaster.autoFloodVal) {
       fLvl.value = state.disaster.autoFloodVal.toFixed(1);
       $("flood-level-val").textContent = fLvl.value;
-      runDisasterAnalysis();
+      requestLiveDraw();
+      scheduleScreening();
     }
   });
 
-  $("run-disaster-btn")?.addEventListener("click", () => runDisasterAnalysis());
-  $("flood-model")?.addEventListener("change", () => { configureFloodSlider(floodModel()); runDisasterAnalysis(); });
+  $("run-disaster-btn")?.addEventListener("click", () => scheduleScreening());
+  $("flood-model")?.addEventListener("change", () => { configureFloodSlider(floodModel()); hideLiveCanvas(); void ensureLiveField(); scheduleScreening(); });
 
   // Base map buttons
   document.querySelectorAll("#disaster-base-group button").forEach((btn) => {
@@ -1977,6 +2337,7 @@ function wire() {
       state.disaster.overlayVisible = overToggle.checked;
       const img = $("disaster-overlay-img") as HTMLImageElement;
       if (img) img.style.display = overToggle.checked ? "block" : "none";
+      $("disaster-live-canvas").style.display = overToggle.checked ? "block" : "none";
     });
   }
 
@@ -1988,6 +2349,7 @@ function wire() {
       $("disaster-opacity-val").textContent = `${opSlider.value}%`;
       const img = $("disaster-overlay-img") as HTMLImageElement;
       if (img) img.style.opacity = String(state.disaster.opacity);
+      $("disaster-live-canvas").style.opacity = String(state.disaster.opacity);
     });
   }
 
@@ -1999,6 +2361,7 @@ function wire() {
       shimBtn.classList.toggle("active", state.disaster.shimmer);
       const img = $("disaster-overlay-img") as HTMLImageElement;
       if (img) img.classList.toggle("water-shimmer", state.disaster.shimmer);
+      $("disaster-live-canvas").classList.toggle("water-shimmer", state.disaster.shimmer && liveFieldKey()?.includes("|flood|") === true);
     });
   }
 

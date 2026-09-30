@@ -56,6 +56,7 @@ fusion:                           # tiled inference + DEM-preserving detail fusi
   tile_px: 518
   overlap: 0.25
   max_tiles: 400                  # full 0.5 m detail up to ~3.5 km scenes at 0.6 m; CPU ~2 s per tile
+  tile_batch: 0                    # tiles per forward pass; 0 = auto (4 on a GPU, 1 on a CPU)
   max_tile_gain: null             # optional cap on per-tile DEM-band gain (m per relative unit)
   anchor_gain_max: 4.0            # plausibility bound on the anchor-fitted detail gain
   mode_a_tiling: true             # Mode A: refine large images with native-resolution tiles
@@ -82,3 +83,4 @@ server:
   host: 127.0.0.1
   port: 8000
   frontend_dist: frontend/dist
+  warm_up_models: true            # load the models when the server starts, not on the first job

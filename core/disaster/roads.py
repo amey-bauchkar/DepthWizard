@@ -225,7 +225,7 @@ def _preview(path: Path, G: nx.Graph, setts: list[dict[str, Any]], shape: tuple[
         dr.ellipse([s["col"] - r, s["row"] - r, s["col"] + r, s["row"] + r], fill=c, outline=(255, 255, 255, 255), width=max(1, w // 2))
     from core.geo.atomic import write_atomic
 
-    write_atomic(path, lambda t: im.save(t, format="PNG"))
+    write_atomic(path, lambda t: im.save(t, format="PNG", compress_level=1))
 
 
 def _geojson(path: Path, G: nx.Graph, setts: list[dict[str, Any]], tr, crs) -> None:

@@ -43,8 +43,9 @@ import numpy as np
 import rasterio
 from PIL import Image
 from scipy import ndimage
-from scipy.special import ndtr
+from scipy.special import ndtr, ndtri
 
+from core.disaster.cache import cached
 from core.dsm.derive import pixel_area_m2
 from core.geo.grid import Grid
 from core.geo.raster_io import write_raster
@@ -55,6 +56,7 @@ PREVIEW_COLOURS = ["#add8e6", "#00bfff", "#0000cd", "#000080"]
 METHOD = "bathtub-threshold-2 (terrain layer, exact footprints, 8-connectivity diagnostic)"
 METHOD_RIVER = "hand-stage-1 (height above nearest drainage on the terrain layer, exact footprints)"
 FLOOD_MODELS = ("level", "river")
+FIELD_MAX_DIM = 1600  # display only: longest side (px) of the surface sent to the browser for live slider previews
 RIVER_STAGE_MAX_M = 100.0  # POLICY: largest river rise accepted (the 2023 Teesta GLOF was ~20 m at Chungthang)
 FLOOD_P_LIKELY, FLOOD_P_POSSIBLE = 0.9, 0.1
 """POLICY. Probability bands reported as 'likely' and 'possibly' flooded."""
@@ -132,10 +134,47 @@ def _footprint_sets(job_dir: Path, b_data: dict[str, Any], shape: tuple[int, int
     return None, "scalar_ground_legacy"
 
 
-def building_exposure(terrain: np.ndarray, wet: np.ndarray, W: float, labels: np.ndarray | None, b_data: dict[str, Any], sigma_m: float | None = None, band_counts: dict[str, int] | None = None) -> list[dict[str, Any]]:
+def load_terrain(job_dir: Path) -> tuple[np.ndarray, np.ndarray, Any, str | None, float]:
+    """terrain.tif as float64 (NaN outside valid cells), valid mask, transform, CRS, cell area. Cached, read-only."""
+    p = job_dir / "terrain.tif"
+
+    def build():
+        with rasterio.open(p) as ds:
+            t = ds.read(1).astype(np.float64)
+            nodata, tr, crs = ds.nodata, ds.transform, ds.crs.to_string() if ds.crs else None
+        valid = np.isfinite(t)
+        if nodata is not None:
+            valid &= t != nodata
+        return np.where(valid, t, np.nan), valid, tr, crs, pixel_area_m2(tr)
+
+    return cached("terrain", [p], build)
+
+
+def load_buildings(job_dir: Path, shape: tuple[int, int]) -> tuple[dict[str, Any], np.ndarray | None, str | None, list]:
+    """buildings.json, its footprint label raster (_footprint_sets), method and per-label slices. Cached, read-only."""
+    bp, lp = job_dir / "buildings.json", job_dir / "building_labels.tif"
+
+    def build():
+        if not bp.exists():
+            return {}, None, None, []
+        b_data = json.loads(bp.read_text(encoding="utf-8"))
+        labels, method = _footprint_sets(job_dir, b_data, shape)
+        return b_data, labels, method, (ndimage.find_objects(labels) if labels is not None else [])
+
+    return cached("buildings", [bp, lp], build, extra=tuple(shape))
+
+
+def _hand_mem(job_dir: Path, terrain: np.ndarray, grid: Grid, a_px: float, drainage_area_m2: float) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    """_hand_cached, kept in memory while terrain.tif is unchanged (HAND is derived from it alone)."""
+    h, d, meta = cached("hand", [job_dir / "terrain.tif"], lambda: _hand_cached(job_dir, terrain, grid, a_px, drainage_area_m2), extra=(drainage_area_m2,))
+    return h, d, dict(meta)
+
+
+def building_exposure(terrain: np.ndarray, wet: np.ndarray, W: float, labels: np.ndarray | None, b_data: dict[str, Any], sigma_m: float | None = None, band_counts: dict[str, int] | None = None, slices: list | None = None) -> list[dict[str, Any]]:
     """Per-building exposure. With labels: pixelwise over the footprint. Without: legacy scalar rule on base_elev_m.
     With sigma_m: wetProbability = Phi((W - ground) / sigma) per building, and band_counts gets likely / possible."""
-    slices = ndimage.find_objects(labels) if labels is not None else []
+    if slices is None:
+        slices = ndimage.find_objects(labels) if labels is not None else []
     out = []
     for b in b_data.get("buildings", []):
         bid = int(b.get("id"))
@@ -181,8 +220,28 @@ def terrain_sigma(result: dict[str, Any]) -> tuple[float | None, str | None]:
     return None, None
 
 
+P_WET_Z_SATURATED = 8.0  # |z| beyond this: Phi(z) is 0 or 1 to < 1e-15 (exact for the percent raster and the bands)
+
+
+def _p_wet(surface: np.ndarray, valid: np.ndarray, W: float, sigma_m: float) -> np.ndarray:
+    """P(wet) = Phi((W - S) / sigma) on valid cells with a defined surface, else 0. Phi is evaluated only where it is
+    not saturated (most of a hilly scene lies many sigma above the water), which made this the slowest step."""
+    ok = valid & np.isfinite(surface)
+    z = np.full(surface.shape, -np.inf)
+    z[ok] = (W - surface[ok]) / sigma_m
+    pw = np.zeros(surface.shape)
+    mid = np.abs(z) <= P_WET_Z_SATURATED
+    pw[mid] = ndtr(z[mid])
+    pw[z > P_WET_Z_SATURATED] = 1.0
+    return pw
+
+
 def terrain_relief(job_dir: Path) -> dict[str, Any]:
     """P5 / P95 of the terrain layer and the suggested flood model (RIVER_RELIEF_M)."""
+    return dict(cached("relief", [job_dir / "terrain.tif"], lambda: _terrain_relief(job_dir)))
+
+
+def _terrain_relief(job_dir: Path) -> dict[str, Any]:
     with rasterio.open(job_dir / "terrain.tif") as ds:
         t = ds.read(1, out_shape=(max(1, ds.height // 4), max(1, ds.width // 4)), masked=True).astype(np.float64).filled(np.nan)
     t = t[np.isfinite(t)]
@@ -245,10 +304,13 @@ def _hand_cached(job_dir: Path, terrain: np.ndarray, grid: Grid, a_px: float, dr
     return h, d, meta
 
 
-def run_flood_screening(job_dir: Path, water_level_m: float, result: dict[str, Any], *, connected_only: bool = False, model: str = "level", drainage_area_m2: float | None = None) -> dict[str, Any]:
+def run_flood_screening(job_dir: Path, water_level_m: float, result: dict[str, Any], *, connected_only: bool = False, model: str = "level", drainage_area_m2: float | None = None, write_outputs: bool = True) -> dict[str, Any]:
     """Flood screening. model="level": still water level W on terrain.tif (connected_only=False: every valid cell with
     T <= W is wet, an upper bound; True: only cells connected to an open boundary). model="river": W is a river stage
-    in metres above the channel, applied to HAND."""
+    in metres above the channel, applied to HAND.
+
+    write_outputs=False (live slider preview): the same numbers, but no rasters, preview or disaster_flood.json are
+    written, so the files on disk (used by downloads, road access and the report) stay those of the last full run."""
     if not math.isfinite(water_level_m):
         raise ValueError("water level must be a finite number of metres")
     if model not in FLOOD_MODELS:
@@ -262,16 +324,8 @@ def run_flood_screening(job_dir: Path, water_level_m: float, result: dict[str, A
     if not terrain_path.exists():
         raise FileNotFoundError("Disaster analysis requires a valid terrain/elevation surface (terrain.tif).")
 
-    with rasterio.open(terrain_path) as ds:
-        terrain = ds.read(1).astype(np.float64)
-        nodata = ds.nodata
-        grid = Grid(width=ds.width, height=ds.height, transform=ds.transform, crs=ds.crs.to_string() if ds.crs else None, dtype="float32", nodata=-9999.0, units="metres", metric=True, vertical_reference=result.get("vertical_reference"), tier=result.get("calibration_tier") or "T")
-        a_px = pixel_area_m2(ds.transform)
-
-    valid = np.isfinite(terrain)
-    if nodata is not None:
-        valid &= terrain != nodata
-    terrain = np.where(valid, terrain, np.nan)
+    terrain, valid, tr, crs, a_px = load_terrain(job_dir)
+    grid = Grid(width=terrain.shape[1], height=terrain.shape[0], transform=tr, crs=crs, dtype="float32", nodata=-9999.0, units="metres", metric=True, vertical_reference=result.get("vertical_reference"), tier=result.get("calibration_tier") or "T")
     W = float(water_level_m)
     hand_meta: dict[str, Any] | None = None
     surface = terrain  # what the water level is compared with: terrain ("level") or HAND ("river")
@@ -282,7 +336,7 @@ def run_flood_screening(job_dir: Path, water_level_m: float, result: dict[str, A
         da = float(drainage_area_m2) if drainage_area_m2 else DRAINAGE_AREA_M2
         if not (math.isfinite(da) and da > 0):
             raise ValueError("drainage area must be a positive number of square metres")
-        surface, _drain, hand_meta = _hand_cached(job_dir, terrain, grid, a_px, da)
+        surface, _drain, hand_meta = _hand_mem(job_dir, terrain, grid, a_px, da)
         undefined = valid & ~np.isfinite(surface)
         vref = "metres above the river channel (height above nearest drainage)"
         below = valid & np.isfinite(surface) & (surface <= W)
@@ -302,32 +356,36 @@ def run_flood_screening(job_dir: Path, water_level_m: float, result: dict[str, A
     band_counts = {"likely": 0, "possible": 0}
     uncertainty: dict[str, Any] | None = None
     if sigma_m:
-        pw = np.where(valid & np.isfinite(surface), ndtr((W - np.nan_to_num(surface, nan=np.inf)) / sigma_m), 0.0)
-        gp = Grid(width=grid.width, height=grid.height, transform=grid.transform, crs=grid.crs, dtype="uint8", nodata=255, units="percent", metric=False, vertical_reference=None, tier=grid.tier)
-        write_raster(job_dir / "flood_probability.tif", np.where(valid, np.rint(100 * pw), 255).astype(np.uint8), gp, tags={
-            "KIND": "flood_probability", "QUANTITY": "P(wet) in percent = Phi((W - S) / sigma)", "SIGMA_M": repr(sigma_m), "FLOOD_MODEL": model}, dtype="uint8")
+        if write_outputs:
+            pw = _p_wet(surface, valid, W, sigma_m)
+            n_likely, n_possible = int((pw >= FLOOD_P_LIKELY).sum()), int((pw >= FLOOD_P_POSSIBLE).sum())
+            gp = Grid(width=grid.width, height=grid.height, transform=grid.transform, crs=grid.crs, dtype="uint8", nodata=255, units="percent", metric=False, vertical_reference=None, tier=grid.tier)
+            write_raster(job_dir / "flood_probability.tif", np.where(valid, np.rint(100 * pw), 255).astype(np.uint8), gp, tags={
+                "KIND": "flood_probability", "QUANTITY": "P(wet) in percent = Phi((W - S) / sigma)", "SIGMA_M": repr(sigma_m), "FLOOD_MODEL": model}, dtype="uint8")
+        else:  # live preview: Phi is monotone, so P >= p  <=>  S <= W - sigma * Phi^-1(p); no per-cell Phi needed
+            ok = valid & np.isfinite(surface)
+            n_likely = int((ok & (surface <= W - sigma_m * float(ndtri(FLOOD_P_LIKELY)))).sum())
+            n_possible = int((ok & (surface <= W - sigma_m * float(ndtri(FLOOD_P_POSSIBLE)))).sum())
         uncertainty = {"sigmaM": sigma_m, "source": sigma_src, "rule": "P(wet) = Phi((W - S) / sigma), S = " + ("HAND" if model == "river" else "terrain"),
                        "likelyThreshold": FLOOD_P_LIKELY, "possibleThreshold": FLOOD_P_POSSIBLE,
-                       "likelyAreaM2": int((pw >= FLOOD_P_LIKELY).sum()) * a_px, "possibleAreaM2": int((pw >= FLOOD_P_POSSIBLE).sum()) * a_px,
+                       "likelyAreaM2": n_likely * a_px, "possibleAreaM2": n_possible * a_px,
                        "rasterResult": "flood_probability.tif", "measuredReliability": FLOOD_BAND_OBSERVED,
                        "note": (f"Checked against two real floods: {FLOOD_BAND_OBSERVED['likely'][0]:.0%}-{FLOOD_BAND_OBSERVED['likely'][1]:.0%} of the 'likely' area and "
                                 f"{FLOOD_BAND_OBSERVED['possible'][0]:.0%}-{FLOOD_BAND_OBSERVED['possible'][1]:.0%} of the 'possible' area really flooded; "
                                 f"{FLOOD_BAND_OBSERVED['unlikely_dry'][0]:.0%}-{FLOOD_BAND_OBSERVED['unlikely_dry'][1]:.0%} of the rest stayed dry.")}
 
-    buildings_path = job_dir / "buildings.json"
     buildings_result: list[dict[str, Any]] = []
-    footprint_method = None
-    if buildings_path.exists():
-        b_data = json.loads(buildings_path.read_text(encoding="utf-8"))
-        labels, footprint_method = _footprint_sets(job_dir, b_data, terrain.shape)
-        buildings_result = building_exposure(surface, wet, W, labels, b_data, sigma_m, band_counts)
+    b_data, labels, footprint_method, slices = load_buildings(job_dir, terrain.shape)
+    if b_data:
+        buildings_result = building_exposure(surface, wet, W, labels, b_data, sigma_m, band_counts, slices=slices)
     affected = [b for b in buildings_result if b["exposure"] != "NONE"]
 
-    write_raster(job_dir / "flood_depth.tif", np.where(valid, depth, -9999.0).astype(np.float32), grid, tags={
-        "KIND": "flood_depth", "QUANTITY": "max(W - terrain, 0), metres above the terrain layer",
-        "SCENARIO_WATER_LEVEL_M": repr(W), "WATER_LEVEL_VERTICAL_REFERENCE": vref, "FLOOD_MODEL": model, "CONNECTED_ONLY": str(connected_only), "METHOD": METHOD,
-        "WARNING": "Elevation-based screening only. Not a hydraulic simulation."})
-    _generate_flood_preview(job_dir / "flood_preview.png", depth, wet, PREVIEW_MAX_DEPTH_M)
+    if write_outputs:
+        write_raster(job_dir / "flood_depth.tif", np.where(valid, depth, -9999.0).astype(np.float32), grid, tags={
+            "KIND": "flood_depth", "QUANTITY": "max(W - terrain, 0), metres above the terrain layer",
+            "SCENARIO_WATER_LEVEL_M": repr(W), "WATER_LEVEL_VERTICAL_REFERENCE": vref, "FLOOD_MODEL": model, "CONNECTED_ONLY": str(connected_only), "METHOD": METHOD,
+            "WARNING": "Elevation-based screening only. Not a hydraulic simulation."})
+        _generate_flood_preview(job_dir / "flood_preview.png", depth, wet, PREVIEW_MAX_DEPTH_M)
 
     counts = {lab: sum(b["exposure"] == lab for b in buildings_result) for lab in EXPOSURE_LABELS}
     relief = terrain_relief(job_dir)
@@ -384,8 +442,33 @@ def run_flood_screening(job_dir: Path, water_level_m: float, result: dict[str, A
         "warnings": model_warnings + ["Not a hydrodynamic simulation."] + (["Building footprints rasterised from simplified polygons (job predates exact footprints)."] if footprint_method == "polygon_cell_centre" else [])
           + (["Building exposure uses one ground value per building (legacy job)."] if footprint_method == "scalar_ground_legacy" else []),
     }
-    (job_dir / "disaster_flood.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    if write_outputs:
+        (job_dir / "disaster_flood.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    else:
+        summary["live"] = True  # numbers only; the files on disk are those of the last full run
     return summary
+
+
+def display_field(job_dir: Path, model: str, max_dim: int = FIELD_MAX_DIM) -> tuple[np.ndarray, dict[str, Any]]:
+    """The surface the water level is compared with (HAND for "river", terrain for "level"), float32 with NaN where
+    no cell can be wet, sampled at block centres to at most max_dim px, and the preview colour ramp. The browser
+    colours it for every slider position (wet = S <= W, depth = W - S: the rule of run_flood_screening), so the
+    overlay follows the slider without a server round trip; the full-resolution preview replaces it on release."""
+    from core.disaster.hand import DRAINAGE_AREA_M2
+
+    if model not in FLOOD_MODELS:
+        raise ValueError(f"unknown flood model {model!r}; expected one of {FLOOD_MODELS}")
+    if not (job_dir / "terrain.tif").exists():
+        raise FileNotFoundError("Disaster analysis requires a valid terrain/elevation surface (terrain.tif).")
+    terrain, _valid, tr, crs, a_px = load_terrain(job_dir)
+    surface = terrain
+    if model == "river":
+        grid = Grid(width=terrain.shape[1], height=terrain.shape[0], transform=tr, crs=crs, dtype="float32", nodata=-9999.0, units="metres", metric=True, vertical_reference=None, tier="T")
+        surface, _d, _m = _hand_mem(job_dir, terrain, grid, a_px, DRAINAGE_AREA_M2)
+    f = max(1, math.ceil(max(surface.shape) / max_dim))
+    arr = np.ascontiguousarray(surface[f // 2::f, f // 2::f], dtype=np.float32)
+    ramp = {"colours": PREVIEW_COLOURS, "alpha": 200, "maxDepthM": PREVIEW_MAX_DEPTH_M}
+    return arr, {"width": int(arr.shape[1]), "height": int(arr.shape[0]), "stride": f, "model": model, "rule": "wet = S <= W; depth = W - S", "ramp": ramp}
 
 
 def _generate_flood_preview(path: Path, depth: np.ndarray, mask: np.ndarray, max_depth_ramp: float = 5.0) -> None:
@@ -406,7 +489,7 @@ def _generate_flood_preview(path: Path, depth: np.ndarray, mask: np.ndarray, max
 
     tmp_path = path.with_name(f".{path.stem}_{uuid.uuid4().hex[:8]}.tmp.png")
     try:
-        Image.fromarray(rgba, "RGBA").save(tmp_path)
+        Image.fromarray(rgba, "RGBA").save(tmp_path, compress_level=1)  # lossless; fast encode (slider re-runs)
         for attempt in range(5):
             try:
                 os.replace(tmp_path, path)

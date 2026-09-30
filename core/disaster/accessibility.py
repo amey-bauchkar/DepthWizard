@@ -23,11 +23,21 @@ from core.geo.grid import Grid
 from core.geo.raster_io import write_raster
 
 
-def run_accessibility_screening(job_dir: Path, max_slope_deg: float, result: dict[str, Any]) -> dict[str, Any]:
-    if not math.isfinite(max_slope_deg) or not 0.0 <= max_slope_deg <= 90.0:
-        raise ValueError("max slope must be between 0 and 90 degrees")
+PREVIEW_RGBA = {"accessible": (0, 200, 0, 100), "steep": (220, 0, 0, 150), "building": (90, 90, 90, 120)}
+
+
+def _slope_and_buildings(job_dir: Path) -> tuple[np.ndarray, Any, Any, str, bool, np.ndarray, str | None]:
+    """Slope (degrees), transform, CRS, source note, whether it is a surface slope, building mask and footprint
+    method. Cached while the job's rasters are unchanged (the slider re-runs this screening many times)."""
+    from core.disaster.cache import cached
+
+    paths = [job_dir / n for n in ("terrain.tif", "slope.tif", "building_labels.tif", "buildings.json")]
+    return cached("accessibility", paths, lambda: _slope_and_buildings_uncached(job_dir))
+
+
+def _slope_and_buildings_uncached(job_dir: Path):
     terrain_path, slope_path = job_dir / "terrain.tif", job_dir / "slope.tif"
-    warnings = ["Terrain accessibility screening only.", "Not an emergency route prediction.", "Ignores land cover, roads and obstacles other than detected buildings."]
+    surface_slope = False
     if terrain_path.exists():
         with rasterio.open(terrain_path) as ds:
             T = ds.read(1).astype(np.float64)
@@ -43,11 +53,9 @@ def run_accessibility_screening(job_dir: Path, max_slope_deg: float, result: dic
                 slope[slope == ds.nodata] = np.nan
             transform, crs = ds.transform, ds.crs
         source = "slope.tif (surface slope — includes buildings; no terrain layer in this job)"
-        warnings.append("No terrain layer: slope is of the surface model, so roofs and walls are included.")
+        surface_slope = True
     else:
         raise FileNotFoundError("Accessibility screening requires terrain.tif or slope.tif.")
-
-    a_px = pixel_area_m2(transform)
     valid = np.isfinite(slope)
     building = np.zeros_like(valid)
     footprint_method = None
@@ -58,15 +66,29 @@ def run_accessibility_screening(job_dir: Path, max_slope_deg: float, result: dic
         lab, footprint_method = _footprint_sets(job_dir, b_data, valid.shape)
         if lab is not None:
             building = lab > 0
+    return slope, transform, crs, source, surface_slope, building, footprint_method
+
+
+def run_accessibility_screening(job_dir: Path, max_slope_deg: float, result: dict[str, Any], *, write_outputs: bool = True) -> dict[str, Any]:
+    """write_outputs=False (live slider preview): same numbers, no files written (they stay those of the last full run)."""
+    if not math.isfinite(max_slope_deg) or not 0.0 <= max_slope_deg <= 90.0:
+        raise ValueError("max slope must be between 0 and 90 degrees")
+    warnings = ["Terrain accessibility screening only.", "Not an emergency route prediction.", "Ignores land cover, roads and obstacles other than detected buildings."]
+    slope, transform, crs, source, surface_slope, building, footprint_method = _slope_and_buildings(job_dir)
+    if surface_slope:
+        warnings.append("No terrain layer: slope is of the surface model, so roofs and walls are included.")
+    a_px = pixel_area_m2(transform)
+    valid = np.isfinite(slope)
     ground = valid & ~building
     accessible = ground & (slope <= max_slope_deg)
     steep = ground & (slope > max_slope_deg)
 
-    grid = Grid(width=slope.shape[1], height=slope.shape[0], transform=transform, crs=crs.to_string() if crs else None, dtype="float32", nodata=-9999.0, units="metres", metric=True, vertical_reference=None, tier=result.get("calibration_tier") or "T")
-    out = np.full(slope.shape, -9999.0, np.float32)
-    out[ground] = accessible[ground].astype(np.float32)
-    write_raster(job_dir / "accessibility.tif", out, grid, tags={"KIND": "accessibility_mask", "VALUES": "1 = slope <= threshold, 0 = steeper, nodata = invalid or building", "SLOPE_SOURCE": source, "SCENARIO_MAX_SLOPE_DEG": repr(float(max_slope_deg)), "WARNING": "Terrain accessibility screening only. Not an emergency route prediction."})
-    _generate_accessibility_preview(job_dir / "accessibility_preview.png", accessible, steep, building & valid)
+    if write_outputs:
+        grid = Grid(width=slope.shape[1], height=slope.shape[0], transform=transform, crs=crs.to_string() if crs else None, dtype="float32", nodata=-9999.0, units="metres", metric=True, vertical_reference=None, tier=result.get("calibration_tier") or "T")
+        out = np.full(slope.shape, -9999.0, np.float32)
+        out[ground] = accessible[ground].astype(np.float32)
+        write_raster(job_dir / "accessibility.tif", out, grid, tags={"KIND": "accessibility_mask", "VALUES": "1 = slope <= threshold, 0 = steeper, nodata = invalid or building", "SLOPE_SOURCE": source, "SCENARIO_MAX_SLOPE_DEG": repr(float(max_slope_deg)), "WARNING": "Terrain accessibility screening only. Not an emergency route prediction."})
+        _generate_accessibility_preview(job_dir / "accessibility_preview.png", accessible, steep, building & valid)
 
     n_ground = int(ground.sum())
     summary = {
@@ -85,8 +107,21 @@ def run_accessibility_screening(job_dir: Path, max_slope_deg: float, result: dic
         "quantityCategory": {"maxSlopeDeg": "SCENARIO", "accessibleAreaM2": "SCENARIO", "steepAreaM2": "SCENARIO", "buildingAreaM2": "DERIVED"},
         "warnings": warnings,
     }
-    (job_dir / "disaster_accessibility.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    if write_outputs:
+        (job_dir / "disaster_accessibility.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    else:
+        summary["live"] = True
     return summary
+
+
+def display_field(job_dir: Path, max_dim: int = 1600) -> tuple[np.ndarray, dict[str, Any]]:
+    """Slope (degrees) for the browser's live slider preview: float32, -1 on building footprints, NaN where invalid,
+    sampled at block centres to at most max_dim px, with the preview colours (accessible = slope <= threshold)."""
+    slope, *_rest, building, _m = _slope_and_buildings(job_dir)
+    f = max(1, math.ceil(max(slope.shape) / max_dim))
+    arr = np.where(building & np.isfinite(slope), -1.0, slope)[f // 2::f, f // 2::f]
+    arr = np.ascontiguousarray(arr, dtype=np.float32)
+    return arr, {"width": int(arr.shape[1]), "height": int(arr.shape[0]), "stride": f, "rule": "building = -1; accessible = 0 <= slope <= threshold; steep = slope > threshold", "rgba": PREVIEW_RGBA}
 
 
 def _generate_accessibility_preview(path: Path, accessible: np.ndarray, steep: np.ndarray, building: np.ndarray) -> None:
@@ -101,7 +136,7 @@ def _generate_accessibility_preview(path: Path, accessible: np.ndarray, steep: n
 
     tmp_path = path.with_name(f".{path.stem}_{uuid.uuid4().hex[:8]}.tmp.png")
     try:
-        Image.fromarray(rgba, "RGBA").save(tmp_path)
+        Image.fromarray(rgba, "RGBA").save(tmp_path, compress_level=1)  # lossless; fast encode (slider re-runs)
         for attempt in range(5):
             try:
                 os.replace(tmp_path, path)

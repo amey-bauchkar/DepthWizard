@@ -28,7 +28,7 @@ from core.calib.dem import grid_bounds, load_dem_on_grid, select_dem
 from core.calib.fusion import TiledPrediction, default_detail_scales, fit_anchor_gain, fuse_detail, highpass, plan_upsample, stitch_tiles, tiled_relative
 from core.calib.terrain import object_layer_from_relative, terrain_layer
 from core.calib.tier import decide
-from core.dsm.derive import build_flags, elevation_preview, flags_preview, hillshade_preview, slope_layers, slope_preview
+from core.dsm.derive import build_flags, elevation_legend, elevation_preview, flags_preview, hillshade_preview, slope_layers, slope_legend, slope_preview
 from core.dsm.rdsm import make_rdsm, write_preview
 from core.geo.grid import Grid
 from core.geo.raster_io import write_raster
@@ -48,7 +48,7 @@ def stage_ingest_geotiff(job_dir: Path, input_path: Path, settings: Settings, lo
     t0 = time.perf_counter()
     res = ingest_geotiff(input_path, job_dir, max_dim=settings.ingest.max_image_dim)
     _dump(job_dir / "meta.json", res.meta.to_dict())
-    Image.fromarray(res.rgb, "RGB").save(job_dir / "input_preview.png")
+    Image.fromarray(res.rgb, "RGB").save(job_dir / "input_preview.png", compress_level=1)  # lossless; fast encode
     log.event("UPLOADED", "ingested GeoTIFF", crs=res.grid.crs, gsd_m=res.meta.gsd_m, reprojected=res.meta.reprojected, width=res.grid.width, height=res.grid.height, ms=round((time.perf_counter() - t0) * 1000, 1))
     return res
 
@@ -68,6 +68,8 @@ def stage_tiled_inference(job_dir: Path, rgb: np.ndarray, gsd_m: float | None, p
         overlap=f.overlap,
         inference_gsd_m=(gsd_m / up) if gsd_m else None,
         progress_cb=progress_cb,
+        predict_many=predictor.predict_many,
+        batch=f.tile_batch or (4 if predictor.device == "cuda" else 1),
     )
     tp.quantity = predictor.card.output_quantity
     val = (predictor.card.extra or {}).get("validation") or {}
@@ -160,6 +162,13 @@ def _anchor_calibration(job_dir: Path, grid: Grid, terrain: np.ndarray, dem: np.
     return rep
 
 
+BUILDING_HEIGHT_SOURCE = {
+    "layer": "metric model nDSM (height above ground as predicted, before DEM fusion)",
+    "why": "per-building median height vs airborne LiDAR on OSM footprints: model nDSM RMSE 2.46 m vs 3.10 m for dsm - terrain "
+           "(mean of 5 validation tiles: Aarau x2, Fribourg, Tucson, Pittsburgh); test tiles Zurich 3.09 vs 4.01 m, "
+           "State College 3.42 vs 4.18 m. dsm - terrain is lower by (1 - f) x low-pass(nDSM). scripts/validate_building_heights.py",
+}
+
 # Typical 1-sigma point errors MEASURED by DepthWizard itself (never assumed): DEM-based layers vs NASA ICESat-2
 # checkpoints over the six Sikkim scenes (docs/validation_india.md = CartoDEM, docs/validation_india_copernicus.md).
 MEASURED_DEM_RMSE = {
@@ -194,7 +203,26 @@ def _ground_from_surface(dsm: np.ndarray, gsd_m: float, window_m: float) -> np.n
     return ndimage.gaussian_filter(ndimage.grey_opening(z, size=(w, w)), w / 4.0).astype(np.float32)
 
 
-def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: np.ndarray, prov: dict[str, Any], settings: Settings, log: JobLogger, *, tiled: TiledPrediction | None = None, user_dem: Path | None = None, user_dem_vcrs: str = "EGM2008", anchors_path: Path | None = None, footprints_path: Path | None = None) -> dict[str, Any]:
+def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: np.ndarray, prov: dict[str, Any], settings: Settings, log: JobLogger, **kw: Any) -> dict[str, Any]:
+    """_calibrate_and_compose with its preview images (PNG, display only) encoded on background threads while the
+    stage continues. Every preview is awaited, and its error re-raised, before this returns: the job is marked READY
+    only after all its files exist. The arrays handed to a preview are not modified afterwards."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="dw-preview") as pool:
+        pending: list[Any] = []
+
+        def later(fn: Any, *a: Any, **k: Any) -> None:
+            pending.append(pool.submit(fn, *a, **k))
+
+        result = _calibrate_and_compose(job_dir, ing, rel_depth, prov, settings, log, later=later, **kw)
+        for f in pending:
+            f.result()
+    return result
+
+
+def _calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: np.ndarray, prov: dict[str, Any], settings: Settings, log: JobLogger, *, tiled: TiledPrediction | None = None, user_dem: Path | None = None, user_dem_vcrs: str = "EGM2008", anchors_path: Path | None = None, footprints_path: Path | None = None, later: Any = None) -> dict[str, Any]:
+    later = later or (lambda fn, *a, **k: fn(*a, **k))
     t0 = time.perf_counter()
     c = settings.calib
     grid = ing.grid
@@ -206,8 +234,8 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
     rel_f = np.where(rel == settings.rdsm.nodata, np.nan, rel).astype(np.float32)
     rg = Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "relative", False, None, "R")
     write_raster(job_dir / "relative.tif", rel_f, rg, {"MODEL": f"{prov['model_name']}@{prov['model_version']}", "OUTPUT_QUANTITY": "relative_height_normalised"})
-    write_preview(job_dir / "rdsm_preview.png", rel, settings.rdsm.nodata, mode="ramp")
-    write_preview(job_dir / "depth_preview.png", rel, settings.rdsm.nodata, mode="gray")
+    later(write_preview, job_dir / "rdsm_preview.png", rel, settings.rdsm.nodata, mode="ramp")
+    later(write_preview, job_dir / "depth_preview.png", rel, settings.rdsm.nodata, mode="gray")
     # --- relative object layer (ground mask for the terrain layer) ---
     obj = object_layer_from_relative(rel_f, valid, gsd_m=gsd_m, ground_window_m=c.ground_window_m)
     write_raster(job_dir / "object_rel.tif", obj.object_rel, rg, {"OUTPUT_QUANTITY": "relative_object_layer", "METHOD": obj.params["method"]})
@@ -313,20 +341,24 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
         write_raster(job_dir / "terrain.tif", terrain, tg, {"OUTPUT_QUANTITY": "terrain_ground_estimate", "NOT_A_DTM": "true", "DEM_SOURCE": dem_src.product if dem_src else "", "METHOD": "min(ground-weighted DEM normalized convolution [+ anchor offset], morphological ground of the DSM, DSM)"})
         write_raster(job_dir / "dsm.tif", dsm, tg, {"OUTPUT_QUANTITY": "dsm_surface_elevation" if detail_t is not None else "dem_only_no_object_detail", "OBJECT_SCALE_SOURCE": scale_source or "none", "DEM_SOURCE": dem_src.product if dem_src else "", "METHOD": METHOD_VERSION, "MODEL": f"{prov['model_name']}@{prov['model_version']}", "MODEL_SHA256": prov.get("model_sha256") or "n/a"})
         dlo, dhi = float(np.nanpercentile(dsm, 1)), float(np.nanpercentile(dsm, 99))
-        leg = elevation_preview(job_dir / "dsm_preview.png", dsm, lo=dlo, hi=dhi)
-        elevation_preview(job_dir / "terrain_preview.png", terrain, lo=dlo, hi=dhi)
-        hillshade_preview(job_dir / "hillshade_preview.png", dsm, gsd[0], gsd[1])
+        leg = elevation_legend(dsm, lo=dlo, hi=dhi)
+        later(elevation_preview, job_dir / "dsm_preview.png", dsm, lo=dlo, hi=dhi)
+        later(elevation_preview, job_dir / "terrain_preview.png", terrain, lo=dlo, hi=dhi)
+        later(hillshade_preview, job_dir / "hillshade_preview.png", dsm, gsd[0], gsd[1])
         slope, aspect = slope_layers(dsm, grid.transform)  # surface (DSM) slope; terrain slope is derived in core.disaster
         sg = Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, None, tier.tier)
         write_raster(job_dir / "slope.tif", slope, sg, {"OUTPUT_QUANTITY": "surface_slope_degrees", "SURFACE": "dsm (includes buildings and canopy)", "METHOD": "Horn 3x3 in pixel space, mapped to CRS axes by J^-T of the affine; edges flagged"})
         write_raster(job_dir / "aspect.tif", aspect, sg, {"OUTPUT_QUANTITY": "surface_aspect_degrees", "CONVENTION": "downslope (facing) azimuth, clockwise from grid north, [0,360); NaN where flat"})
-        sleg = slope_preview(job_dir / "slope_preview.png", slope)
+        sleg = slope_legend()
+        later(slope_preview, job_dir / "slope_preview.png", slope)
         low_support = terrain_res.support < 0.25
         flags = build_flags(dsm.shape, valid=np.isfinite(dsm), raw_fallback=terrain_res.raw_fallback, dem_void=~dem_valid, no_object_scale=detail_t is None, low_support=low_support)
         write_raster(job_dir / "flags.tif", flags, Grid(grid.width, grid.height, grid.transform, grid.crs, "uint16", 0, "relative", False, None, tier.tier), {"BITS": "BORDER=1,TERRAIN_RAW_DEM=2,DEM_VOID=4,NODATA=8,NO_OBJECT_SCALE=16,LOW_SUPPORT=32"}, dtype="uint16")
-        flags_preview(job_dir / "flags_preview.png", flags)
+        later(flags_preview, job_dir / "flags_preview.png", flags)
         write_raster(job_dir / "ndsm.tif", ndsm, Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, None, tier.tier), {"OUTPUT_QUANTITY": "height_above_terrain_layer", "SCALE_SOURCE": scale_source or "none (DEM relief only)"})
-        nleg = elevation_preview(job_dir / "ndsm_preview.png", ndsm, lo=0.0, hi=max(1.0, float(np.nanpercentile(ndsm, 99))))
+        n_hi = max(1.0, float(np.nanpercentile(ndsm, 99)))
+        nleg = elevation_legend(ndsm, lo=0.0, hi=n_hi)
+        later(elevation_preview, job_dir / "ndsm_preview.png", ndsm, lo=0.0, hi=n_hi)
         artifacts.update({"dem_tif": "dem.tif", "terrain_tif": "terrain.tif", "dsm_tif": "dsm.tif", "ndsm_tif": "ndsm.tif", "slope_tif": "slope.tif", "aspect_tif": "aspect.tif", "flags_tif": "flags.tif", "dsm_preview": "dsm_preview.png", "terrain_preview": "terrain_preview.png", "ndsm_preview": "ndsm_preview.png", "hillshade_preview": "hillshade_preview.png", "slope_preview": "slope_preview.png", "flags_preview": "flags_preview.png"})
         dsm_label = "ABSOLUTE · DEM + calibrated model detail" if detail_t is not None else "ABSOLUTE · DEM relief only (no model detail calibrated)"
         layers.update({
@@ -381,8 +413,13 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
                     if reg["applied"]:
                         fp = fpm.to_labels(rings, rcrs, fpm.shifted(grid.transform, reg), grid.crs, (grid.height, grid.width))
                     fp_info["coregistration"] = reg
+                # per-building heights: the metric model's own nDSM (the model predicts height above ground; the fused
+                # dsm - terrain lowers it by (1 - f) x its low-pass, most where trees surround a house). Chosen on
+                # validation tiles (BUILDING_HEIGHT_SOURCE); outlines, detection and bases are unchanged.
+                h_bld = np.where(np.isfinite(ndsm), np.nan_to_num(ndsm_model), np.nan).astype(np.float32) if metric else None
                 lod1_data = extract_lod1_buildings(ndsm, terrain, rgb=ing.rgb, gsd_m=gsd_m, transform=grid.transform, return_labels=True, footprints=fp,
-                                                   object_filter=os.environ.get("DW_LOD1_OBJECT_FILTER", "1") != "0")  # "0": raw detector (building study)
+                                                   object_filter=os.environ.get("DW_LOD1_OBJECT_FILTER", "1") != "0", heights=h_bld)  # "0": raw detector (building study)
+                lod1_data["height_source"] = BUILDING_HEIGHT_SOURCE if metric else {"layer": "ndsm.tif (dsm - terrain)"}
                 lod1_data["footprints"] = fp_info or {"source": "detected from the image (RGB + nDSM rules, object filter)",
                                                       "note": "approximate: tree crowns and rock can still be counted as buildings, and small houses missed; see docs/building_detection_validation.md"}
                 labels = lod1_data.pop("_labels")
@@ -405,11 +442,14 @@ def stage_calibrate_and_compose(job_dir: Path, ing: GeoIngestResult, rel_depth: 
         ndsm = np.where(valid, np.nan_to_num(ndsm_model), np.nan).astype(np.float32)
         hg = Grid(grid.width, grid.height, grid.transform, grid.crs, "float32", -9999.0, "metres", True, None, "H")
         write_raster(job_dir / "ndsm.tif", ndsm, hg, {"OUTPUT_QUANTITY": "height_above_ground", "SCALE_SOURCE": scale_source, "MODEL": tiled.quantity})
-        nleg = elevation_preview(job_dir / "ndsm_preview.png", ndsm, lo=0.0, hi=max(1.0, float(np.nanpercentile(ndsm, 99))))
+        n_hi = max(1.0, float(np.nanpercentile(ndsm, 99)))
+        nleg = elevation_legend(ndsm, lo=0.0, hi=n_hi)
+        later(elevation_preview, job_dir / "ndsm_preview.png", ndsm, lo=0.0, hi=n_hi)
         slope, aspect = slope_layers(ndsm, grid.transform)
         write_raster(job_dir / "slope.tif", slope, hg, {"OUTPUT_QUANTITY": "slope_degrees_of_ndsm"})
-        sleg = slope_preview(job_dir / "slope_preview.png", slope)
-        hillshade_preview(job_dir / "hillshade_preview.png", ndsm, gsd[0], gsd[1])
+        sleg = slope_legend()
+        later(slope_preview, job_dir / "slope_preview.png", slope)
+        later(hillshade_preview, job_dir / "hillshade_preview.png", ndsm, gsd[0], gsd[1])
         artifacts.update({"ndsm_tif": "ndsm.tif", "ndsm_preview": "ndsm_preview.png", "slope_tif": "slope.tif", "slope_preview": "slope_preview.png", "hillshade_preview": "hillshade_preview.png"})
         layers.update({"ndsm": {"units": "metres", "tier": "H", "preview": "ndsm_preview.png", "legend": nleg, "label": "METRIC · height above ground (fine-tuned model) · no absolute elevation"}, "slope": {"units": "degrees", "preview": "slope_preview.png", "legend": sleg}, "hillshade": {"preview": "hillshade_preview.png"}})
         hf, _hv, hmeta = build_heightfield(np.where(np.isfinite(ndsm), ndsm, -9999.0), -9999.0, max_mesh_dim=settings.terrain.max_mesh_dim, units="metres", metric=True, tier="H", vertical_reference="height_above_ground", texture_size=tex_size)

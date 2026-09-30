@@ -65,6 +65,24 @@ def test_lod1_from_footprints_keeps_known_buildings_and_flags_low_ones(tmp_path)
     assert sorted(np.unique(out["_labels"]).tolist()) == [0, 1, 2, 3]
 
 
+def test_lod1_heights_raster_sets_the_statistics_not_the_outlines():
+    nd, rgb, rings = _scene()
+    fp = fpm.to_labels(rings, CRS, TR, CRS, (N, N))
+    terr = np.full((N, N), 100.0, np.float32)
+    base = extract_lod1_buildings(nd, terr, rgb=rgb, gsd_m=GSD, transform=TR, footprints=fp, return_labels=True)
+    h = np.where(nd > 0, nd + 2.5, nd).astype(np.float32)  # e.g. the model nDSM read above the fused layer
+    out = extract_lod1_buildings(nd, terr, rgb=rgb, gsd_m=GSD, transform=TR, footprints=fp, return_labels=True, heights=h)
+    assert out["count"] == base["count"] and np.array_equal(out["_labels"], base["_labels"])
+    for a, b in zip(base["buildings"], out["buildings"]):
+        assert a["area_m2"] == b["area_m2"] and abs(b["height_median_m"] - a["height_median_m"] - 2.5) < 1e-6
+    nd2 = nd.copy()
+    nd2[130:148, 60:90] = 1.0
+    h2 = h.copy()
+    h2[130:148, 60:90] = 3.5  # low on the detection layer, resolved on the height layer: not flagged
+    out2 = extract_lod1_buildings(nd2, terr, rgb=rgb, gsd_m=GSD, transform=TR, footprints=fp, heights=h2)
+    assert not any("LOW_PREDICTED_HEIGHT" in b.get("quality_flags", []) for b in out2["buildings"])
+
+
 def test_object_filter_model_is_shipped_and_applies():
     m = load_model()
     assert m is not None and m["features"] == list(FEATURES) and len(m["coef"]) == len(FEATURES)

@@ -284,4 +284,4 @@ def _preview(path: Path, cls: np.ndarray, scar: np.ndarray | None, job_dir: Path
     from core.geo.atomic import write_atomic
 
     img = Image.fromarray(rgba, "RGBA").resize(full, Image.NEAREST)
-    write_atomic(path, lambda t: img.save(t, format="PNG"))
+    write_atomic(path, lambda t: img.save(t, format="PNG", compress_level=1))

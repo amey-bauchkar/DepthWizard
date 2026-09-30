@@ -106,6 +106,12 @@ export class HeightfieldViewer {
   private hudBL: HTMLDivElement;
 
   private raf = 0;
+  // On-demand rendering: an idle view is not redrawn 60 times a second (on a laptop the integrated GPU shares the
+  // CPU's power budget, so a spinning render loop slows the next job's processing).
+  private dirty = true;
+  private onScreen = true;
+  private lastView = new Float64Array(32);
+  private idleTick = 0;
   private raycaster = new THREE.Raycaster();
   private pickHandler: PickHandler | null = null;
   private downAt: [number, number] | null = null;
@@ -184,6 +190,15 @@ export class HeightfieldViewer {
     // Events
     window.addEventListener("resize", () => this.resize());
     const el = this.renderer.domElement;
+    this.controls.addEventListener("change", () => this.invalidate());
+    for (const ev of ["pointerdown", "pointermove", "pointerup", "wheel", "keydown", "keyup"]) el.addEventListener(ev, () => this.invalidate(), { passive: true });
+    window.addEventListener("keydown", () => this.invalidate());
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver((entries) => {
+        this.onScreen = entries[entries.length - 1].isIntersecting;
+        if (this.onScreen) this.invalidate();
+      }).observe(el);
+    }
     el.addEventListener("pointerdown", (e) => { this.downAt = [e.clientX, e.clientY]; });
     el.addEventListener("pointerup", (e) => {
       if (!this.downAt) return;
@@ -268,6 +283,7 @@ export class HeightfieldViewer {
 
   /** Highlight one LoD-1 block (amber) and restore the previous one. */
   highlightBuilding(id: number | null) {
+    this.invalidate();
     if (this.highlighted) { this.highlighted.mesh.material = this.highlighted.mats; this.highlighted = null; }
     if (id === null) return;
     const m = this.buildingMesh(id);
@@ -279,6 +295,7 @@ export class HeightfieldViewer {
 
   /** Orbit camera to a building (scene coordinates are metres, centred on the scene). */
   focusBuilding(id: number) {
+    this.invalidate();
     const m = this.buildingMesh(id);
     if (!m) return;
     if (this.flythroughActive) this.setFlythrough(false);
@@ -315,6 +332,7 @@ export class HeightfieldViewer {
   }
 
   private placeMarker(p: THREE.Vector3) {
+    this.invalidate();
     const size = Math.max(this.extentX, this.extentY) * 0.007;
     if (!this.marker) {
       const geo = new THREE.SphereGeometry(1, 12, 12);
@@ -334,6 +352,7 @@ export class HeightfieldViewer {
   }
 
   private resize() {
+    this.invalidate();
     const w = this.container.clientWidth, h = this.container.clientHeight;
     if (!w || !h) return;
     this.renderer.setSize(w, h);
@@ -341,8 +360,26 @@ export class HeightfieldViewer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Ask for a redraw on the next frame (the loop only renders when the view or the scene changed). */
+  invalidate() {
+    this.dirty = true;
+  }
+
+  /** True if the camera moved or its projection changed since the last call. */
+  private viewChanged(): boolean {
+    this.camera.updateMatrixWorld();
+    const a = this.camera.matrixWorld.elements, b = this.camera.projectionMatrix.elements, v = this.lastView;
+    let changed = false;
+    for (let i = 0; i < 16; i++) {
+      if (v[i] !== a[i]) { v[i] = a[i]; changed = true; }
+      if (v[16 + i] !== b[i]) { v[16 + i] = b[i]; changed = true; }
+    }
+    return changed;
+  }
+
   private animate = () => {
     this.raf = requestAnimationFrame(this.animate);
+    const animating = !!this.cameraTransition || this.cameraMode === "walk" || this.flythroughActive;
     if (this.cameraTransition) {
       this.updateCameraTransition();
     } else if (this.cameraMode === "walk") {
@@ -362,6 +399,11 @@ export class HeightfieldViewer {
         }
       }
     }
+    if (!this.onScreen) return;  // scrolled away: nothing to draw
+    const changed = this.viewChanged();
+    // idle: redraw only on a change (plus 1 frame per second as a safety net for anything that did not invalidate)
+    if (!animating && !changed && !this.dirty && ++this.idleTick % 60 !== 0) return;
+    this.dirty = false;
     if ((this.frame++ & 7) === 0) this.updateDynamicHud();
     this.renderer.render(this.scene, this.camera);
   };
@@ -429,6 +471,7 @@ export class HeightfieldViewer {
    * Focuses and centers the camera orbit pivot directly on the clicked building or terrain point.
    */
   focusOnPoint(e: MouseEvent) {
+    this.invalidate();
     if (this.cameraMode === "walk" || !this.mesh) return;
     const r = this.renderer.domElement.getBoundingClientRect();
     const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -467,6 +510,7 @@ export class HeightfieldViewer {
    * Smoothly zooms camera in or out by a scaling factor.
    */
   zoomBy(factor: number) {
+    this.invalidate();
     if (this.cameraMode === "walk") return;
     const offset = this.camera.position.clone().sub(this.controls.target);
     const currentDist = offset.length();
@@ -480,6 +524,7 @@ export class HeightfieldViewer {
    * Smoothly aligns camera heading to due North (+Y) while maintaining current tilt and distance.
    */
   alignNorth() {
+    this.invalidate();
     if (this.cameraMode === "walk") {
       this.yaw = 0;
       return;
@@ -656,6 +701,7 @@ export class HeightfieldViewer {
   }
 
   setCameraMode(mode: "orbit" | "walk") {
+    this.invalidate();
     if (this.cameraMode === mode) return;
     this.cameraMode = mode;
     const el = this.renderer.domElement;
@@ -718,6 +764,7 @@ export class HeightfieldViewer {
   }
 
   setMeshMode(mode: "regular" | "rtin", tolerance?: number): { vertices: number; triangles: number; reductionPct: number } {
+    this.invalidate();
     this.meshMode = mode;
     if (tolerance !== undefined) {
       this.rtinTolerance = tolerance;
@@ -789,6 +836,7 @@ export class HeightfieldViewer {
 
   /** Build the mesh from DSM-derived heightfield. heights: row-major HxW float32 (NaN=nodata). */
   load(heights: Float32Array, meta: HeightfieldMeta, textureUrl: string, opts: LoadOptions): Promise<ViewerInfo> {
+    this.invalidate();
     const W = meta.width, H = meta.height;
     if (heights.length !== W * H) throw new Error(`heightfield size mismatch: ${heights.length} != ${W}×${H}`);
     this.clear();
@@ -833,7 +881,7 @@ export class HeightfieldViewer {
     }
 
     // Material with aerial texture + slope-aware triplanar anti-smear shader + Turbo elevation heatmap
-    const tex = new THREE.TextureLoader().load(textureUrl);
+    const tex = new THREE.TextureLoader().load(textureUrl, () => this.invalidate());  // redraw once the photo arrives
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = Math.min(16, this.renderer.capabilities.getMaxAnisotropy());
     this.aerialTex = tex;
@@ -982,6 +1030,7 @@ export class HeightfieldViewer {
   }
 
   updateHUD(hud: LoadOptions["hud"], meta?: HeightfieldMeta) {
+    this.invalidate();
     // Top-left: state pill + tier pill
     this.hudTL.innerHTML = `
       <div class="hud-pill hud-state">${hud.state}</div>
@@ -1048,6 +1097,7 @@ export class HeightfieldViewer {
   }
 
   setZScale(s: number) {
+    this.invalidate();
     this.zScale = s;
     if (!this.metric) {
       this.applyZ();
@@ -1059,6 +1109,7 @@ export class HeightfieldViewer {
   }
 
   setExaggeration(e: number) {
+    this.invalidate();
     this.exaggeration = e;
     if (this.metric) {
       this.applyZ();
@@ -1098,6 +1149,7 @@ export class HeightfieldViewer {
   }
 
   setFlythrough(active: boolean) {
+    this.invalidate();
     this.flythroughActive = active;
     if (active) {
       if (this.cameraMode === "walk") {
@@ -1117,6 +1169,7 @@ export class HeightfieldViewer {
   get isFlythrough() { return this.flythroughActive; }
 
   setShaderMode(mode: ShaderVisualMode) {
+    this.invalidate();
     this.visualMode = mode;
     if (this.shaderUniforms && this.shaderUniforms.uVisualMode) {
       this.shaderUniforms.uVisualMode.value = mode === "heatmap" ? 1.0 : mode === "cyber" ? 2.0 : 0.0;
@@ -1126,6 +1179,7 @@ export class HeightfieldViewer {
   get currentShaderMode() { return this.visualMode; }
 
   setPresetView(preset: "nadir" | "oblique" | "horizon") {
+    this.invalidate();
     if (this.flythroughActive) this.setFlythrough(false);
     if (this.cameraMode === "walk") this.setCameraMode("orbit");
     const d = Math.max(this.extentX, this.extentY);
@@ -1148,6 +1202,7 @@ export class HeightfieldViewer {
   }
 
   setAntiSmear(enabled: boolean) {
+    this.invalidate();
     this.antiSmearEnabled = enabled;
     if (this.shaderUniforms && this.shaderUniforms.uAntiSmear) {
       this.shaderUniforms.uAntiSmear.value = enabled ? 1.0 : 0.0;
@@ -1155,6 +1210,7 @@ export class HeightfieldViewer {
   }
 
   loadBuildings(data: LoD1Data | null, cityMode = false) {
+    this.invalidate();
     this.highlighted = null;
     this.buildingsData = data;
     this.footprints = [];
@@ -1212,6 +1268,7 @@ export class HeightfieldViewer {
   }
 
   setBuildingsVisible(visible: boolean) {
+    this.invalidate();
     this.lod1Visible = visible;
     if (this.buildingsGroup) {
       this.buildingsGroup.visible = visible;
@@ -1223,16 +1280,19 @@ export class HeightfieldViewer {
   get buildingCount() { return this.buildingsData ? this.buildingsData.count : 0; }
 
   setWireframe(on: boolean) {
+    this.invalidate();
     if (this.mesh) (this.mesh.material as THREE.MeshStandardMaterial).wireframe = on;
   }
 
   get isMetric() { return this.metric; }
 
   resetCamera() {
+    this.invalidate();
     this.setPresetView("oblique");
   }
 
   clear() {
+    this.invalidate();
     if (this.mesh) {
       this.scene.remove(this.mesh);
       this.mesh.geometry.dispose();

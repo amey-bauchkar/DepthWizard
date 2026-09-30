@@ -29,7 +29,7 @@ def stage_ingest(job_dir: Path, input_path: Path, settings: Settings, log: JobLo
     res = ingest_image(input_path, max_dim=settings.ingest.max_image_dim, allowed_extensions=tuple(settings.ingest.allowed_extensions))
     _dump(job_dir / "meta.json", res.meta.to_dict())
     # display copy of the input (PNG for the browser; original is untouched)
-    Image.fromarray(res.rgb, "RGB").save(job_dir / "input_preview.png")
+    Image.fromarray(res.rgb, "RGB").save(job_dir / "input_preview.png", compress_level=1)  # lossless; fast encode
     log.event("UPLOADED", "ingested", width=res.meta.width, height=res.meta.height, sha256=res.meta.sha256, format=res.meta.format, ms=round((time.perf_counter() - t0) * 1000, 1))
     return res
 

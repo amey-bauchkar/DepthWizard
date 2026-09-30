@@ -66,6 +66,7 @@ class FusionCfg(BaseModel):
     tile_px: int = 518  # DA-V2 native input size (multiple of 14)
     overlap: float = 0.25
     max_tiles: int = 400  # model tiles per job: full 0.5 m detail up to ~3.5 x 3.5 km at 0.6 m (CPU ~2 s / tile)
+    tile_batch: int = 0  # tiles per forward pass; 0 = auto: 4 on a GPU, 1 on a CPU (A/B on a laptop CPU: no gain)
     max_tile_gain: float | None = None  # optional cap on the per-tile DEM-band gain (m per relative unit)
     anchor_gain_max: float = 4.0  # plausibility bound on the anchor-fitted detail gain
     mode_a_tiling: bool = True  # Mode A: refine large images with native-resolution tiles
@@ -109,6 +110,7 @@ class ServerCfg(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8000
     frontend_dist: str = "frontend/dist"
+    warm_up_models: bool = True  # load both models + one blank forward pass when the server starts (first job ~3 s faster)
 
 
 class Settings(BaseModel):
