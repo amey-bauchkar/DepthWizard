@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DepthWizard — main application logic.
  *
  * Result state model (maps to backend tier/flags):
@@ -482,8 +482,17 @@ function showInput(file: File) {
 async function run() {
   if (!state.file) return;
   const btn = $("run-btn") as HTMLButtonElement; btn.disabled = true;
-  ($("open3d-btn") as HTMLButtonElement).disabled = true;
+
+
+  // Guard: backend offline -> show standby message, re-enable button, return early.
+  // Avoids confusing HTTP 405 from Vercel static server receiving a POST.
+  if (!backendOnline) {
+    setStatus("Backend is starting up or in standby - please wait a moment, then try again.", "warn");
+    btn.disabled = false;
+    return;
+  }
   ($("validate-btn") as HTMLButtonElement).disabled = true;
+  ($("open3d-btn") as HTMLButtonElement).disabled = true;
   state.jobId = null;
   state.result = null;
   state.job = null;
