@@ -1,4 +1,4 @@
-﻿/**
+/**
  * DepthWizard — main application logic.
  *
  * Result state model (maps to backend tier/flags):
@@ -325,6 +325,26 @@ async function initSystem() {
     badge.textContent = API_BASE ? "connecting to cloud..." : "cloud standby · 3D ready";
     badge.className = "badge warn";
     setStatus("Backend is starting up or in standby. 3D viewer & tools ready.", "warn");
+    // Reconnect timer: retry /health every 20 seconds while offline.
+    // Stops once the backend responds (Render cold-start typically 30-90s).
+    const reconnect = setInterval(async () => {
+      try {
+        const h = await api.health();
+        clearInterval(reconnect);
+        backendOnline = true;
+        const m = h.model;
+        if (m?.available) {
+          badge.textContent = `${m.name}@${m.version} · ${m.device}`;
+          badge.className = "badge ok";
+          setStatus("Backend connected. Ready to process.", "ok");
+        } else {
+          badge.textContent = "model weights not installed";
+          badge.className = "badge bad";
+        }
+        // Re-run input check if a file is already loaded
+        if (state.file) void runInputCheck();
+      } catch { /* still offline, timer continues */ }
+    }, 20_000);
   }
 }
 
@@ -344,6 +364,10 @@ async function loadDemo(it: DemoItem) {
       r = await fetch(`/demo/${it.file}`);
     }
     if (!r.ok) throw new Error("demo missing");
+    // Guard: Vercel's SPA catch-all rewrite returns index.html (text/html, 200)
+    // for any path that doesn't physically exist. Detect that and treat as missing.
+    const ct = r.headers.get("content-type") || "";
+    if (ct.includes("text/html")) throw new Error("demo file served as HTML (SPA rewrite)");
     const blob = await r.blob();
     showInput(new File([blob], it.file.split("/").pop() ?? it.file, { type: blob.type || (it.mode === "B" ? "image/tiff" : "image/jpeg") }));
     ($("ref-bundled") as HTMLSelectElement).value = it.mode === "B" && it.reference_dsm ? it.reference_dsm : "";
@@ -356,7 +380,14 @@ async function loadDemo(it: DemoItem) {
       // demo anchors belong to their own tile; never carry them over to another scene
       state.anchors = null; state.anchorsLabel = ""; updateOptSummary();
     }
-  } catch { setStatus("Demo asset not available on this server.", "err"); }
+  } catch {
+    setStatus(
+      backendOnline
+        ? "Demo asset not available on this server."
+        : "Demo assets require the backend. It is starting up - try again in a moment.",
+      backendOnline ? "err" : "warn"
+    );
+  }
 }
 
 async function loadDemoAnchors(t: string) {
@@ -366,6 +397,9 @@ async function loadDemoAnchors(t: string) {
       r = await fetch(`/demo/anchors_${t}_simulated.csv`);
     }
     if (!r.ok) throw new Error("missing");
+    // Guard: same SPA-rewrite check as loadDemo
+    const ct = r.headers.get("content-type") || "";
+    if (ct.includes("text/html")) throw new Error("anchors served as HTML");
     state.anchors = new File([await r.blob()], `anchors_${t}_simulated.csv`, { type: "text/csv" });
     state.anchorsLabel = `simulated ${t} anchors (sampled from LiDAR — NOT surveyed ground control)`;
     updateOptSummary();
