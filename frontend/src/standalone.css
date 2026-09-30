@@ -1,27 +1,30 @@
-/* DepthWizard offline 3D scene — Burgundy + Warm Oat + Muted Red + Pale Yellow palette. */
+/* DepthWizard offline 3D scene — Navy #2b3459 (43, 52, 89) + Warm Oat + Muted Red + Pale Yellow palette. */
+@import url("https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap");
+
 :root {
-  --primary-burgundy: #823547;
-  --primary-burgundy-light: #9B4458;
-  --primary-burgundy-faint: #F8EDEF;
+  --primary-burgundy: #2b3459;
+  --primary-navy: #2b3459;
+  --primary-burgundy-light: #3d497c;
+  --primary-burgundy-faint: #eef2fa;
   --accent-red: #B83A46;
   --accent-yellow: #F5DE6E; --accent-yellow-dark: #C9A800; --accent-yellow-bg: #FFF0A6;
   --accent: var(--primary-burgundy); --accent-hover: var(--primary-burgundy-light); --accent-ink: #FFFFFF; --accent-bg: var(--primary-burgundy-faint);
   --bg: #F5F0E6; --surface: #FFFFFF; --surface-2: #EFE8DC; --surface-3: #E6DECE;
-  --ink: #823547; --ink-80: #6B303D; --ink-60: #884A57; --muted: #9E6C76;
+  --ink: #2b3459; --ink-80: #3f476a; --ink-60: #5d6588; --muted: #737c9e;
   --line: #DECFC0; --line-strong: #C8B8A6;
   --ok: #1E8555; --ok-bg: #EBF5EE; --ok-line: #A3D9B8;
   --bad: #B83A46; --bad-bg: #FCEEEE; --bad-line: #F5B7B7;
   --warn: #C97A00; --warn-bg: #FDF6E8; --warn-line: #F7D899;
   --radius: 6px; --radius-sm: 4px;
-  --shadow-1: 0 1px 2px rgba(130, 53, 71, 0.08);
-  --mono: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-heading: "Space Grotesk", "Inter", -apple-system, sans-serif;
-  --font-num: "Space Grotesk", "Inter", -apple-system, sans-serif;
+  --shadow-1: 0 1px 2px rgba(43, 52, 89, 0.08);
+  --mono: "Kanit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --sans: "Kanit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-heading: "Kanit", var(--sans);
+  --font-num: "Kanit", var(--sans);
   color-scheme: light;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); font-family: var(--sans); }
 #dw-app { min-height: 100%; display: flex; flex-direction: column; }
 .hidden { display: none !important; }
 
