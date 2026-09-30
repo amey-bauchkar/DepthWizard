@@ -304,9 +304,15 @@ async function initSystem() {
       badge.textContent = `${m.name}@${m.version} · ${m.device}`;
       badge.className = "badge ok";
       const mm = m.metric_model;
-      $("m-model").textContent = mm?.available
-        ? `Depth Anything V2 Small (${m.name}@${m.version}, ${m.device}) for relative depth + fine-tuned metric nDSM model ${mm.name}@${mm.version} for GeoTIFF tiles (tier H heights)`
-        : `Depth Anything V2 Small (${m.name}@${m.version}, ${m.device}) — zero-shot relative depth, whole image + overlapping tiles · no fine-tuned metric model installed (tier H unavailable)`;
+      const modelEl = $("m-model");
+      if (modelEl) {
+        modelEl.title = mm?.available
+          ? `Depth Anything V2 Small (${m.name}@${m.version}, ${m.device}) for relative depth + fine-tuned metric nDSM model ${mm.name}@${mm.version} for GeoTIFF tiles (tier H heights)`
+          : `Depth Anything V2 Small (${m.name}@${m.version}, ${m.device}) — zero-shot relative depth, whole image + overlapping tiles · no fine-tuned metric model installed (tier H unavailable)`;
+        modelEl.textContent = mm?.available
+          ? `Depth Anything V2 (${m.device}) · metric nDSM`
+          : `Depth Anything V2 (${m.device}) · relative only`;
+      }
       state.metricModel = !!mm?.available;
     } else {
       badge.textContent = "model weights not installed";
