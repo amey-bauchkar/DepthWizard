@@ -6,8 +6,8 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: Python Backend runtime (Hugging Face Spaces compatible)
-FROM python:3.11-slim-bookworm
+# Stage 2: Python Backend runtime (Render & Cloud compatible)
+FROM python:3.12-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Hugging Face Spaces runs as user with UID 1000
+# Non-root user with UID 1000
 RUN useradd -m -u 1000 user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH
@@ -36,7 +36,7 @@ WORKDIR /home/user/app
 
 # Pre-install PyTorch CPU for fast, lightweight inference
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cpu
+    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 # Install application dependencies
 COPY requirements/base.txt ./requirements/base.txt
