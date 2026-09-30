@@ -123,10 +123,14 @@ async function initSystem() {
 }
 
 async function initDemo() {
+  const wrap = $("demo-buttons");
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="demo-loading" style="padding: 10px; font-size: 11.5px; color: var(--muted); text-align: center;">Loading test scenes…</div>`;
+
   try {
     const d = await api.demo();
     state.demo = d.items; state.references = d.references;
-    const wrap = $("demo-buttons"); wrap.innerHTML = "";
+    wrap.innerHTML = "";
     // Priority order: Indian scenes first (SIH / ISRO), then Change / Disaster screening scenes, then Swiss benchmark tiles
     const priority = (it: DemoItem) => (it.country === "IN" ? 0 : (it.country === "TR" || it.pair || it.id.startsWith("change_")) ? 1 : 2);
     [...d.items].sort((x, y) => priority(x) - priority(y)).forEach((it) => {
@@ -137,13 +141,6 @@ async function initDemo() {
       const isRural = it.id.includes("rural");
       const isChange = Boolean(it.pair || it.country === "TR" || it.id.startsWith("change_"));
       const india = it.country === "IN";
-      const icon = isChange
-        ? (it.role === "before" ? "🏛️" : "🏚️")
-        : india
-          ? "🇮🇳"
-          : isRural
-            ? (it.mode === "B" ? "🌲" : "🏞️")
-            : (it.mode === "B" ? (isHD ? "🏙️" : "🏢") : "📷");
       const title = isChange
         ? (it.role === "before" ? "Islahiye, Türkiye · BEFORE" : "Islahiye, Türkiye · AFTER")
         : india
@@ -159,7 +156,7 @@ async function initDemo() {
             ? (isHD ? "0.5m DSM" : "2m DSM")
             : "Mode A";
 
-      pill.innerHTML = `<span class="demo-icon">${icon}</span><span class="demo-name">${title}</span><span class="demo-tag">${tag}</span>`;
+      pill.innerHTML = `<span class="demo-name">${title}</span><span class="demo-tag">${tag}</span>`;
       pill.title = `${it.label} — ${it.source ?? ""}`;
       pill.addEventListener("click", () => {
         wrap.querySelectorAll(".demo-pill").forEach((c) => c.classList.remove("active"));
@@ -168,17 +165,29 @@ async function initDemo() {
       });
       wrap.appendChild(pill);
     });
-    const aw = $("anchor-demo-buttons"); aw.innerHTML = "";
-    ["urban", "rural"].forEach((t, i) => {
-      const b = document.createElement("button"); b.className = "linkbtn"; b.textContent = t;
-      b.addEventListener("click", () => loadDemoAnchors(t)); aw.appendChild(b);
-      if (i === 0) aw.append(" · ");
-    });
-    const sel = $("ref-bundled") as HTMLSelectElement;
-    d.references.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; sel.appendChild(o); });
-    const psel = $("pts-bundled") as HTMLSelectElement;
-    d.items.filter((it) => it.reference_points).forEach((it) => { const o = document.createElement("option"); o.value = it.reference_points!; o.textContent = `ICESat-2 · ${it.id.replace(/^india_/, "")}`; psel.appendChild(o); });
-  } catch { /* demo assets optional */ }
+    const aw = $("anchor-demo-buttons");
+    if (aw) {
+      aw.innerHTML = "";
+      ["urban", "rural"].forEach((t, i) => {
+        const b = document.createElement("button"); b.className = "linkbtn"; b.textContent = t;
+        b.addEventListener("click", () => loadDemoAnchors(t)); aw.appendChild(b);
+        if (i === 0) aw.append(" · ");
+      });
+    }
+    const sel = $("ref-bundled") as HTMLSelectElement | null;
+    if (sel) {
+      sel.innerHTML = `<option value="">—</option>`;
+      d.references.forEach((r) => { const o = document.createElement("option"); o.value = r; o.textContent = r; sel.appendChild(o); });
+    }
+    const psel = $("pts-bundled") as HTMLSelectElement | null;
+    if (psel) {
+      psel.innerHTML = `<option value="">—</option>`;
+      d.items.filter((it) => it.reference_points).forEach((it) => { const o = document.createElement("option"); o.value = it.reference_points!; o.textContent = `ICESat-2 · ${it.id.replace(/^india_/, "")}`; psel.appendChild(o); });
+    }
+  } catch (err) {
+    console.error("Failed to load demo list:", err);
+    wrap.innerHTML = `<div style="padding: 10px; font-size: 11px; color: var(--bad); text-align: center;">Unable to load demos. <button type="button" class="linkbtn" onclick="initDemo()">Retry</button></div>`;
+  }
 }
 
 async function loadDemo(it: DemoItem) {
@@ -1857,34 +1866,43 @@ function wire() {
     hydrogeology: ["ls-hydro", { dry: 0.0, damp: 0.2, wet: 0.5, dripping: 0.8, flowing: 1.0 }],
   };
   for (const [id, opts] of Object.values(LS_OPTIONS)) {
-    for (const [label, v] of Object.entries(opts)) $(id).insertAdjacentHTML("beforeend", `<option value="${v}">${esc(label)} (${v})</option>`);
-  }
-  $("confidence-toggle").addEventListener("change", async (e) => {
-    const on = (e.target as HTMLInputElement).checked;
-    const img = $("confidence-overlay-img") as HTMLImageElement;
-    if (!on || !state.jobId) { img.classList.add("hidden"); return; }
-    setStatus("Computing the confidence map (the model runs 4 more times; about 2 minutes on a CPU)…", "", "disaster-status");
-    try {
-      const r = await fetch(`/api/jobs/${state.jobId}/confidence`, { method: "POST" });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error?.message ?? r.statusText);
-      img.src = `/api/jobs/${state.jobId}/artifact/${j.previewResult}?t=${Date.now()}`;
-      img.classList.remove("hidden");
-      setStatus(`Height confidence: median ±${j.medianIntervalM} m (80 % interval); ${j.shareWithin2mPct}% of the scene within ±2 m, ${j.shareOver5mPct}% worse than ±5 m.`, "ok", "disaster-status");
-    } catch (err: any) {
-      (e.target as HTMLInputElement).checked = false;
-      setStatus(`Confidence map unavailable: ${err.message || err}`, "err", "disaster-status");
+    const el = $(id);
+    if (el) {
+      for (const [label, v] of Object.entries(opts)) el.insertAdjacentHTML("beforeend", `<option value="${v}">${esc(label)} (${v})</option>`);
     }
-  });
+  }
+  const confToggle = $("confidence-toggle") as HTMLInputElement | null;
+  if (confToggle) {
+    confToggle.addEventListener("change", async (e) => {
+      const on = (e.target as HTMLInputElement).checked;
+      const img = $("confidence-overlay-img") as HTMLImageElement | null;
+      if (!on || !state.jobId || !img) { img?.classList.add("hidden"); return; }
+      setStatus("Computing the confidence map (the model runs 4 more times; about 2 minutes on a CPU)…", "", "disaster-status");
+      try {
+        const r = await fetch(`/api/jobs/${state.jobId}/confidence`, { method: "POST" });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error?.message ?? r.statusText);
+        img.src = `/api/jobs/${state.jobId}/artifact/${j.previewResult}?t=${Date.now()}`;
+        img.classList.remove("hidden");
+        setStatus(`Height confidence: median ±${j.medianIntervalM} m (80 % interval); ${j.shareWithin2mPct}% of the scene within ±2 m, ${j.shareOver5mPct}% worse than ±5 m.`, "ok", "disaster-status");
+      } catch (err: any) {
+        (e.target as HTMLInputElement).checked = false;
+        setStatus(`Confidence map unavailable: ${err.message || err}`, "err", "disaster-status");
+      }
+    });
+  }
 
-  $("bhuvan-layer").addEventListener("change", (e) => {
-    const v = (e.target as HTMLSelectElement).value;
-    const img = $("bhuvan-overlay-img") as HTMLImageElement;
-    if (!v || !state.jobId) { img.classList.add("hidden"); return; }
-    img.onerror = () => { img.classList.add("hidden"); setStatus("Bhuvan did not answer for this layer (it needs internet); try again later.", "err", "disaster-status"); };
-    img.src = `/api/jobs/${state.jobId}/bhuvan/${v}.png`;
-    img.classList.remove("hidden");
-  });
+  const bhuvanSel = $("bhuvan-layer") as HTMLSelectElement | null;
+  if (bhuvanSel) {
+    bhuvanSel.addEventListener("change", (e) => {
+      const v = (e.target as HTMLSelectElement).value;
+      const img = $("bhuvan-overlay-img") as HTMLImageElement | null;
+      if (!v || !state.jobId || !img) { img?.classList.add("hidden"); return; }
+      img.onerror = () => { img.classList.add("hidden"); setStatus("Bhuvan did not answer for this layer (it needs internet); try again later.", "err", "disaster-status"); };
+      img.src = `/api/jobs/${state.jobId}/bhuvan/${v}.png`;
+      img.classList.remove("hidden");
+    });
+  }
 
   if (disScen) {
     disScen.addEventListener("change", () => {
@@ -2002,10 +2020,98 @@ function wire() {
 
   wireImagePick();
   updateOptSummary();
+  initFeatureTabs();
 }
 
-wire();
-initSystem();
+function initFeatureTabs() {
+  const nav = $("features-tab-nav");
+  const body = $("features-tab-body");
+  if (!nav || !body) return;
+
+  function switchTab(panelId: string) {
+    nav.querySelectorAll(".feat-tab-btn").forEach((btn) => {
+      const isTarget = btn.getAttribute("data-panel") === panelId;
+      btn.classList.toggle("active", isTarget);
+      btn.setAttribute("aria-selected", isTarget ? "true" : "false");
+    });
+    body.setAttribute("data-active-panel", panelId);
+
+    const bldPanel = $("panel-buildings");
+    const chgPanel = $("panel-change");
+    const emptyBld = $("tab-empty-buildings");
+    const emptyChg = $("tab-empty-change");
+
+    if (emptyBld && bldPanel) {
+      emptyBld.classList.toggle("hidden", panelId !== "panel-buildings" || !bldPanel.classList.contains("hidden"));
+    }
+    if (emptyChg && chgPanel) {
+      emptyChg.classList.toggle("hidden", panelId !== "panel-change" || !chgPanel.classList.contains("hidden"));
+    }
+  }
+
+  nav.querySelectorAll(".feat-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const panelId = btn.getAttribute("data-panel");
+      if (panelId) switchTab(panelId);
+    });
+  });
+
+  // Wire topnav links to activate corresponding tabs & smooth-scroll
+  document.querySelectorAll<HTMLAnchorElement>(".topnav a").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      const href = a.getAttribute("href");
+      if (!href) return;
+      document.querySelectorAll(".topnav a").forEach((link) => link.classList.remove("active"));
+      a.classList.add("active");
+
+      if (href === "#panel-input" || href === "#panel-3d") return;
+      const panelId = href.replace(/^#/, "");
+      if (["panel-result", "panel-disaster", "panel-buildings", "panel-change", "panel-validate"].includes(panelId)) {
+        e.preventDefault();
+        switchTab(panelId);
+        const section = $("features-section");
+        if (section) section.scrollIntoView({ behavior: "smooth" });
+      }
+    });
+  });
+
+  // Track panel-buildings and panel-change visibility mutations
+  const updateTabStates = () => {
+    const bldPanel = $("panel-buildings");
+    const chgPanel = $("panel-change");
+    const bldTab = nav.querySelector<HTMLButtonElement>('.feat-tab-btn[data-panel="panel-buildings"]');
+    const chgTab = nav.querySelector<HTMLButtonElement>('.feat-tab-btn[data-panel="panel-change"]');
+    const curPanel = body.getAttribute("data-active-panel");
+    const emptyBld = $("tab-empty-buildings");
+    const emptyChg = $("tab-empty-change");
+
+    if (bldPanel && bldTab) {
+      const hasBld = !bldPanel.classList.contains("hidden");
+      bldTab.classList.toggle("has-data", hasBld);
+      if (emptyBld) emptyBld.classList.toggle("hidden", curPanel !== "panel-buildings" || hasBld);
+    }
+    if (chgPanel && chgTab) {
+      const hasChg = !chgPanel.classList.contains("hidden");
+      chgTab.classList.toggle("has-data", hasChg);
+      if (emptyChg) emptyChg.classList.toggle("hidden", curPanel !== "panel-change" || hasChg);
+    }
+  };
+
+  const observer = new MutationObserver(updateTabStates);
+  const bld = $("panel-buildings");
+  const chg = $("panel-change");
+  if (bld) observer.observe(bld, { attributes: true, attributeFilter: ["class"] });
+  if (chg) observer.observe(chg, { attributes: true, attributeFilter: ["class"] });
+
+  switchTab("panel-result");
+}
+
+try {
+  wire();
+} catch (err) {
+  console.error("UI wiring warning:", err);
+}
+initSystem().catch(console.error);
 
 // Opt-in inspection hook for automated checks (only with ?debug=1 in the URL).
 if (new URLSearchParams(location.search).has("debug")) (window as unknown as Record<string, unknown>).__depthwizard = state;
