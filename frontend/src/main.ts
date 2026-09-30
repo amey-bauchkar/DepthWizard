@@ -58,6 +58,11 @@ const state: State = {
   },
 };
 
+// Tracks whether the last health check succeeded — guards against misleading
+// "NOT READABLE" errors that are really just "backend not connected" (HTTP 405 /
+// network failure when the static Vercel host receives a POST it cannot handle).
+let backendOnline = false;
+
 // ──────────────────────────────────────── Helpers
 const isTiff = (f: File) => /\.tiff?$/i.test(f.name);
 function setStatus(msg: string, kind: "" | "ok" | "err" | "warn" = "", el = "status") {
@@ -314,7 +319,9 @@ async function initSystem() {
       $("m-model").textContent = "Model weights not installed. Run scripts/fetch_model.py.";
       setStatus("Model weights are not installed. Run scripts/fetch_model.py.", "err");
     }
+    backendOnline = true;
   } catch {
+    backendOnline = false;
     badge.textContent = API_BASE ? "connecting to cloud..." : "cloud standby · 3D ready";
     badge.className = "badge warn";
     setStatus("Backend is starting up or in standby. 3D viewer & tools ready.", "warn");
@@ -371,6 +378,17 @@ async function runInputCheck() {
   const box = $("input-check");
   if (!state.file) { box.classList.add("hidden"); return; }
   const seq = ++checkSeq;
+
+  // If the backend is known offline, show a neutral info box rather than
+  // firing a doomed POST that would return HTTP 405 from Vercel's static
+  // server and mislead the user into thinking their file is unreadable.
+  if (!backendOnline) {
+    box.className = "input-check warn";
+    box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">BACKEND OFFLINE</span></div>
+      <div class="ic-d">File loaded — input check requires a connected backend. The backend is starting up or in standby; try clicking Generate Surface once it comes online.</div>`;
+    return;
+  }
+
   box.className = "input-check"; box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">checking…</span></div>`;
   try {
     const r = await api.inspect(state.file, !!state.dem, !!state.anchors);
@@ -394,8 +412,20 @@ async function runInputCheck() {
       <ul class="ic-list">${r.checks.map((c) => `<li class="${c.level}"><span class="ic-i">${icon[c.level]}</span><div><b>${esc(c.title)}</b><div class="ic-d">${esc(c.detail)}</div></div></li>`).join("")}</ul>${acc}`;
   } catch (e) {
     if (seq !== checkSeq) return;
-    box.className = "input-check bad";
-    box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">NOT READABLE</span></div><div class="ic-d">${esc(userMessage(e))}</div>`;
+    // Distinguish backend-connectivity errors (405, TypeError from fetch, etc.)
+    // from genuine file-parse failures reported by the server.
+    const isConnErr = e instanceof ApiFailure
+      ? (e.status === 405 || e.status === 0 || e.status >= 500)
+      : (e instanceof TypeError); // network / CORS failure
+    if (isConnErr) {
+      backendOnline = false;
+      box.className = "input-check warn";
+      box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">BACKEND OFFLINE</span></div>
+        <div class="ic-d">File loaded — backend unreachable (${userMessage(e)}). Input check will retry when the backend comes online.</div>`;
+    } else {
+      box.className = "input-check bad";
+      box.innerHTML = `<div class="ic-head">Input check <span class="ic-badge">NOT READABLE</span></div><div class="ic-d">${esc(userMessage(e))}</div>`;
+    }
   }
 }
 
