@@ -18,6 +18,7 @@ build/
 
 # large / generated artefacts (fetched by scripts, never committed)
 models/**/*.pth
+!models/da-v2-small-ndsm/2.0.0/depth_anything_v2_ndsm_s.pth
 models/**/*.safetensors
 models/**/*.onnx
 models/**/*.bin
@@ -29,6 +30,7 @@ data/
 
 # fine-tuned model bundle from the Colab notebook (99 MB; install with scripts/install_finetuned_model.py)
 depthwizard_ndsm_model*.zip
+depthwizard_ndsm_model*/
 
 .claude/
 
