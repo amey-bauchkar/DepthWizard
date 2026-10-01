@@ -46,7 +46,7 @@ export class HeightfieldViewer {
   private gridHelper: THREE.GridHelper | null = null;
   private marker: THREE.Mesh | null = null;
   private baseZ: Float32Array | null = null;
-  private zScale = 0.2;
+  private zScale = 0.02;
   private exaggeration = 1.0;
   private metric = false;
   private spacing = 1;

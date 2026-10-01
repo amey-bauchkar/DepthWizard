@@ -1037,7 +1037,30 @@ select { max-width: 100%; text-overflow: ellipsis; }
 #view-layer { max-width: 280px; }
 .viewer-toolbar label { min-width: 0; }
 
-#input-preview { max-width: 100%; max-height: 280px; display: block; margin: 12px auto 0; border: 1px solid var(--line); }
+#input-preview-wrap {
+  margin-bottom: 12px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: 240px;
+}
+#input-preview-wrap.hidden {
+  display: none !important;
+}
+#input-preview {
+  max-width: 100%;
+  max-height: 240px;
+  width: auto;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  object-fit: contain;
+}
 
 /* ============================================================ Result — primary block */
 .result-empty {
